@@ -121,12 +121,65 @@ which is gitignored, so those clips resolve to nothing on a fresh clone. MIDI
 tracks, synth patches, FX chains, and the arrangement all load normally. Treat
 them as structural references rather than playable demos.
 
-## MCP server
+## Driving the DAW from Claude (MCP)
 
-`.mcp.json` registers the `fantasia` server with paths relative to the repo
-root, so it works from any clone — no edits needed. Requires the `bridge`
-extra and a `.venv` at the repo root. Launch Claude Code from this directory
-and the DAW tools become available.
+Claude Code can compose directly in the app — add tracks, write MIDI, design
+synth patches, search sounds, render vocals — by calling the same tools the
+in-app agent uses. Every call goes through the `CommandBus`, so **everything
+Claude does is undoable** with ⌘Z like any manual edit.
+
+### How it connects
+
+```
+Claude Code  →  tools/mcp_server.py  →  HTTP bridge :8765  →  running app
+                    (.mcp.json)          (fantasia_core/bridge.py)
+```
+
+The MCP server is a thin forwarder. It holds no tool definitions of its own —
+it fetches them live from the running app, so the MCP tool list always matches
+the in-app agent's. **The app must be running**; the bridge starts
+automatically with it.
+
+### Setup
+
+```bash
+pip install -e '.[bridge]'
+```
+
+`.mcp.json` is already committed with repo-relative paths, so it needs no
+edits on a fresh clone. It expects a `.venv` at the repo root.
+
+### Use it
+
+```bash
+# 1. Start the DAW — the control bridge comes up with it on 127.0.0.1:8765
+.venv/bin/python app.py
+
+# 2. In a second terminal, from this same directory:
+claude
+```
+
+Approve the `fantasia` server when Claude Code prompts on first run. Then just
+ask for music:
+
+> *Make a house track at 125 BPM in D major — four-on-the-floor kick, offbeat
+> bass, and a Clair de Lune melody on celesta over it.*
+
+Keep the app visible while it works: tracks, clips, and notes appear live on
+the timeline as the tools fire.
+
+### Notes
+
+- **Port conflicts** — the bridge binds `127.0.0.1:8765`. A second instance of
+  the app won't own the port (`ControlBridge.start()` returns `False`).
+  Override with `FANTASIA_BRIDGE_URL` on both sides if needed.
+- **Slow tools** — generation and stem separation run on CPU and can take
+  minutes; the client timeout is 600s.
+- **Localhost only** — the bridge binds the loopback interface and has no
+  authentication. Don't expose it beyond your machine.
+
+**"Fantasia Conductor doesn't appear to be running"** means the app isn't up,
+or the bridge lost the port. Start `app.py` first, then retry.
 
 ## Tests
 

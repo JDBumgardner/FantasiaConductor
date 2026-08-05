@@ -9,7 +9,6 @@ dist/
 # Project data / caches
 *.lancedb/
 .fantasia_cache/
-models/
 assets/samples/
 assets/soundfonts/
 .pytest_cache/
