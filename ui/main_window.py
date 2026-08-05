@@ -17,7 +17,7 @@ from typing import Optional
 
 import numpy as np
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
@@ -1067,6 +1067,8 @@ class MainWindow(QMainWindow):
         self._rebuild_all()
         self._refresh_history_actions()
         self.statusBar().showMessage("Ready — M3 (audio). File ▸ Load Demo Arrangement to test.")
+
+        self._restore_last_project()
 
     # ---- construction ----------------------------------------------------
     def _build_central(self) -> None:
@@ -2746,6 +2748,39 @@ class MainWindow(QMainWindow):
         self._conform_locked_clips()  # conform tempo-locked clips to the loaded tempo
         self._project_label = os.path.basename(path) if path else (project.name or "Untitled")
         self._set_dirty(False)
+        # Whatever is loaded becomes the project we reopen next launch; New and
+        # Load Demo pass path=None, which clears it.
+        self._remember_path(path)
+
+    # ---- last-project memory ---------------------------------------------
+    _SETTINGS_LAST_PATH = "session/last_project"
+
+    def _remember_path(self, path: Optional[str]) -> None:
+        """Persist (or clear) the last-used file so the next launch reopens it."""
+        settings = QSettings("FantasiaConductor", "FantasiaConductor")
+        if path:
+            settings.setValue(self._SETTINGS_LAST_PATH, path)
+        else:
+            settings.remove(self._SETTINGS_LAST_PATH)
+
+    def _restore_last_project(self) -> None:
+        """Reopen the last-saved project at startup, so ⌘S updates it directly.
+
+        Silently falls back to the empty Untitled project if the file is gone,
+        unreadable, or written by an incompatible version.
+        """
+        settings = QSettings("FantasiaConductor", "FantasiaConductor")
+        path = settings.value(self._SETTINGS_LAST_PATH, "", type=str)
+        if not path or not os.path.isfile(path):
+            return
+        try:
+            project = load_project(path)
+        except Exception as exc:  # noqa: BLE001 — never block startup on a bad file
+            self.statusBar().showMessage(f"Couldn't reopen {os.path.basename(path)}: {exc}")
+            self._remember_path(None)
+            return
+        self._load_project(project, path=path)
+        self.statusBar().showMessage(f"Reopened {os.path.basename(path)} — ⌘S saves back to it")
 
     def _on_save(self) -> None:
         """Save to the current file; if the project was never saved, prompt (Save As)."""
@@ -2754,6 +2789,7 @@ class MainWindow(QMainWindow):
             return
         save_project(self.project, self._current_path)
         self._set_dirty(False)
+        self._remember_path(self._current_path)
         self.statusBar().showMessage(f"Saved {os.path.basename(self._current_path)}")
 
     def _on_save_as(self) -> None:
@@ -2767,6 +2803,7 @@ class MainWindow(QMainWindow):
         self._current_path = path
         self._project_label = os.path.basename(path)
         self._set_dirty(False)
+        self._remember_path(path)
         self.statusBar().showMessage(f"Saved {path}")
 
     def _on_new(self) -> None:
