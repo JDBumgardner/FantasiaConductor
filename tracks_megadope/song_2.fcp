@@ -731,7 +731,10 @@
           "fade_in": 0.0,
           "fade_out": 2.5,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c42",
@@ -921,7 +924,10 @@
           "fade_in": 0.0,
           "fade_out": 0.2,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c52",
@@ -1213,14 +1219,17 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t3",
       "name": "Lofi Drums",
-      "gain_db": -3,
+      "gain_db": -3.0,
       "pan": 0.0,
       "mute": false,
       "solo": false,
@@ -1537,7 +1546,10 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c51",
@@ -1697,7 +1709,10 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c11",
@@ -1989,7 +2004,10 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c43",
@@ -2269,7 +2287,10 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c56",
@@ -2561,7 +2582,10 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c57",
@@ -2853,14 +2877,17 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t4",
       "name": "Sub Bass",
-      "gain_db": -4,
+      "gain_db": -4.0,
       "pan": 0.0,
       "mute": false,
       "solo": false,
@@ -3026,7 +3053,10 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c44",
@@ -3078,7 +3108,10 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c53",
@@ -3160,14 +3193,17 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t5",
       "name": "Warm Pad",
-      "gain_db": -13,
+      "gain_db": -13.0,
       "pan": 0.0,
       "mute": false,
       "solo": false,
@@ -3322,7 +3358,10 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c45",
@@ -3398,7 +3437,10 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c54",
@@ -3486,14 +3528,17 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t9",
       "name": "Vinyl",
-      "gain_db": -19,
+      "gain_db": -19.0,
       "pan": -0.03,
       "mute": false,
       "solo": false,
@@ -3520,11 +3565,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -3,
+          "gain_db": -3.0,
           "fade_in": 1.5,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": -2
+          "pitch_semitones": -2.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c13",
@@ -3535,11 +3583,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": 1,
+          "gain_db": 1.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": true,
-          "pitch_semitones": 1
+          "pitch_semitones": 1.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c14",
@@ -3550,11 +3601,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -5,
+          "gain_db": -5.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": -4
+          "pitch_semitones": -4.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c15",
@@ -3565,11 +3619,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": 0,
+          "gain_db": 0.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": true,
-          "pitch_semitones": 3
+          "pitch_semitones": 3.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c16",
@@ -3580,11 +3637,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -2,
+          "gain_db": -2.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": -1
+          "pitch_semitones": -1.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c17",
@@ -3595,11 +3655,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": 2,
+          "gain_db": 2.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": true,
-          "pitch_semitones": 2
+          "pitch_semitones": 2.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c18",
@@ -3610,11 +3673,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -6,
+          "gain_db": -6.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": -3
+          "pitch_semitones": -3.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c19",
@@ -3625,11 +3691,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": 2,
+          "gain_db": 2.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 1
+          "pitch_semitones": 1.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c20",
@@ -3640,11 +3709,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": 1,
+          "gain_db": 1.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": true,
-          "pitch_semitones": -2
+          "pitch_semitones": -2.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c21",
@@ -3655,11 +3727,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -4,
+          "gain_db": -4.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 2
+          "pitch_semitones": 2.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c22",
@@ -3670,11 +3745,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -1,
+          "gain_db": -1.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": true,
-          "pitch_semitones": -1
+          "pitch_semitones": -1.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c23",
@@ -3685,11 +3763,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -5,
+          "gain_db": -5.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 3
+          "pitch_semitones": 3.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c24",
@@ -3700,11 +3781,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": 0,
+          "gain_db": 0.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": -3
+          "pitch_semitones": -3.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c25",
@@ -3715,11 +3799,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -3,
+          "gain_db": -3.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": true,
-          "pitch_semitones": 1
+          "pitch_semitones": 1.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c48",
@@ -3730,11 +3817,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -2,
+          "gain_db": -2.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 2
+          "pitch_semitones": 2.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c49",
@@ -3745,11 +3835,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -5,
+          "gain_db": -5.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": -1
+          "pitch_semitones": -1.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c50",
@@ -3760,11 +3853,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": 1,
+          "gain_db": 1.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": true,
-          "pitch_semitones": 4
+          "pitch_semitones": 4.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c60",
@@ -3775,11 +3871,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -1,
+          "gain_db": -1.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": -2
+          "pitch_semitones": -2.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c61",
@@ -3790,11 +3889,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -4,
+          "gain_db": -4.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": true,
-          "pitch_semitones": 1
+          "pitch_semitones": 1.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c62",
@@ -3805,11 +3907,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -2,
+          "gain_db": -2.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 3
+          "pitch_semitones": 3.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c63",
@@ -3820,11 +3925,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -6,
+          "gain_db": -6.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": -1
+          "pitch_semitones": -1.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c64",
@@ -3835,11 +3943,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": 0,
+          "gain_db": 0.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": true,
-          "pitch_semitones": 2
+          "pitch_semitones": 2.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c65",
@@ -3850,11 +3961,14 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -3,
+          "gain_db": -3.0,
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": -4
+          "pitch_semitones": -4.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c66",
@@ -3865,18 +3979,21 @@
           "source_path": ".fantasia_cache/library/textures/vinyl_crackle.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": -1,
+          "gain_db": -1.0,
           "fade_in": 0.0,
           "fade_out": 3.0,
           "reversed": false,
-          "pitch_semitones": 1
+          "pitch_semitones": 1.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t32",
       "name": "Synthwave Arp",
-      "gain_db": -17,
+      "gain_db": -17.0,
       "pan": 0.35,
       "mute": false,
       "solo": false,
@@ -4315,7 +4432,10 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c46",
@@ -4427,7 +4547,10 @@
           "fade_in": 0.0,
           "fade_out": 1.5,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c55",
@@ -4731,17 +4854,20 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t33",
       "name": "Riser FX",
-      "gain_db": -20,
+      "gain_db": -20.0,
       "pan": 0.0,
       "mute": false,
-      "solo": true,
+      "solo": false,
       "color": "#4a90d9",
       "fx": [
         {
@@ -4768,7 +4894,7 @@
         {
           "id": "c37",
           "name": "riser",
-          "start": 22.72,
+          "start": 22.5,
           "duration": 3.94,
           "content_type": "audio",
           "source_path": ".fantasia_cache/library/textures/bright_riser.wav",
@@ -4778,7 +4904,10 @@
           "fade_in": 2.5,
           "fade_out": 0.4,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c47",
@@ -4789,16 +4918,19 @@
           "source_path": ".fantasia_cache/library/textures/bright_riser.wav",
           "source_offset": 0.0,
           "notes": [],
-          "gain_db": 2,
+          "gain_db": 2.0,
           "fade_in": 2.8,
           "fade_out": 0.3,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c73",
           "name": "ocean waves",
-          "start": 18.701484805205833,
+          "start": 18.333333333333336,
           "duration": 3.94,
           "content_type": "audio",
           "source_path": "/Users/jacobbumgardner/ClaudeProjects/FantasiaCondutcor/.fantasia_cache/library/textures/ocean_waves.wav",
@@ -4808,14 +4940,17 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t34",
       "name": "Counter Lead",
-      "gain_db": -15,
+      "gain_db": -15.0,
       "pan": -0.3,
       "mute": false,
       "solo": false,
@@ -4904,14 +5039,17 @@
           "fade_in": 0.0,
           "fade_out": 0.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t38",
       "name": "Vox Lead (sparse)",
-      "gain_db": -13,
+      "gain_db": -13.0,
       "pan": -0.1,
       "mute": false,
       "solo": false,
@@ -4965,14 +5103,17 @@
           "fade_in": 0.5,
           "fade_out": 4.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t40",
       "name": "Vox Octave Down",
-      "gain_db": -20,
+      "gain_db": -20.0,
       "pan": 0.6,
       "mute": false,
       "solo": false,
@@ -5020,14 +5161,17 @@
           "fade_in": 1.0,
           "fade_out": 4.5,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t58",
       "name": "Vox \u00b7 E section",
-      "gain_db": -13,
+      "gain_db": -13.0,
       "pan": 0.12,
       "mute": false,
       "solo": false,
@@ -5081,14 +5225,17 @@
           "fade_in": 0.5,
           "fade_out": 4.0,
           "reversed": false,
-          "pitch_semitones": 0.0
+          "pitch_semitones": 0.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     },
     {
       "id": "t67",
       "name": "Room Tone",
-      "gain_db": -26,
+      "gain_db": -26.0,
       "pan": -0.5,
       "mute": false,
       "solo": false,
@@ -5128,7 +5275,10 @@
           "fade_in": 1.5,
           "fade_out": 1.5,
           "reversed": false,
-          "pitch_semitones": -5
+          "pitch_semitones": -5.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c69",
@@ -5143,7 +5293,10 @@
           "fade_in": 1.5,
           "fade_out": 2.0,
           "reversed": true,
-          "pitch_semitones": -7
+          "pitch_semitones": -7.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c70",
@@ -5158,7 +5311,10 @@
           "fade_in": 2.0,
           "fade_out": 1.0,
           "reversed": false,
-          "pitch_semitones": -3
+          "pitch_semitones": -3.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         },
         {
           "id": "c71",
@@ -5173,7 +5329,10 @@
           "fade_in": 2.0,
           "fade_out": 2.0,
           "reversed": true,
-          "pitch_semitones": -6
+          "pitch_semitones": -6.0,
+          "lock_tempo": null,
+          "orig_source_path": null,
+          "lock_base_dur": 0.0
         }
       ]
     }
