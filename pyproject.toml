@@ -1,0 +1,86 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fantasia-conductor"
+version = "0.0.1"
+description = "A native desktop DAW for defining and composing music, with AI agent hooks and sound search."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+
+# Core deps — enough for M0–M4 (UI, document model, audio engine, editing).
+dependencies = [
+    "PySide6>=6.6",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "sounddevice>=0.4.6",
+    "pedalboard>=0.9",
+    "librosa>=0.10",
+]
+
+[project.optional-dependencies]
+# M5 — sound search: CLAP (via transformers) joint audio-text embeddings +
+# LanceDB dual store. Heavy ML stack; installed only when needed.
+search = [
+    "transformers>=4.40",
+    "torch>=2.2",
+    "librosa>=0.10",
+    "soundfile>=0.12",
+    "lancedb>=0.6",
+]
+# MIDI synthesis (needs the fluid-synth system lib: `brew install fluid-synth`).
+midi = [
+    "pyfluidsynth>=1.3",
+]
+# Audio→MIDI transcription (Spotify basic-pitch; uses its bundled TFLite model).
+# NOTE: pulls TensorFlow and pins numpy<2; setuptools<81 keeps pkg_resources for resampy.
+transcribe = [
+    "basic-pitch>=0.3",
+    "setuptools<81",
+]
+# Text→audio generation (Meta MusicGen via transformers; downloads a ~2GB model).
+generate = [
+    "torch>=2.2",
+    "transformers>=4.40",
+]
+# Stem separation / instrument isolation (Demucs htdemucs; downloads a ~300MB model).
+# demucs 4.1 uses `sphn` for audio I/O, so torchaudio is NOT required.
+separate = [
+    "demucs>=4.1",
+]
+# Text-to-speech: Kokoro via mlx-audio — runs on the Apple GPU (MLX), no torch/MPS.
+# misaki[en] is the phonemizer. Apple Silicon only.
+voice = [
+    "mlx-audio>=0.2",
+    "misaki[en]>=0.9",
+    "pyworld>=0.3",  # WORLD vocoder: formant-preserving singing + vocal FX
+]
+# Time-stretch (change length without pitch). Needs the `rubberband` CLI too:
+# `brew install rubberband`.
+stretch = [
+    "pyrubberband>=0.3",
+]
+# M6 — agent.
+agent = [
+    "anthropic>=0.40",
+]
+# MCP server (tools/mcp_server.py) — lets Claude Code drive the running app
+# through the local control bridge.
+bridge = [
+    "mcp>=1.0,<2",  # 2.0 removed the list_tools/call_tool decorator API
+]
+# Dev tooling.
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+fantasia = "app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fantasia_core", "ui"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

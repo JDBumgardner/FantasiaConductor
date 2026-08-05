@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Project data / caches
+*.lancedb/
+.fantasia_cache/
+models/
+assets/samples/
+assets/soundfonts/
+.pytest_cache/
+
+# Audio renders / source material (large binaries)
+audio_files_gigadope/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

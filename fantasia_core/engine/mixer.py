@@ -1,0 +1,144 @@
+"""Offline/real-time block mixer.
+
+``render_block`` produces one stereo block ``(num_frames, 2)`` for the timeline
+window ``[start_frame, start_frame + num_frames)``. It is a pure function of the
+project + audio pool (+ an optional stateful FX host), so it's used identically
+by the playback callback, the offline bounce, and unit tests.
+
+Signal flow per track: clips (placement, source_offset, reverse, pitch, clip
+gain, fades) → summed into a track buffer → per-track FX chain → track gain +
+constant-power pan → summed into the master.
+"""
+
+from __future__ import annotations
+
+import math
+
+import numpy as np
+
+
+def db_to_lin(db: float) -> float:
+    return float(10.0 ** (db / 20.0))
+
+
+def _pan_gains(pan: float) -> tuple[float, float]:
+    """Constant-power pan; ``pan`` in [-1, 1] (0 = center)."""
+    p = max(-1.0, min(1.0, pan))
+    angle = (p + 1.0) * (math.pi / 4.0)
+    return math.cos(angle), math.sin(angle)
+
+
+def _fade_env(clip, a: int, b: int, clip_start: int, clip_end: int, sr: int) -> np.ndarray:
+    n = b - a
+    env = np.ones(n, dtype=np.float32)
+    fin = int(clip.fade_in * sr)
+    fout = int(clip.fade_out * sr)
+    if fin <= 0 and fout <= 0:
+        return env
+    frames = np.arange(a, b)
+    if fin > 0:
+        env *= np.clip((frames - clip_start) / fin, 0.0, 1.0).astype(np.float32)
+    if fout > 0:
+        env *= np.clip((clip_end - frames) / fout, 0.0, 1.0).astype(np.float32)
+    return env
+
+
+def _clip_buffer(pool, clip, sr: int, clip_len_frames: int):  # noqa: ANN001
+    """Pick the source buffer + start index, honouring pitch then reverse.
+
+    Both transforms are length-preserving, so the slicing math is identical to a
+    plain forward clip once the right buffer/offset are chosen.
+    """
+    if clip.pitch_semitones:
+        base = pool.load_pitched(clip.source_path, clip.pitch_semitones)
+    else:
+        base = pool.load(clip.source_path)
+    if clip.reversed:
+        data = base[::-1]
+        src0 = len(data) - int(clip.source_offset * sr) - clip_len_frames
+    else:
+        data = base
+        src0 = int(clip.source_offset * sr)
+    return data, src0
+
+
+def render_track_block(
+    track, pool, start_frame: int, num_frames: int, sr: int, midi_renderer=None, synth_renderer=None
+) -> np.ndarray:  # noqa: ANN001
+    """Render one track's clips (pre-FX, pre-track-gain/pan) as ``(num_frames, 2)``.
+
+    MIDI clips read their pre-rendered buffer from ``midi_renderer`` (callback-safe
+    cache); audio clips read from the pool. From there the mixing path is shared.
+    """
+    out = np.zeros((num_frames, 2), dtype=np.float32)
+    block_start = start_frame
+    block_end = start_frame + num_frames
+
+    for clip in track.clips:
+        clip_start = int(clip.start * sr)
+        clip_end = int((clip.start + clip.duration) * sr)
+        a = max(block_start, clip_start)
+        b = min(block_end, clip_end)
+        if b <= a:
+            continue
+
+        if clip.content_type == "midi":
+            if getattr(track, "is_synth", False) and synth_renderer is not None:
+                data = synth_renderer.cached(clip, getattr(track, "synth", None) or {})
+            elif midi_renderer is not None:
+                data = midi_renderer.cached(clip, track.instrument, getattr(track, "is_drum", False))
+            else:
+                continue
+            if data is None:  # not yet rendered (warming pending) → silent
+                continue
+            src0 = 0
+        else:
+            if not clip.source_path:
+                continue
+            try:
+                data, src0 = _clip_buffer(pool, clip, sr, clip_end - clip_start)
+            except Exception:  # noqa: BLE001
+                continue
+
+        src_a = src0 + (a - clip_start)
+        if src_a < 0 or src_a >= len(data):
+            continue
+        length = min(b - a, len(data) - src_a)
+        if length <= 0:
+            continue
+        b = a + length
+
+        seg = data[src_a : src_a + length]
+        if seg.shape[1] == 1:
+            seg_l = seg_r = seg[:, 0]
+        else:
+            seg_l, seg_r = seg[:, 0], seg[:, 1]
+
+        env = _fade_env(clip, a, b, clip_start, clip_end, sr) * db_to_lin(clip.gain_db)
+        pos = a - block_start
+        out[pos : pos + length, 0] += seg_l * env
+        out[pos : pos + length, 1] += seg_r * env
+
+    return out
+
+
+def render_block(
+    project, pool, start_frame: int, num_frames: int, sr: int,
+    fx_host=None, midi_renderer=None, synth_renderer=None,
+) -> np.ndarray:  # noqa: ANN001
+    """Render one stereo block of the full mix as ``float32`` ``(num_frames, 2)``."""
+    out = np.zeros((num_frames, 2), dtype=np.float32)
+    any_solo = any(t.solo for t in project.tracks)
+
+    for track in project.tracks:
+        if track.mute or (any_solo and not track.solo):
+            continue
+        tb = render_track_block(track, pool, start_frame, num_frames, sr, midi_renderer, synth_renderer)
+        if getattr(track, "fx", None) and fx_host is not None:
+            tb = fx_host.process(track, tb, sr)
+        tgain = db_to_lin(track.gain_db)
+        lpan, rpan = _pan_gains(track.pan)
+        out[:, 0] += tb[:, 0] * tgain * lpan
+        out[:, 1] += tb[:, 1] * tgain * rpan
+
+    return out

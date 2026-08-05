@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__fantasia__get_project",
+      "mcp__fantasia__list_tracks",
+      "mcp__fantasia__set_tempo",
+      "mcp__fantasia__set_track",
+      "mcp__fantasia__add_track",
+      "mcp__fantasia__set_synth_patch",
+      "mcp__fantasia__add_fx",
+      "mcp__fantasia__add_clip",
+      "mcp__fantasia__write_midi",
+      "mcp__fantasia__duplicate_clip",
+      "mcp__fantasia__sing_melody",
+      "mcp__fantasia__find_sound",
+      "mcp__fantasia__add_sound",
+      "mcp__fantasia__stretch_clip_to_bars",
+      "mcp__fantasia__set_clip",
+      "mcp__fantasia__list_clips",
+      "mcp__fantasia__remove_track",
+      "mcp__fantasia__remove_clip",
+      "mcp__fantasia__set_notes"
+    ]
+  }
+}

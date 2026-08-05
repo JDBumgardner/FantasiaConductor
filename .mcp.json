@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "fantasia": {
+      "command": "/Users/jacobbumgardner/ClaudeProjects/FantasiaCondutcor/.venv/bin/python",
+      "args": [
+        "/Users/jacobbumgardner/ClaudeProjects/FantasiaCondutcor/tools/mcp_server.py"
+      ]
+    }
+  }
+}
