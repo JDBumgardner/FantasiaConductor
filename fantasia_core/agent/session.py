@@ -76,6 +76,13 @@ SYSTEM = (
     "The vocal renders on a new track exactly in sync with the arrangement.\n"
     "Vocal FX: vocal_fx(clip_id, effect) polishes a vocal audio clip — autotune (key+scale), harmony (adds a "
     "voice a given interval up on a new track), formant_up/down, deess, double. Formant-preserving (WORLD).\n\n"
+    "TIMING — think in bars and beats, never in seconds. add_clip takes bar (1-based measure) "
+    "and bars (length); notes take bar + beat (1-based within the bar, fractional: 2.5 is the "
+    "'and' of 2) + beats (length: 1=quarter, 0.5=eighth, 0.25=sixteenth). The app converts to "
+    "seconds using the project tempo and rebases against the clip, so a note at bar 5 beat 1 "
+    "lands on bar 5 beat 1 no matter where its clip starts. Write a bar-4 backbeat as "
+    "{pitch:38, bar:4, beat:2, beats:0.5}. Notes placed outside their clip are rejected with the "
+    "clip's bar range — widen the clip or move the notes rather than guessing.\n\n"
     "Be decisive and act rather than asking for confirmation on ordinary edits. When done, "
     "give a one- or two-sentence summary of what you changed."
 )

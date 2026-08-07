@@ -127,6 +127,21 @@ class PlaybackEngine:
                 self._playing = False
 
     # ---- transport -------------------------------------------------------
+    @property
+    def has_stream(self) -> bool:
+        """True while a PortAudio stream is open. A device-list refresh
+        (terminate/initialize) is only safe when this is False."""
+        return self._stream is not None
+
+    def _close_stream(self) -> None:
+        if self._stream is not None:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._stream = None
+
     def _try_open(self, device) -> bool:
         try:
             self._stream = sd.OutputStream(
@@ -169,23 +184,35 @@ class PlaybackEngine:
     def set_output_device(self, device) -> bool:
         """Route playback to a device index (``None`` = system default).
 
-        Recreates the stream on the new device, resuming if it was playing."""
-        if device == self.output_device and self._stream is not None:
-            return True
-        self.output_device = device
+        The device is opened *immediately* to verify it works, so a bad choice
+        is reported now instead of silently failing later at Play. Returns False
+        if the requested device could not be opened (playback falls back to the
+        system default so the app still makes sound)."""
+        if sd is None:
+            return False
         was_playing = self._playing
         self._playing = False
-        if self._stream is not None:
-            try:
-                self._stream.stop()
-                self._stream.close()
-            except Exception:  # noqa: BLE001
-                pass
-            self._stream = None
-        return self.play() if was_playing else True
+        self._close_stream()
+        self.output_device = device
+
+        ok = self._try_open(device)          # prove it can actually open
+        if not ok:
+            self._try_open(None)             # keep audio alive on the default
+
+        if was_playing:
+            self._playing = True             # resume on the new device
+        else:
+            # Idle: don't hold the device open — that would block the device-list
+            # refresh (and other apps). play() reopens it.
+            self._close_stream()
+            self.output_device = device if ok else None
+        return ok
 
     def stop(self) -> None:
+        # Close the stream too: leaving it open blocks refresh_devices() and
+        # leaves a stale handle if the OS device list changes while idle.
         self._playing = False
+        self._close_stream()
 
     def close(self) -> None:
         self._playing = False

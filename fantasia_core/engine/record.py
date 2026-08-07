@@ -47,6 +47,8 @@ class Recorder:
         self._chunks: list = []
         self._stream = None
         self._recording = False
+        self.overflows = 0        # PortAudio dropped input blocks (choppy audio!)
+        self.dropped_frames = 0
 
     @property
     def is_recording(self) -> bool:
@@ -57,7 +59,17 @@ class Recorder:
         frames = sum(len(c) for c in self._chunks)
         return frames / self.sr
 
+    @property
+    def had_dropouts(self) -> bool:
+        return self.overflows > 0
+
     def _callback(self, indata, frames, time_info, status) -> None:  # noqa: ANN001
+        # An input overflow means the OS dropped audio before it reached us —
+        # the take ends up choppy with no silent gaps to detect afterwards, so
+        # it has to be caught here.
+        if status and getattr(status, "input_overflow", False):
+            self.overflows += 1
+            self.dropped_frames += frames
         if self._recording:
             self._chunks.append(indata.copy())
 
@@ -66,10 +78,15 @@ class Recorder:
         if sd is None:
             return False
         self._chunks = []
+        self.overflows = 0
+        self.dropped_frames = 0
         try:
             self._stream = sd.InputStream(
                 samplerate=self.sr, channels=self.channels, dtype="float32",
                 device=self.input_device, callback=self._callback,
+                # A generous buffer: the UI thread does heavy work (rendering,
+                # generation), and a small blocksize overflows under that load.
+                blocksize=4096, latency="high",
             )
             self._stream.start()
         except Exception:  # noqa: BLE001 — no device / denied permission
