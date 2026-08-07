@@ -1460,8 +1460,10 @@ class MainWindow(QMainWindow):
         self._output_group = QActionGroup(self)
         self._output_group.setExclusive(True)
 
-        # Re-read the OS device list unless a stream is open (can't re-init then).
-        devices = list_output_devices(refresh=not self.engine.is_playing)
+        # Re-read the OS device list only when NO stream is open. Re-initialising
+        # PortAudio with a live stream corrupts its state and renumbers devices,
+        # which is what made a freshly-picked output silently fail to play.
+        devices = list_output_devices(refresh=not self.engine.has_stream)
         valid = {i for i, _ in devices}
         # Drop a stale selection (e.g. headphones that were unplugged mid-session).
         if self.engine.output_device is not None and self.engine.output_device not in valid:
@@ -1486,7 +1488,11 @@ class MainWindow(QMainWindow):
         if self.engine.set_output_device(index):
             self.statusBar().showMessage(f"Audio output → {name}")
         else:
-            self.statusBar().showMessage(f"Couldn't switch to {name}")
+            # The device was verified at selection time, so this is a real
+            # failure (in use elsewhere / disconnected), not a late surprise.
+            self.statusBar().showMessage(
+                f"Couldn't open {name} — using the system default instead")
+            self._populate_output_devices()  # re-sync the checkmark
 
     # ---- audio input device + recording ---------------------------------
     def _populate_input_devices(self) -> None:
@@ -1692,12 +1698,31 @@ class MainWindow(QMainWindow):
         if clip is None or not clip.is_midi:
             return  # only MIDI clips have a piano roll
         self._editing_clip_id = clip_id
+        bar_len = self.project.beats_per_bar * self.project.seconds_per_beat()
+        clip_bar = int(round(clip.start / bar_len)) + 1 if bar_len > 0 else 1
         self.piano.edit_clip(
             clip, self.project.seconds_per_beat(), self.project.beats_per_bar,
-            drum_mode=getattr(track, "is_drum", False),
+            drum_mode=getattr(track, "is_drum", False), clip_bar=clip_bar,
         )
+        self._update_piano_waveform(clip_id)
         self.editor.show_piano_roll()
         self.statusBar().showMessage(f"Editing notes in {clip.name}")
+
+    def _update_piano_waveform(self, clip_id: str) -> None:
+        """Render the clip's audio so the roll can draw it behind the notes."""
+        track, clip = self.project.find_clip(clip_id)
+        if clip is None or not clip.is_midi:
+            self.piano.view.set_waveform(None, self.project.sample_rate)
+            return
+        try:
+            if getattr(track, "is_synth", False):
+                buf = self.synth_engine.render(clip, getattr(track, "synth", None) or {})
+            else:
+                buf = self.midi.render(clip, track.instrument,
+                                       getattr(track, "is_drum", False))
+            self.piano.view.set_waveform(buf, self.project.sample_rate)
+        except Exception:  # noqa: BLE001
+            self.piano.view.set_waveform(None, self.project.sample_rate)
 
     def _on_notes_changed(self, clip_id: str, notes: list) -> None:
         self.bus.dispatch(SetClipNotesCommand(clip_id, notes))
@@ -1705,6 +1730,7 @@ class MainWindow(QMainWindow):
         _, clip = self.project.find_clip(clip_id)
         self.timeline.viewport().update()  # refresh the timeline note preview
         self.piano.refresh_title(clip)
+        self._update_piano_waveform(clip_id)  # keep the overlay in sync with edits
 
     def _preview_pitch(self, pitch: int) -> None:
         """Audition a note on the editing track's instrument (one-shot playback)."""

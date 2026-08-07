@@ -73,6 +73,53 @@ def test_design_synth_patch():
     assert "osc1" not in t.bus.project.track_by_id(tid).synth
 
 
+def test_bar_beat_notes_are_rebased_to_the_clip():
+    """bar/beat are absolute song positions; a clip starting at bar 5 must map
+    'bar 5 beat 1' to its own time 0 (this is what silently ate whole sections)."""
+    t = _tools()
+    t.bus.project.tempo = 120.0          # 0.5 s/beat, 4/4 -> 2 s per bar
+    tid = t.execute("add_track", {})["track_id"]
+    r = t.execute("add_clip", {"track_id": tid, "bar": 5, "bars": 2})
+    assert r["bar"] == 5 and r["bars"] == 2.0
+    cid = r["clip_id"]
+    _, clip = t.bus.project.find_clip(cid)
+    assert clip.start == 8.0 and clip.duration == 4.0
+
+    t.execute("write_midi", {"clip_id": cid, "notes": [
+        {"pitch": 60, "bar": 5, "beat": 1, "beats": 1},       # clip-relative 0.0
+        {"pitch": 62, "bar": 5, "beat": 2.5, "beats": 0.5},   # 'and' of 2 -> 0.75
+        {"pitch": 64, "bar": 6, "beat": 1, "beats": 2},       # next bar -> 2.0
+    ]})
+    _, clip = t.bus.project.find_clip(cid)
+    assert [round(n.start, 3) for n in clip.notes] == [0.0, 0.75, 2.0]
+    assert [round(n.duration, 3) for n in clip.notes] == [0.5, 0.25, 1.0]
+    # every note sits inside the clip, so nothing gets dropped at render time
+    assert all(0 <= n.start < clip.duration for n in clip.notes)
+
+
+def test_notes_outside_the_clip_are_reported_not_dropped():
+    t = _tools()
+    t.bus.project.tempo = 120.0
+    tid = t.execute("add_track", {})["track_id"]
+    cid = t.execute("add_clip", {"track_id": tid, "bar": 1, "bars": 1})["clip_id"]
+    out = t.execute("write_midi", {"clip_id": cid, "notes": [
+        {"pitch": 60, "bar": 1, "beat": 1, "beats": 1},
+        {"pitch": 62, "bar": 9, "beat": 1, "beats": 1},   # way past this 1-bar clip
+    ]})
+    assert "error" in out and "outside" in out["error"]
+    assert "bars 1-1" in out["error"]
+
+
+def test_seconds_form_still_works():
+    t = _tools()
+    tid = t.execute("add_track", {})["track_id"]
+    cid = t.execute("add_clip", {"track_id": tid, "start": 0.0, "duration": 2.0})["clip_id"]
+    t.execute("write_midi", {"clip_id": cid, "notes": [
+        {"pitch": 60, "start": 0.5, "duration": 0.25}]})
+    _, clip = t.bus.project.find_clip(cid)
+    assert clip.notes[0].start == 0.5 and clip.notes[0].duration == 0.25
+
+
 # ---- fake Claude client for the loop --------------------------------------
 def _block(**kw):
     return types.SimpleNamespace(**kw)

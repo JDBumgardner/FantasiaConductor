@@ -19,7 +19,10 @@
       "mcp__fantasia__list_clips",
       "mcp__fantasia__remove_track",
       "mcp__fantasia__remove_clip",
-      "mcp__fantasia__set_notes"
+      "mcp__fantasia__set_notes",
+      "mcp__fantasia__get_synth_patch",
+      "mcp__fantasia__get_clip_notes",
+      "mcp__fantasia__clear_fx"
     ]
   }
 }
