@@ -113,13 +113,16 @@ Downloaded automatically on first use into the library caches
 
 Expect a slow first run of each feature.
 
-## Example projects
+## Project files
 
-`tracks_megadope/` holds a few `.fcp` saves. They open fine, but any **audio**
-clip inside them stores an absolute `source_path` into `.fantasia_cache/` —
-which is gitignored, so those clips resolve to nothing on a fresh clone. MIDI
-tracks, synth patches, FX chains, and the arrangement all load normally. Treat
-them as structural references rather than playable demos.
+Projects save as `.fcp` (JSON — see `fantasia_core/document/serialize.py`).
+Saves are gitignored, including the `tracks_megadope/` working directory:
+they're personal work rather than part of the codebase, and audio clips inside
+them store **absolute** `source_path`s into `.fantasia_cache/`, so they don't
+travel between machines anyway.
+
+To hear the app without building a project first, use **File ▸ Load Demo
+Arrangement** (run `tools/make_demo_audio.py` once to generate the samples).
 
 ## Driving the DAW from Claude (MCP)
 

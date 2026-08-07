@@ -1557,7 +1557,18 @@ class MainWindow(QMainWindow):
         self.timeline.rebuild()
         self._ingest_to_library([{"path": path, "name": "Recording",
                                   "tags": ["recording", "mic", "take", "vocal", "audio"]}])
-        self.statusBar().showMessage(f"Recorded {dur:.1f}s onto the selected track")
+        if self.recorder.had_dropouts:
+            lost = self.recorder.dropped_frames / max(self.project.sample_rate, 1)
+            QMessageBox.warning(
+                self, "Choppy recording",
+                f"The microphone dropped {self.recorder.overflows} buffer(s) "
+                f"(~{lost:.2f}s of audio), so this take will sound choppy.\n\n"
+                "This happens when the machine is busy. Close heavy work "
+                "(generation/rendering) and record again for a clean take.")
+            self.statusBar().showMessage(
+                f"Recorded {dur:.1f}s — WARNING: {self.recorder.overflows} dropout(s)")
+        else:
+            self.statusBar().showMessage(f"Recorded {dur:.1f}s onto the selected track")
 
     def _on_rec_tick(self) -> None:
         self.statusBar().showMessage(f"● Recording…  {self.recorder.elapsed_seconds:5.1f}s  (Ctrl+R to stop)")
