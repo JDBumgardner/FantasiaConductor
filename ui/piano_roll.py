@@ -17,11 +17,13 @@ Ctrl+A/C/X/V/D/I/L/U, Ctrl+1–5 grid, Ctrl+Up/Down velocity, F fold, +/− zoom
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+import time
+from typing import Dict, List, Optional, Set, Tuple
 
-from PySide6.QtCore import QEvent, QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QGraphicsItem,
     QGraphicsRectItem,
@@ -82,6 +84,7 @@ class NoteItem(QGraphicsRectItem):
         self._view = view
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setAcceptHoverEvents(True)
+        self.setZValue(1)
         self._mode: Optional[str] = None
         self.refresh()
 
@@ -172,6 +175,7 @@ class PianoRollView(QGraphicsView):
     cut_requested = Signal()
     paste_requested = Signal()
     split_requested = Signal()
+    need_clip = Signal()
     preview = Signal(int)
     status = Signal(str)   # transient action feedback ("Split 3 notes")
     info = Signal(str)     # live "C#4 · bar 2 beat 3.5" readout while editing
@@ -184,7 +188,10 @@ class PianoRollView(QGraphicsView):
         self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
-        self.setDragMode(QGraphicsView.RubberBandDrag)
+        # Custom rubber-band: Qt's RubberBandDrag swallows double-clicks, so
+        # empty-space create never fired.
+        self.setDragMode(QGraphicsView.NoDrag)
+        self.setMouseTracking(True)
 
         self.clip_id: Optional[str] = None
         self.duration = 0.0
@@ -201,6 +208,12 @@ class PianoRollView(QGraphicsView):
         self._drawing: Optional[NoteItem] = None
         self._draw_anchor = 0.0
         self._just_drew = False
+        self._created_on_press = False
+        self._last_empty_press = 0.0
+        self._last_empty_pos: Optional[QPoint] = None
+        self._rubber_origin: Optional[QPoint] = None
+        self._rubber_item: Optional[QGraphicsRectItem] = None
+        self._rubber_keep: Set[int] = set()
         self._note_len_beats = 1.0
         self._peaks = None          # (min,max) envelope of the clip's rendered audio
         self.clip_bar = 1           # song bar this clip starts on (for the ruler)
@@ -280,7 +293,7 @@ class PianoRollView(QGraphicsView):
 
     def set_draw_mode(self, on: bool) -> None:
         self.draw_mode = bool(on)
-        self.setDragMode(QGraphicsView.NoDrag if self.draw_mode else QGraphicsView.RubberBandDrag)
+        self.setDragMode(QGraphicsView.NoDrag)
         self.status.emit("Draw mode" if self.draw_mode else "Pointer mode")
 
     def set_fold(self, on: bool) -> None:
@@ -465,6 +478,8 @@ class PianoRollView(QGraphicsView):
                 item.setSelected(True)
 
     def _rebuild(self, notes) -> None:
+        self._rubber_item = None
+        self._rubber_origin = None
         self._scene.clear()
         self._items = []
         self._drawing = None
@@ -527,7 +542,9 @@ class PianoRollView(QGraphicsView):
             return 0.1
         return max(MIN_NOTE, self._note_len_beats * self.spb)
 
-    def _insert_note_at(self, scene_pos, length: Optional[float] = None) -> NoteItem:
+    def _insert_note_at(self, scene_pos, length: Optional[float] = None) -> Optional[NoteItem]:
+        if not self._ensure_clip():
+            return None
         start = max(0.0, self.snap_time(self.x_to_time(scene_pos.x())))
         pitch = self.y_to_pitch(scene_pos.y())
         item = NoteItem(Note(pitch, start, length or self._default_len(), 100), self)
@@ -538,6 +555,25 @@ class PianoRollView(QGraphicsView):
         self.preview.emit(pitch)
         self.info.emit(self.describe(pitch, start))
         return item
+
+    def _ensure_clip(self) -> bool:
+        if self.clip_id:
+            return True
+        self.need_clip.emit()
+        return self.clip_id is not None
+
+    def _note_at(self, view_pos) -> Optional[NoteItem]:  # noqa: ANN001
+        for item in self.items(view_pos):
+            if isinstance(item, NoteItem):
+                return item
+        return None
+
+    def _clear_rubber(self) -> None:
+        if self._rubber_item is not None:
+            self._scene.removeItem(self._rubber_item)
+            self._rubber_item = None
+        self._rubber_origin = None
+        self._rubber_keep = set()
 
     # ---- note drag (move / resize / velocity of the selection) -----------
     def begin_note_drag(self, source: NoteItem, mode: str, scene_pos, duplicate: bool = False) -> None:  # noqa: ANN001
@@ -648,31 +684,41 @@ class PianoRollView(QGraphicsView):
             self.status.emit(f"Duplicated {len(new_items)} note(s)")
 
     # ---- mouse -----------------------------------------------------------
+    def _view_pos(self, event) -> QPoint:  # noqa: ANN001
+        return event.position().toPoint()
+
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
-        if event.button() != Qt.LeftButton or self.clip_id is None:
+        if event.button() != Qt.LeftButton:
             super().mouseDoubleClickEvent(event)
             return
-        if self._just_drew:
+        # The second press of a double-click already created/deleted the note.
+        if self._created_on_press or self._just_drew:
+            self._created_on_press = False
             self._just_drew = False
             event.accept()
             return
-        item = self.itemAt(event.position().toPoint())
-        if isinstance(item, NoteItem):
+        vp = self._view_pos(event)
+        scene_pos = self.mapToScene(vp)
+        item = self._note_at(vp)
+        if item is not None:
             self.remove_note(item)
             event.accept()
             return
-        scene_pos = self.mapToScene(event.position().toPoint())
         if scene_pos.x() >= KEY_W:
-            self._insert_note_at(scene_pos)
-            self.commit()
+            if self._insert_note_at(scene_pos) is not None:
+                self.commit()
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        item = self.itemAt(event.position().toPoint())
-        scene_pos = self.mapToScene(event.position().toPoint())
-        if event.button() == Qt.LeftButton and scene_pos.x() < KEY_W and self.clip_id:
+        vp = self._view_pos(event)
+        scene_pos = self.mapToScene(vp)
+        item = self._note_at(vp)
+        if event.button() == Qt.LeftButton and scene_pos.x() < KEY_W:
+            if not self._ensure_clip():
+                event.accept()
+                return
             pitch = self.y_to_pitch(scene_pos.y())
             self.preview.emit(pitch)
             if not (event.modifiers() & Qt.ShiftModifier):
@@ -682,29 +728,73 @@ class PianoRollView(QGraphicsView):
                     note_item.setSelected(True)
             event.accept()
             return
-        if (self.draw_mode and event.button() == Qt.LeftButton
-                and not isinstance(item, NoteItem) and scene_pos.x() >= KEY_W
-                and self.clip_id):
-            start = max(0.0, self.snap_time(self.x_to_time(scene_pos.x())))
-            item = self._insert_note_at(scene_pos)
-            self._drawing = item
-            self._draw_anchor = start
-            self._just_drew = True
+        if event.button() == Qt.LeftButton and scene_pos.x() >= KEY_W and item is None:
+            if not self._ensure_clip():
+                event.accept()
+                return
+            now = time.monotonic()
+            interval = QApplication.doubleClickInterval() / 1000.0
+            is_dbl = (
+                not self.draw_mode
+                and self._last_empty_press > 0
+                and (now - self._last_empty_press) <= interval
+                and self._last_empty_pos is not None
+                and (vp - self._last_empty_pos).manhattanLength() < 8
+            )
+            if self.draw_mode or is_dbl:
+                start = max(0.0, self.snap_time(self.x_to_time(scene_pos.x())))
+                created = self._insert_note_at(scene_pos)
+                if created is not None:
+                    if self.draw_mode:
+                        self._drawing = created
+                        self._draw_anchor = start
+                        self._just_drew = True
+                    else:
+                        self.commit()
+                    self._created_on_press = True
+                self._last_empty_press = 0.0
+                self._last_empty_pos = None
+                event.accept()
+                return
+            self._last_empty_press = now
+            self._last_empty_pos = QPoint(vp)
+            if not (event.modifiers() & Qt.ShiftModifier):
+                self._scene.clearSelection()
+            self._rubber_origin = QPoint(vp)
+            self._rubber_keep = {id(n) for n in self._items if n.isSelected()}
             event.accept()
             return
-        if (not self.draw_mode and event.button() == Qt.LeftButton
-                and not isinstance(item, NoteItem)
-                and not (event.modifiers() & Qt.ShiftModifier)):
-            self._scene.clearSelection()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._drawing is not None:
-            scene_x = self.mapToScene(event.position().toPoint()).x()
+            scene_x = self.mapToScene(self._view_pos(event)).x()
             end = self.snap_time(self.x_to_time(scene_x))
             self._drawing.note.start = min(self._draw_anchor, end)
             self._drawing.note.duration = max(abs(end - self._draw_anchor), MIN_NOTE)
             self._drawing.refresh()
+            event.accept()
+            return
+        if self._rubber_origin is not None:
+            vp = self._view_pos(event)
+            if (vp - self._rubber_origin).manhattanLength() < 4:
+                event.accept()
+                return
+            self._last_empty_press = 0.0
+            self._last_empty_pos = None
+            p0 = self.mapToScene(self._rubber_origin)
+            p1 = self.mapToScene(vp)
+            rect = QRectF(p0, p1).normalized()
+            if self._rubber_item is None:
+                self._rubber_item = QGraphicsRectItem()
+                self._rubber_item.setPen(QPen(QColor(theme.CYAN), 1, Qt.DashLine))
+                self._rubber_item.setBrush(QBrush(QColor(0x25, 0xE6, 0xD5, 40)))
+                self._rubber_item.setZValue(1e6)
+                self._scene.addItem(self._rubber_item)
+            self._rubber_item.setRect(rect)
+            for note_item in self._items:
+                hit = note_item.sceneBoundingRect().intersects(rect)
+                note_item.setSelected(hit or id(note_item) in self._rubber_keep)
             event.accept()
             return
         super().mouseMoveEvent(event)
@@ -715,6 +805,8 @@ class PianoRollView(QGraphicsView):
             self.commit()
             event.accept()
             return
+        self._clear_rubber()
+        self._created_on_press = False
         super().mouseReleaseEvent(event)
 
     # Steal Live shortcuts from window-wide QActions while the roll is focused.
@@ -974,6 +1066,7 @@ class PianoRollPanel(QWidget):
     copy_requested = Signal()
     cut_requested = Signal()
     paste_requested = Signal()
+    need_clip = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -987,7 +1080,7 @@ class PianoRollPanel(QWidget):
         top.setStyleSheet(f"background:{theme.BG_PANEL};")
         top_row = QHBoxLayout(top)
         top_row.setContentsMargins(5, 3, 8, 3)
-        self._title = QLabel("  No clip — double-click a MIDI clip to edit")
+        self._title = QLabel("  Double-click the grid to add a note")
         self._title.setStyleSheet(f"color:{theme.CYAN}; background:transparent;")
 
         btn_style = (
@@ -1050,8 +1143,18 @@ class PianoRollPanel(QWidget):
         self.view.copy_requested.connect(self.copy_requested.emit)
         self.view.cut_requested.connect(self.cut_requested.emit)
         self.view.paste_requested.connect(self.paste_requested.emit)
+        self.view.need_clip.connect(self.need_clip.emit)
         self.view.status.connect(self._on_status)
         self.view.info.connect(self.readout.setText)
+
+        # Work when the toolbar (not the grid) has focus. The view also handles
+        # B/F itself; ShortcutOverride there prevents these from double-firing.
+        sc_b = QShortcut(QKeySequence(Qt.Key_B), self)
+        sc_b.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_b.activated.connect(lambda: self.view.set_draw_mode(not self.view.draw_mode))
+        sc_f = QShortcut(QKeySequence(Qt.Key_F), self)
+        sc_f.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_f.activated.connect(lambda: self.view.set_fold(not self.view.fold))
 
     def _on_status(self, msg: str) -> None:
         # Keep Draw/Fold buttons matched when toggled from the keyboard.

@@ -1494,6 +1494,7 @@ class MainWindow(QMainWindow):
         self.piano.copy_requested.connect(self._on_pr_copy)
         self.piano.cut_requested.connect(self._on_pr_cut)
         self.piano.paste_requested.connect(self._on_pr_paste)
+        self.piano.need_clip.connect(self._on_pr_need_clip)
         self.piano.view.preview.connect(self._preview_pitch)
         self.piano.view.split_requested.connect(self._on_pr_split)
         self.piano.view.status.connect(self.statusBar().showMessage)
@@ -2034,8 +2035,18 @@ class MainWindow(QMainWindow):
     # ---- MIDI / piano roll (MID-3) --------------------------------------
     def _open_piano_roll(self, clip_id: str) -> None:
         track, clip = self.project.find_clip(clip_id)
+        if clip is None:
+            return
+        if not clip.is_midi:
+            if clip.source_path:
+                self.statusBar().showMessage(
+                    "Audio clip — Transcribe or Write MIDI to edit notes")
+                return
+            self.bus.dispatch(MakeMidiClipCommand(clip_id, []))
+            track, clip = self.project.find_clip(clip_id)
+            self.timeline.rebuild()
         if clip is None or not clip.is_midi:
-            return  # only MIDI clips have a piano roll
+            return
         self._editing_clip_id = clip_id
         bar_len = self.project.beats_per_bar * self.project.seconds_per_beat()
         clip_bar = int(round(clip.start / bar_len)) + 1 if bar_len > 0 else 1
@@ -2062,6 +2073,63 @@ class MainWindow(QMainWindow):
             self.piano.view.set_waveform(buf, self.project.sample_rate)
         except Exception:  # noqa: BLE001
             self.piano.view.set_waveform(None, self.project.sample_rate)
+    def _on_pr_need_clip(self) -> None:
+        """Piano roll was used with no clip bound — create or convert one."""
+        clip = self._ensure_midi_clip()
+        if clip is None:
+            self.statusBar().showMessage("Select a track, then add a note")
+            return
+        track, clip = self.project.find_clip(clip.id)
+        if track is None or clip is None:
+            return
+        self._editing_clip_id = clip.id
+        self.piano.edit_clip(
+            clip, self.project.seconds_per_beat(), self.project.beats_per_bar,
+            drum_mode=getattr(track, "is_drum", False),
+        )
+        self.editor.show_piano_roll()
+
+    def _ensure_midi_clip(self):
+        """Return a MIDI clip to edit, creating or converting one if needed."""
+        if self._editing_clip_id is not None:
+            _, clip = self.project.find_clip(self._editing_clip_id)
+            if clip is not None and clip.is_midi:
+                return clip
+        cid = self.timeline.selected_clip_id()
+        if cid:
+            _, clip = self.project.find_clip(cid)
+            if clip is not None and clip.is_midi:
+                return clip
+            if clip is not None and not clip.source_path:
+                self.bus.dispatch(MakeMidiClipCommand(clip.id, []))
+                self.timeline.rebuild()
+                return clip
+        tid = self.selected_track_id
+        if tid is None:
+            if not self.project.tracks:
+                cmd = self.bus.dispatch(AddTrackCommand())
+                tid = cmd.created_track.id
+                self.selected_track_id = tid
+                self._rebuild_all()
+            else:
+                tid = self.project.tracks[0].id
+                self.selected_track_id = tid
+        track = self.project.track_by_id(tid)
+        if track is None:
+            return None
+        playhead = float(self.timeline.playhead)
+        for clip in track.clips:
+            if clip.start <= playhead < clip.end and (clip.is_midi or not clip.source_path):
+                if not clip.is_midi:
+                    self.bus.dispatch(MakeMidiClipCommand(clip.id, []))
+                    self.timeline.rebuild()
+                return clip
+        start = max(0.0, playhead)
+        duration = self.project.seconds_per_beat() * self.project.beats_per_bar * 4
+        cmd = self.bus.dispatch(AddClipCommand(
+            tid, start, duration, name="MIDI", content_type="midi"))
+        self.timeline.rebuild()
+        return cmd.created_clip
 
     def _on_notes_changed(self, clip_id: str, notes: list) -> None:
         self.bus.dispatch(SetClipNotesCommand(clip_id, notes))
@@ -2864,6 +2932,7 @@ class MainWindow(QMainWindow):
             self._warm()  # render MIDI off the audio thread
             self.timeline.rebuild()
             self.statusBar().showMessage(msg)
+            self._open_piano_roll(clip_id)
         elif action == "transcribe":
             self._transcribe_clip(clip)
         elif action == "hum":

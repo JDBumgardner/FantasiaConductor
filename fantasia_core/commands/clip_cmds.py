@@ -229,13 +229,18 @@ class SetClipNotesCommand(Command):
         if clip is None:
             return
         if self._before is _UNSET:
-            self._before = list(clip.notes)
+            self._before = (clip.content_type, list(clip.notes))
+        clip.content_type = "midi"
         clip.notes = list(self.notes)
 
     def undo(self, project) -> None:  # noqa: ANN001
         _, clip = project.find_clip(self.clip_id)
         if clip is not None and self._before is not _UNSET:
-            clip.notes = list(self._before)
+            if isinstance(self._before, tuple):
+                clip.content_type, notes = self._before
+                clip.notes = list(notes)
+            else:
+                clip.notes = list(self._before)
 
 
 class SetClipSourceCommand(Command):
