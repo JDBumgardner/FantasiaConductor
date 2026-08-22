@@ -18,6 +18,8 @@ dependencies = [
     "sounddevice>=0.4.6",
     "pedalboard>=0.9",
     "librosa>=0.10",
+    # Pin modern numba: librosa allows older releases that don't build on 3.12+.
+    "numba>=0.60; python_version>='3.12'",
 ]
 
 [project.optional-dependencies]

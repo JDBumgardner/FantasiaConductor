@@ -27,7 +27,8 @@ _SF_GLOBS = [
     _REPO_SF,
     "/opt/homebrew/opt/fluid-synth/share/fluid-synth/sf2/*.sf2",
     "/opt/homebrew/Cellar/fluid-synth/*/share/fluid-synth/sf2/*.sf2",
-    "/usr/share/sounds/sf2/*.sf2",
+    "/usr/share/sounds/sf2/*.sf2",       # Debian/Ubuntu (fluid-soundfont-*)
+    "/usr/share/soundfonts/*.sf2",       # Arch / Fedora-style layout
 ]
 
 

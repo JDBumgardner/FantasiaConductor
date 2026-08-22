@@ -1346,7 +1346,13 @@ class MainWindow(QMainWindow):
             self._play_timer.start()
             self.statusBar().showMessage("Playing")
         else:
-            self.statusBar().showMessage("No audio output device available")
+            # Keep the macOS message short; on Linux/WSL, Pulse/ALSA is the usual culprit.
+            import sys
+
+            msg = "No audio output device available"
+            if sys.platform.startswith("linux"):
+                msg += " — check Audio menu / run tools/check_audio.sh (WSL: wsl --shutdown)"
+            self.statusBar().showMessage(msg)
 
     def _on_stop(self) -> None:
         self.engine.stop()

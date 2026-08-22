@@ -24,8 +24,23 @@ bind to the same core over a local API without a rewrite.
 Gets the app running — UI, document model, audio engine, editing.
 
 ```bash
-# One-time toolchain (macOS / Homebrew):
+# One-time toolchain — pick your OS:
+
+# macOS / Homebrew:
 brew install python@3.12 portaudio
+
+# Linux / WSL (Debian/Ubuntu):
+sudo apt install python3.12 python3.12-venv portaudio19-dev \
+  libxcb-cursor0 libasound2-plugins pulseaudio-utils
+# Optional but recommended for MIDI + nicer fonts:
+sudo apt install libfluidsynth-dev fluid-soundfont-gm
+# On WSL with WSLg audio, point ALSA at Pulse once:
+#   printf 'pcm.!default { type pulse }\nctl.!default { type pulse }\n' > ~/.asoundrc
+# Prefer the launcher on Linux/WSL (sets library paths + Pulse env):
+#   ./tools/run_app.sh
+# If the app says "No audio output device available" on WSL, Pulse is often
+# wedged — from **Windows** PowerShell run `wsl --shutdown`, reopen WSL, then
+# `./tools/run_app.sh`. Diagnose with `./tools/check_audio.sh`.
 
 # Environment:
 python3.12 -m venv .venv
@@ -34,6 +49,7 @@ pip install -e .
 
 # Run:
 python app.py
+# or: tools/run_app.sh
 ```
 
 ## Full setup
@@ -44,8 +60,13 @@ is opt-in — install only the extras you need.
 ### 1. System libraries
 
 ```bash
+# macOS:
 brew install fluid-synth    # MIDI synthesis  (extra: midi)
 brew install rubberband     # time-stretch    (extra: stretch)
+
+# Linux / WSL (Debian/Ubuntu):
+sudo apt install libfluidsynth-dev fluid-soundfont-gm   # MIDI (extra: midi)
+sudo apt install librubberband-dev rubberband-cli       # stretch (extra: stretch)
 ```
 
 ### 2. Python extras
@@ -81,7 +102,8 @@ curl -L -o assets/soundfonts/GeneralUser-GS.sf2 <url-to-a-gm-sf2>
 1. `$FANTASIA_SOUNDFONT` (explicit path — wins if set)
 2. repo-local `assets/soundfonts/*.sf2`
 3. a Homebrew-installed font
-4. an OS-provided font
+4. an OS-provided font (`/usr/share/sounds/sf2/` on Debian/Ubuntu,
+   `/usr/share/soundfonts/` on Arch/Fedora)
 
 ### 4. Build the sound library (required for search)
 
@@ -121,18 +143,21 @@ which is gitignored, so those clips resolve to nothing on a fresh clone. MIDI
 tracks, synth patches, FX chains, and the arrangement all load normally. Treat
 them as structural references rather than playable demos.
 
-## Driving the DAW from Claude (MCP)
+## Driving the DAW from an agent (MCP)
 
-Claude Code can compose directly in the app — add tracks, write MIDI, design
-synth patches, search sounds, render vocals — by calling the same tools the
-in-app agent uses. Every call goes through the `CommandBus`, so **everything
-Claude does is undoable** with ⌘Z like any manual edit.
+Claude Code or Cursor can compose directly in the app — add tracks, write MIDI,
+design synth patches, search sounds, render vocals — by calling the same tools
+the in-app agent uses. Every call goes through the `CommandBus`, so **everything
+the agent does is undoable** with ⌘Z / Ctrl+Z like any manual edit.
+
+This path uses your Claude Code or Cursor subscription — no separate
+`ANTHROPIC_API_KEY` (that key is only for the optional in-app Agent panel).
 
 ### How it connects
 
 ```
-Claude Code  →  tools/mcp_server.py  →  HTTP bridge :8765  →  running app
-                    (.mcp.json)          (fantasia_core/bridge.py)
+Claude Code / Cursor  →  tools/mcp_server.py  →  HTTP bridge :8765  →  running app
+                    (.mcp.json / .cursor/mcp.json)   (fantasia_core/bridge.py)
 ```
 
 The MCP server is a thin forwarder. It holds no tool definitions of its own —
@@ -146,21 +171,26 @@ automatically with it.
 pip install -e '.[bridge]'
 ```
 
-`.mcp.json` is already committed with repo-relative paths, so it needs no
-edits on a fresh clone. It expects a `.venv` at the repo root.
+`.mcp.json` (Claude Code) uses repo-relative paths; `.cursor/mcp.json` (Cursor)
+uses `${workspaceFolder}` so Cursor can spawn the server reliably. Both expect
+a `.venv` at the repo root with the `bridge` extra installed
+(`uv pip install -e '.[bridge]'` or `pip install -e '.[bridge]'` **inside** the
+venv — not with system `pip`).
 
 ### Use it
 
 ```bash
 # 1. Start the DAW — the control bridge comes up with it on 127.0.0.1:8765
-.venv/bin/python app.py
-
-# 2. In a second terminal, from this same directory:
-claude
+.venv/bin/python app.py   # or: tools/run_app.sh
 ```
 
-Approve the `fantasia` server when Claude Code prompts on first run. Then just
-ask for music:
+Then, in a second session from this same directory:
+
+- **Claude Code:** run `claude`, approve the `fantasia` server on first run.
+- **Cursor:** open this repo, enable the `fantasia` MCP server if prompted, and
+  ask the agent to compose — it will call the same tools over the bridge.
+
+Ask for music:
 
 > *Make a house track at 125 BPM in D major — four-on-the-floor kick, offbeat
 > bass, and a Clair de Lune melody on celesta over it.*

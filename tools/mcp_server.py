@@ -1,13 +1,13 @@
-"""MCP server for Fantasia Conductor — lets Claude Code (or any MCP client)
-drive the running DAW.
+"""MCP server for Fantasia Conductor — lets Claude Code, Cursor, or any MCP
+client drive the running DAW.
 
 Forwards to the app's local control bridge (``fantasia_core/bridge.py``), so the
 app must be running. Tool schemas are fetched live from the app — the MCP tool
 list always matches the in-app agent's tools, with no duplication here.
 
-Register once (already done via the project's .mcp.json), then a Claude Code
-session in this repo can call fantasia tools directly — billed to the Claude
-subscription instead of pay-per-token API.
+Register once (``.mcp.json`` for Claude Code, ``.cursor/mcp.json`` for Cursor),
+then an agent session in this repo can call fantasia tools directly — billed to
+the host subscription instead of a separate pay-per-token API key.
 """
 
 from __future__ import annotations
