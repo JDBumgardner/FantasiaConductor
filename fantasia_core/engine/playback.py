@@ -16,6 +16,7 @@ from typing import Optional
 import numpy as np
 
 from fantasia_core.engine.fx import FxHost
+from fantasia_core.engine.metronome import make_click_bank, mix_metronome
 from fantasia_core.engine.mixer import render_block
 
 try:  # optional at import time
@@ -79,6 +80,8 @@ class PlaybackEngine:
         self.sr = sample_rate
         self.block = block
         self.loop = False
+        self.metronome_enabled = False
+        self._metro_clicks = make_click_bank(self.sr)
         self._cursor = 0  # frames
         self._playing = False
         self._stream = None
@@ -115,6 +118,12 @@ class PlaybackEngine:
             fx_host=self._fx_host, midi_renderer=self.midi_renderer,
             synth_renderer=self.synth_renderer,
         )
+        if self.metronome_enabled:
+            mix_metronome(
+                block, self._cursor, self.sr,
+                self.project.tempo, self.project.beats_per_bar,
+                self._metro_clicks,
+            )
         np.clip(block, -1.0, 1.0, out=block)
         outdata[:] = block
         self._cursor += frames

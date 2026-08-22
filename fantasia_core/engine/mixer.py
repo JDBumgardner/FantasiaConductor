@@ -44,11 +44,21 @@ def _fade_env(clip, a: int, b: int, clip_start: int, clip_end: int, sr: int) -> 
 
 
 def _clip_buffer(pool, clip, sr: int, clip_len_frames: int):  # noqa: ANN001
-    """Pick the source buffer + start index, honouring pitch then reverse.
+    """Pick the source buffer + start index, honouring pitch, reverse, and tempo warp.
 
-    Both transforms are length-preserving, so the slicing math is identical to a
-    plain forward clip once the right buffer/offset are chosen.
+    If ``source_duration`` differs from ``duration`` (tempo follow), the source
+    region is fitted to the clip length. Otherwise this is a plain slice.
     """
+    from fantasia_core.document.tempo import source_span
+
+    span = source_span(clip)
+    dest = float(clip.duration)
+    if dest > 0 and abs(span - dest) > 0.003 and hasattr(pool, "load_warped"):
+        data = pool.load_warped(
+            clip.source_path, clip.source_offset, span, dest,
+            getattr(clip, "pitch_semitones", 0.0), clip.reversed, quality=False,
+        )
+        return data, 0
     if clip.pitch_semitones:
         base = pool.load_pitched(clip.source_path, clip.pitch_semitones)
     else:

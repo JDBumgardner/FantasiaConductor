@@ -137,22 +137,32 @@ class SplitClipCommand(Command):
         if self._new_clip is None:
             self._track_id = track.id
             self._index = track.clips.index(clip)
-            self._left_before = (clip.duration, clip.fade_out)
+            self._left_before = (clip.duration, clip.fade_out, clip.source_duration)
             left_dur = self.at - clip.start
+            span = float(getattr(clip, "source_duration", 0.0) or 0.0)
+            if span > 0 and clip.duration > 0:
+                left_src = left_dur * (span / clip.duration)
+            else:
+                left_src = left_dur
             self._new_clip = Clip(
                 id=project.new_id("c"),
                 name=clip.name,
                 start=self.at,
                 duration=clip.end - self.at,
+                content_type=clip.content_type,
                 source_path=clip.source_path,
-                source_offset=clip.source_offset + left_dur,
+                source_offset=clip.source_offset + left_src,
+                source_duration=(span - left_src) if span > 0 else 0.0,
                 gain_db=clip.gain_db,
                 fade_in=0.0,
                 fade_out=clip.fade_out,
                 reversed=clip.reversed,
+                pitch_semitones=clip.pitch_semitones,
             )
         clip.duration = self.at - clip.start
         clip.fade_out = 0.0
+        if float(getattr(clip, "source_duration", 0.0) or 0.0) > 0 and self._new_clip is not None:
+            clip.source_duration = float(self._left_before[2]) - float(self._new_clip.source_duration)
         track = project.track_by_id(self._track_id)
         if self._new_clip not in track.clips:
             track.clips.insert(self._index + 1, self._new_clip)
@@ -163,7 +173,7 @@ class SplitClipCommand(Command):
             track.clips.remove(self._new_clip)
         _, clip = project.find_clip(self.clip_id)
         if clip is not None and self._left_before is not _UNSET:
-            clip.duration, clip.fade_out = self._left_before
+            clip.duration, clip.fade_out, clip.source_duration = self._left_before
 
 
 class MakeMidiClipCommand(Command):
@@ -260,6 +270,7 @@ class SetClipSourceCommand(Command):
                 clip.content_type,
                 clip.source_path,
                 clip.source_offset,
+                clip.source_duration,
                 clip.duration,
                 list(clip.notes),
             )
@@ -269,14 +280,16 @@ class SetClipSourceCommand(Command):
         clip.source_offset = self.source_offset
         if self.duration is not None:
             clip.duration = self.duration
+        clip.source_duration = float(clip.duration)
 
     def undo(self, project) -> None:  # noqa: ANN001
         _, clip = project.find_clip(self.clip_id)
         if clip is not None and self._before is not _UNSET:
-            ctype, src, off, dur, notes = self._before
+            ctype, src, off, src_dur, dur, notes = self._before
             clip.content_type = ctype
             clip.source_path = src
             clip.source_offset = off
+            clip.source_duration = src_dur
             clip.duration = dur
             clip.notes = list(notes)
 

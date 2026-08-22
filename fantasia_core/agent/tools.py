@@ -199,7 +199,7 @@ class AgentTools:
             {"name": "duplicate_track", "description": "Copy/paste a whole track: create a new track that copies the source track's settings (instrument, FX, synth, gain/pan) and all its clips.",
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"}, "name": {"type": "string"}}, "required": ["track_id"]}},
-            {"name": "set_tempo", "description": "Set the project tempo in BPM.",
+            {"name": "set_tempo", "description": "Set the project tempo in BPM. The whole arrangement follows: MIDI notes and clip positions/durations rescale, and audio clips warp to the new speed.",
              "input_schema": {"type": "object", "properties": {"bpm": {"type": "number"}}, "required": ["bpm"]}},
             {"name": "undo", "description": "Undo the last edit.", "input_schema": {"type": "object", "properties": {}}},
             {"name": "redo", "description": "Redo.", "input_schema": {"type": "object", "properties": {}}},
@@ -326,7 +326,8 @@ class AgentTools:
             cmd = self.bus.dispatch(AddClipCommand(
                 tid, float(a.get("start", c.start)), c.duration, name=c.name,
                 content_type=c.content_type, source_path=c.source_path,
-                source_offset=c.source_offset, notes=notes, gain_db=c.gain_db,
+                source_offset=c.source_offset, source_duration=c.source_duration,
+                notes=notes, gain_db=c.gain_db,
                 fade_in=c.fade_in, fade_out=c.fade_out, reversed=c.reversed,
                 pitch_semitones=c.pitch_semitones))
             return {"clip_id": cmd.created_clip.id} if cmd.created_clip else {"error": "track not found"}
@@ -345,7 +346,8 @@ class AgentTools:
                 notes = [Note(n.pitch, n.start, n.duration, n.velocity) for n in c.notes]
                 self.bus.dispatch(AddClipCommand(
                     nt.id, c.start, c.duration, name=c.name, content_type=c.content_type,
-                    source_path=c.source_path, source_offset=c.source_offset, notes=notes,
+                    source_path=c.source_path, source_offset=c.source_offset,
+                    source_duration=c.source_duration, notes=notes,
                     gain_db=c.gain_db, fade_in=c.fade_in, fade_out=c.fade_out,
                     reversed=c.reversed, pitch_semitones=c.pitch_semitones))
             return {"track_id": nt.id, "num_clips": len(src.clips)}

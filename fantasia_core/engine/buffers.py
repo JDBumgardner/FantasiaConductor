@@ -14,12 +14,30 @@ import numpy as np
 import soundfile as sf
 
 
+def resample_to_length(data: np.ndarray, dest_n: int) -> np.ndarray:
+    """Linear-interpolate a ``(frames, ch)`` buffer to ``dest_n`` frames."""
+    dest_n = max(1, int(dest_n))
+    src_n = len(data)
+    ch = data.shape[1] if data.ndim == 2 else 1
+    if src_n == 0:
+        return np.zeros((dest_n, ch), dtype=np.float32)
+    if src_n == dest_n:
+        return np.ascontiguousarray(data, dtype=np.float32)
+    t_src = np.linspace(0.0, 1.0, src_n, endpoint=False)
+    t_dst = np.linspace(0.0, 1.0, dest_n, endpoint=False)
+    if data.ndim == 1:
+        return np.interp(t_dst, t_src, data).astype(np.float32)
+    chans = [np.interp(t_dst, t_src, data[:, c]) for c in range(data.shape[1])]
+    return np.stack(chans, axis=1).astype(np.float32)
+
+
 class AudioPool:
     def __init__(self, sample_rate: int = 44100) -> None:
         self.sr = sample_rate
         self._cache: Dict[str, np.ndarray] = {}     # path -> (frames, channels) float32
         self._reversed: Dict[str, np.ndarray] = {}  # path -> time-reversed cache
         self._pitched: Dict[str, np.ndarray] = {}   # "path@semis" -> pitch-shifted cache
+        self._warped: Dict[tuple, np.ndarray] = {}  # tempo-follow fit cache
         self._mono: Dict[str, np.ndarray] = {}      # path -> (frames,) float32
 
     # ---- loading ---------------------------------------------------------
@@ -86,12 +104,86 @@ class AudioPool:
     def duration(self, path: str) -> float:
         return len(self.load(path)) / self.sr
 
+    def load_warped(
+        self,
+        path: str,
+        offset: float,
+        src_span: float,
+        dest_dur: float,
+        pitch_semitones: float = 0.0,
+        reversed: bool = False,
+        quality: bool = False,
+    ) -> np.ndarray:
+        """Source region ``[offset, offset+src_span)`` fitted to ``dest_dur``.
+
+        ``quality=True`` uses Rubber Band (pitch-preserving) when available;
+        otherwise (and on the audio thread) a fast linear resample (varispeed).
+        """
+        key = (
+            path,
+            round(float(offset), 5),
+            round(float(src_span), 5),
+            round(float(dest_dur), 5),
+            round(float(pitch_semitones), 3),
+            bool(reversed),
+            bool(quality),
+        )
+        cached = self._warped.get(key)
+        if cached is not None:
+            return cached
+        if pitch_semitones:
+            base = self.load_pitched(path, pitch_semitones)
+        else:
+            base = self.load(path)
+        src_n = max(1, int(round(src_span * self.sr)))
+        dest_n = max(1, int(round(dest_dur * self.sr)))
+        if reversed:
+            src0 = len(base) - int(round(offset * self.sr)) - src_n
+            seg = base[max(0, src0) : max(0, src0) + src_n]
+        else:
+            src0 = int(round(offset * self.sr))
+            seg = base[src0 : src0 + src_n]
+        if len(seg) == 0:
+            out = np.zeros((dest_n, base.shape[1]), dtype=np.float32)
+        elif abs(len(seg) - dest_n) <= 1:
+            out = np.ascontiguousarray(seg, dtype=np.float32)
+            if len(out) < dest_n:
+                pad = np.zeros((dest_n - len(out), out.shape[1]), dtype=np.float32)
+                out = np.vstack([out, pad])
+            else:
+                out = out[:dest_n]
+        else:
+            factor = dest_dur / max(src_span, 1e-9)
+            out = None
+            if quality:
+                try:
+                    from fantasia_core.stretch import available, stretch
+
+                    if available():
+                        out = stretch(seg, self.sr, factor)
+                        if len(out) != dest_n:
+                            out = resample_to_length(out, dest_n)
+                except Exception:  # noqa: BLE001
+                    out = None
+            if out is None:
+                out = resample_to_length(seg, dest_n)
+        self._warped[key] = out
+        return out
+
     def preload(self, project) -> None:  # noqa: ANN001
+        from fantasia_core.document.tempo import source_span
+
         for track in project.tracks:
             for clip in track.clips:
                 if clip.source_path:
                     try:
                         self.load(clip.source_path)
+                        span = source_span(clip)
+                        if abs(span - clip.duration) > 0.003:
+                            self.load_warped(
+                                clip.source_path, clip.source_offset, span, clip.duration,
+                                clip.pitch_semitones, clip.reversed, quality=True,
+                            )
                     except Exception:  # noqa: BLE001 — missing/broken file shouldn't crash the UI
                         pass
 

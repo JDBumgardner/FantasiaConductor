@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from fantasia_core.document.model import Clip, Project
 from ui import theme
+from ui.grid import GridSpec, grid_interval_seconds, seconds_per_beat, snap_time
 from ui.metrics import (
     CLIP_MARGIN,
     PPS_DEFAULT,
@@ -263,8 +264,10 @@ class ClipItem(QGraphicsRectItem):
 
     def _paint_waveform(self, painter: QPainter, rect, pool) -> None:
         buckets = max(1, min(int(rect.width()), 2000))
+        from fantasia_core.document.tempo import source_span
+
         mins, maxs = pool.peaks(
-            self.clip.source_path, self.clip.source_offset, self.clip.duration, buckets
+            self.clip.source_path, self.clip.source_offset, source_span(self.clip), buckets
         )
         n = len(mins)
         if n == 0:
@@ -345,6 +348,7 @@ class TimelineView(QGraphicsView):
     delete_requested = Signal()  # Delete/Backspace while the timeline is focused
     copy_requested = Signal()  # Ctrl+C
     paste_requested = Signal()  # Ctrl+V
+    grid_menu_requested = Signal(object)  # QPoint — empty-lane context menu
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         self._scene = QGraphicsScene()
@@ -366,8 +370,10 @@ class TimelineView(QGraphicsView):
         self.audio_pool = None  # set via set_audio_pool(); used to draw waveforms
         self.selected_track_id: Optional[str] = None
         self.pps = PPS_DEFAULT
-        self.snap_enabled = True
+        self.grid = GridSpec()
         self.playhead = 0.0
+        self.start_position = 0.0  # locator spacebar-play returns to
+        self.playback_active = False
 
         self._clip_items: dict[str, ClipItem] = {}
         self._scene.selectionChanged.connect(self._on_selection_changed)
@@ -401,18 +407,26 @@ class TimelineView(QGraphicsView):
         return theme.BLUE
 
     # ---- grid / snapping -------------------------------------------------
-    def _grid_seconds(self) -> float:
+    @property
+    def snap_enabled(self) -> bool:
+        return self.grid.kind != "off"
+
+    def _grid_seconds(self) -> Optional[float]:
         if self._project is None:
-            return 0.5
-        return self._project.seconds_per_beat()
+            return seconds_per_beat(120.0)
+        return grid_interval_seconds(
+            self.grid, self._project.tempo, self._project.beats_per_bar, self.pps
+        )
 
     def snap(self, seconds: float) -> float:
-        if not self.snap_enabled:
-            return seconds
-        grid = self._grid_seconds()
-        if grid <= 0:
-            return seconds
-        return round(seconds / grid) * grid
+        return snap_time(seconds, self._grid_seconds())
+
+    def locate(self, seconds: float) -> None:
+        """Set the play-start locator (snapped). Moves the cursor when stopped."""
+        t = max(0.0, self.snap(seconds))
+        self.start_position = t
+        if not self.playback_active:
+            self.set_playhead(t)
 
     # ---- rebuild ---------------------------------------------------------
     def rebuild(self) -> None:
@@ -443,6 +457,12 @@ class TimelineView(QGraphicsView):
         item = self._clip_items.get(clip_id)
         if item is not None:
             item.refresh_geometry()
+
+    def refresh_geometries(self) -> None:
+        """Re-place every clip after a tempo rescale (no scene rebuild)."""
+        for item in self._clip_items.values():
+            item.refresh_geometry()
+        self._update_scene_rect()
 
     # ---- zoom ------------------------------------------------------------
     def set_pps(self, pps: float) -> None:
@@ -505,22 +525,31 @@ class TimelineView(QGraphicsView):
                 return
         super().keyPressEvent(event)
 
-    # ---- mouse: ruler scrub ---------------------------------------------
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        item = self.itemAt(event.pos())
+        if isinstance(item, ClipItem):
+            super().contextMenuEvent(event)
+            return
+        self.grid_menu_requested.emit(event.globalPos())
+        event.accept()
+
+    # ---- mouse: ruler / empty-lane locate --------------------------------
     def mousePressEvent(self, event) -> None:  # noqa: N802
         scene_pos = self.mapToScene(event.position().toPoint())
         view_top = self.mapToScene(0, 0).y()
-        if view_top <= scene_pos.y() <= view_top + RULER_H:
-            self.set_playhead(self.snap(max(0.0, scene_pos.x() / self.pps)))
+        if event.button() == Qt.LeftButton and view_top <= scene_pos.y() <= view_top + RULER_H:
+            self.locate(max(0.0, scene_pos.x() / self.pps))
             event.accept()
             return
 
-        # Clicking an empty lane selects that track (clicking a clip selects it
-        # via the scene's own selection handling).
         item = self.itemAt(event.position().toPoint())
-        if not isinstance(item, ClipItem) and self._project is not None:
-            row = int((scene_pos.y() - RULER_H) // TRACK_H)
-            if 0 <= row < len(self._project.tracks):
-                self.track_selected.emit(self._project.tracks[row].id)
+        if event.button() == Qt.LeftButton and not isinstance(item, ClipItem):
+            # Empty arrangement click sets the play-start locator (snapped).
+            self.locate(max(0.0, scene_pos.x() / self.pps))
+            if self._project is not None:
+                row = int((scene_pos.y() - RULER_H) // TRACK_H)
+                if 0 <= row < len(self._project.tracks):
+                    self.track_selected.emit(self._project.tracks[row].id)
 
         super().mousePressEvent(event)
 
@@ -540,20 +569,48 @@ class TimelineView(QGraphicsView):
                 color = _lane_color(i)
             painter.fillRect(QRectF(rect.left(), y0, rect.width(), TRACK_H), color)
 
-        # Vertical beat/bar grid.
+        # Vertical grid: lines at the snap interval, weighted bar > beat > subdiv.
+        # Off still draws faint bar lines so the arrangement isn't a blank field.
         spb = self._project.seconds_per_beat()
         bpb = max(self._project.beats_per_bar, 1)
-        beat_px = spb * self.pps
-        if beat_px <= 0:
-            return
-        first_beat = max(int(rect.left() // beat_px), 0)
-        last_beat = int(rect.right() // beat_px) + 1
+        bar_sec = spb * bpb
+        interval = self._grid_seconds()
         beat_pen = QPen(QColor(*theme.GRID_BEAT), 1)
         bar_pen = QPen(QColor(*theme.GRID_BAR), 1)
-        for b in range(first_beat, last_beat + 1):
-            x = b * beat_px
-            painter.setPen(bar_pen if b % bpb == 0 else beat_pen)
-            painter.drawLine(int(x), int(rect.top()), int(x), int(rect.bottom()))
+        subdiv_pen = QPen(QColor(*theme.GRID_SUBDIV), 1)
+        y0, y1 = int(rect.top()), int(rect.bottom())
+
+        def _on_period(t: float, period: float) -> bool:
+            if period <= 0:
+                return False
+            q = t / period
+            return abs(q - round(q)) < 1e-4
+
+        def _draw_step(step_sec: float, classify: bool) -> None:
+            step_px = step_sec * self.pps
+            if step_px < 6.0:
+                return
+            first = max(int(rect.left() // step_px), 0)
+            last = int(rect.right() // step_px) + 1
+            for i in range(first, last + 1):
+                t = i * step_sec
+                if classify and _on_period(t, bar_sec):
+                    painter.setPen(bar_pen)
+                elif classify and _on_period(t, spb):
+                    painter.setPen(beat_pen)
+                elif classify:
+                    painter.setPen(subdiv_pen)
+                else:
+                    painter.setPen(bar_pen)
+                painter.drawLine(int(i * step_px), y0, int(i * step_px), y1)
+
+        if interval is None:
+            _draw_step(bar_sec, classify=False)
+        else:
+            _draw_step(interval, classify=True)
+            # Triplet (and other) intervals may miss bar lines — keep bars visible.
+            if bar_sec > 0 and not _on_period(interval, bar_sec) and not _on_period(bar_sec, interval):
+                _draw_step(bar_sec, classify=False)
 
     # ---- foreground: ruler pinned to viewport top -----------------------
     def drawForeground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
