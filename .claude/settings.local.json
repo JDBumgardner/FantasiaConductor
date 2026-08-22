@@ -22,7 +22,12 @@
       "mcp__fantasia__set_notes",
       "mcp__fantasia__get_synth_patch",
       "mcp__fantasia__get_clip_notes",
-      "mcp__fantasia__clear_fx"
+      "mcp__fantasia__clear_fx",
+      "mcp__fantasia__stretch_clip",
+      "Bash(.venv/bin/python -c \"import basic_pitch; print\\('basic-pitch OK', basic_pitch.__version__ if hasattr\\(basic_pitch,'__version__'\\) else ''\\)\")",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(ps -eo pid,etime,command)",
+      "Bash(curl -s -m 3 http://127.0.0.1:8765/tools -o /dev/null -w \"HTTP %{http_code} in %{time_total}s\\\\n\")"
     ]
   }
 }

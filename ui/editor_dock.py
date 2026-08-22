@@ -11,12 +11,14 @@ from PySide6.QtWidgets import (
     QDockWidget,
     QHBoxLayout,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from ui import theme
+from ui.eq_curve import EqCurveView
 from ui.piano_roll import PianoRollPanel
 from ui.synth_panel import SynthPanel
 
@@ -38,36 +40,57 @@ class EditorDock(QDockWidget):
         row.setSpacing(6)
         self.btn_piano = QPushButton("🎹 Piano Roll")
         self.btn_synth = QPushButton("🎛 Synth")
+        self.btn_eq = QPushButton("📈 EQ")
         group = QButtonGroup(self)
         group.setExclusive(True)
-        for b in (self.btn_piano, self.btn_synth):
+        for b in (self.btn_piano, self.btn_synth, self.btn_eq):
             b.setCheckable(True)
-            b.setMinimumWidth(110)
+            b.setMinimumWidth(100)
             group.addButton(b)
         self.btn_piano.setChecked(True)
         row.addWidget(self.btn_piano)
         row.addWidget(self.btn_synth)
+        row.addWidget(self.btn_eq)
         row.addStretch(1)
 
         self.stack = QStackedWidget()
         self.piano = PianoRollPanel()
         self.synth = SynthPanel()
-        self.stack.addWidget(self.piano)   # index 0
-        self.stack.addWidget(self.synth)   # index 1
-        self.view = self.piano.view        # convenience alias used by the window
+        # The synth's slider grid has a tall minimum that would stop the whole
+        # dock from being dragged smaller — let it scroll instead.
+        synth_scroll = QScrollArea()
+        synth_scroll.setWidget(self.synth)
+        synth_scroll.setWidgetResizable(True)
+        synth_scroll.setFrameShape(QScrollArea.NoFrame)
+        synth_scroll.setMinimumHeight(60)
+        self.piano.setMinimumHeight(60)
+        self.eq = EqCurveView()
+        self.stack.addWidget(self.piano)     # index 0
+        self.stack.addWidget(synth_scroll)   # index 1
+        self.stack.addWidget(self.eq)        # index 2
+        self.stack.setMinimumHeight(60)
+        self.view = self.piano.view          # convenience alias used by the window
 
         v.addWidget(bar)
         v.addWidget(self.stack, 1)
         self.setWidget(body)
-        self.setMinimumHeight(240)
+        self.setMinimumHeight(140)
 
         self.btn_piano.clicked.connect(lambda: self.switch_to_piano_mode())
         self.btn_synth.clicked.connect(lambda: self._set_mode(1))
+        self.btn_eq.clicked.connect(lambda: self._set_mode(2))
 
     def _set_mode(self, idx: int) -> None:
         self.stack.setCurrentIndex(idx)
         self.btn_piano.setChecked(idx == 0)
         self.btn_synth.setChecked(idx == 1)
+        self.btn_eq.setChecked(idx == 2)
+
+    def show_eq(self, specs, sr: int = 44100, title: str = "") -> None:
+        self.eq.set_chain(specs, sr, title)
+        self._set_mode(2)
+        self.show()
+        self.raise_()
 
     def switch_to_piano_mode(self) -> None:
         """Flip to piano-roll mode without forcing the dock open."""

@@ -199,9 +199,36 @@ class TrackHeader(QWidget):
             head = menu.addAction("FX: " + ", ".join(self._fx_types))
             head.setEnabled(False)
             menu.addSeparator()
-        for label, name in [("Add Reverb", "add_reverb"), ("Add Delay", "add_delay"),
-                            ("Add Low-pass", "add_lowpass"), ("Add High-pass", "add_highpass")]:
-            mapping[menu.addAction(label)] = name
+        # Mixing chain, in the order you'd normally use it: EQ -> colour -> dynamics.
+        eq = menu.addMenu("EQ")
+        for label, name in [
+            ("High-pass 120 Hz  (remove rumble)", "add_highpass"),
+            ("Low-pass 1.2 kHz  (darken)", "add_lowpass"),
+            ("Low Shelf…  (boost/cut bass)", "add_eq_low_shelf"),
+            ("Bell / Peak…  (shape a band)", "add_eq_peak"),
+            ("High Shelf…  (air / brightness)", "add_eq_high_shelf"),
+        ]:
+            mapping[eq.addAction(label)] = name
+
+        col = menu.addMenu("Colour")
+        for label, name in [
+            ("Saturator…  (warmth, harmonics)", "add_saturator"),
+            ("Distortion  (hard drive)", "add_distortion"),
+        ]:
+            mapping[col.addAction(label)] = name
+
+        dyn = menu.addMenu("Dynamics")
+        for label, name in [
+            ("Compressor…  (even out levels)", "add_compressor"),
+            ("Limiter  (catch peaks)", "add_limiter"),
+            ("Noise Gate  (cut silence/bleed)", "add_gate"),
+        ]:
+            mapping[dyn.addAction(label)] = name
+
+        space = menu.addMenu("Space")
+        for label, name in [("Reverb", "add_reverb"), ("Delay", "add_delay")]:
+            mapping[space.addAction(label)] = name
+
         menu.addSeparator()
         mapping[menu.addAction("Clear FX")] = "clear_fx"
         menu.addSeparator()
@@ -227,7 +254,11 @@ class TrackHeaderPanel(QScrollArea):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setFixedWidth(240)
+        # Resizable rather than fixed: the splitter can widen this to read long
+        # track names, or narrow it to give the timeline room.
+        self.setMinimumWidth(150)
+        self.setMaximumWidth(460)
+        self.resize(240, self.height())
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # driven by sync
