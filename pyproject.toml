@@ -52,6 +52,9 @@ separate = [
 ]
 # Text-to-speech: Kokoro via mlx-audio — runs on the Apple GPU (MLX), no torch/MPS.
 # misaki[en] is the phonemizer. Apple Silicon only.
+# The same extra also covers voice cloning (Chatterbox, ~0.7GB, downloads on
+# first use). Fish Speech S2 Pro is the better cloning model but needs >8GB RAM;
+# see fantasia_core/tts.py.
 voice = [
     "mlx-audio>=0.2",
     "misaki[en]>=0.9",

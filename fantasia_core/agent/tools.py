@@ -192,11 +192,14 @@ class AgentTools:
                  "required": ["prompt"]}},
             {"name": "separate_stems", "description": "Isolate/extract instruments from an audio clip with Demucs — splits it into 4 stems (drums, bass, vocals, other), each placed on its own new track. Works on any audio clip (imported or generated). Slow (runs off-thread).",
              "input_schema": {"type": "object", "properties": {"clip_id": {"type": "string"}}, "required": ["clip_id"]}},
-            {"name": "speak", "description": "Text-to-speech: synthesize spoken voice (Kokoro) and drop it into a clip. Give clip_id to fill an existing clip, or track_id (+ optional start) for a new clip. Voices: af_heart/af_bella/am_michael/am_adam (American), bf_emma/bm_george (British). Fast (runs on the GPU).",
+            {"name": "speak", "description": "Text-to-speech: synthesize spoken voice and drop it into a clip. Give clip_id to fill an existing clip, or track_id (+ optional start) for a new clip. Two engines: by default Kokoro (fast, pick 'voice': af_heart/af_bella/am_michael/am_adam American, bf_emma/bm_george British). Pass 'ref_voice' (a slug from list_reference_voices) to instead clone that reference timbre (Chatterbox) — much more natural, but ~4x slower than real time. Runs on the GPU.",
              "input_schema": {"type": "object", "properties": {
                  "text": {"type": "string"}, "voice": {"type": "string"}, "speed": {"type": "number", "description": "0.5-2.0, default 1"},
+                 "ref_voice": {"type": "string", "description": "Reference-voice slug from list_reference_voices; switches to voice cloning"},
                  "clip_id": {"type": "string"}, "track_id": {"type": "string"}, "start": {"type": "number"}},
                  "required": ["text"]}},
+            {"name": "list_reference_voices", "description": "List the reference voices available for cloning. Each has a 'slug' to pass as 'ref_voice' to speak/sing/sing_melody, which switches those tools to the cloning engine and reproduces that timbre. Call this before offering the user a choice of voice.",
+             "input_schema": {"type": "object", "properties": {}}},
             {"name": "vocal_fx", "description": "Apply a WORLD-vocoder vocal effect to an audio (vocal) clip: 'autotune' (snap pitch to key+scale), 'harmony' (add a harmony voice a given interval up/down on a NEW track), 'formant_up'/'formant_down' (brighter/darker character), 'deess' (tame sibilance), 'double' (thicken). Formant-preserving, so it sounds natural.",
              "input_schema": {"type": "object", "properties": {
                  "clip_id": {"type": "string"},
@@ -206,7 +209,7 @@ class AgentTools:
                  "strength": {"type": "number", "description": "autotune 0-1"},
                  "semitones": {"type": "number", "description": "harmony interval, e.g. 4 (3rd), 7 (5th), -5"}},
                  "required": ["clip_id", "effect"]}},
-            {"name": "sing_melody", "description": "Compose-and-sing IN TIME with the song: you provide the vocal melody as notes timed in BEATS (grid-locked to the project tempo) plus lyrics, and it renders a sung vocal onto a new track at the right bar. Use this to add a vocal that syncs with the arrangement — first call get_project for the tempo/key context, pick notes in the song's key, one syllable per note. Times are in beats so it's always on the grid.",
+            {"name": "sing_melody", "description": "Compose-and-sing IN TIME with the song (optionally in a cloned voice via 'ref_voice'): you provide the vocal melody as notes timed in BEATS (grid-locked to the project tempo) plus lyrics, and it renders a sung vocal onto a new track at the right bar. Use this to add a vocal that syncs with the arrangement — first call get_project for the tempo/key context, pick notes in the song's key, one syllable per note. Times are in beats so it's always on the grid.",
              "input_schema": {"type": "object", "properties": {
                  "notes": {"type": "array", "items": {"type": "object", "properties": {
                      "pitch": {"type": "integer", "description": "MIDI pitch (60=middle C)"},
@@ -215,11 +218,13 @@ class AgentTools:
                      "velocity": {"type": "integer"}}, "required": ["pitch", "beat", "beats"]}},
                  "lyrics": {"type": "string", "description": "one syllable per note; hyphen-split words"},
                  "start_beat": {"type": "number", "description": "where the vocal begins, in beats from the song start (0 = bar 1). A bar = beats_per_bar beats."},
-                 "voice": {"type": "string"}},
+                 "voice": {"type": "string"},
+                 "ref_voice": {"type": "string", "description": "Reference-voice slug to clone (Chatterbox); slower but far more natural"}},
                  "required": ["notes", "lyrics"]}},
-            {"name": "sing", "description": "Sing a melody: turn a MIDI clip's notes into a sung vocal using lyrics (one syllable per note; split words with hyphens, e.g. 'fan-ta-si-a'). Vocoder-style singing placed on a new vocal track. Draw/write the melody first, then sing it.",
+            {"name": "sing", "description": "Sing a melody: turn a MIDI clip's notes into a sung vocal using lyrics (one syllable per note; split words with hyphens, e.g. 'fan-ta-si-a'). Vocoder-style singing placed on a new vocal track. Draw/write the melody first, then sing it. Pass 'ref_voice' to sing in a cloned voice (slower).",
              "input_schema": {"type": "object", "properties": {
-                 "clip_id": {"type": "string"}, "lyrics": {"type": "string"}, "voice": {"type": "string"}},
+                 "clip_id": {"type": "string"}, "lyrics": {"type": "string"}, "voice": {"type": "string"},
+                 "ref_voice": {"type": "string", "description": "Reference-voice slug to clone (Chatterbox); slower but far more natural"}},
                  "required": ["clip_id", "lyrics"]}},
             {"name": "split_clip", "description": "Split a clip at an absolute timeline position (seconds).",
              "input_schema": {"type": "object", "properties": {
@@ -433,6 +438,14 @@ class AgentTools:
             return {"error": "generate_audio must be run off the UI thread"}
         if name == "separate_stems":
             return {"error": "separate_stems must be run off the UI thread"}
+        if name == "list_reference_voices":
+            # Pure catalog read — no audio work, so it can answer on this thread.
+            from fantasia_core import voices as voice_cat
+
+            return {"voices": [
+                {"slug": v.slug, "name": v.name, "source": v.source,
+                 "seconds": round(v.seconds, 1), "tags": v.tags}
+                for v in voice_cat.list_voices()]}
         if name == "speak":
             return {"error": "speak must be run off the UI thread"}
         if name == "sing":

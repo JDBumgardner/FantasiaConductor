@@ -28,11 +28,15 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QInputDialog,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
+    QPushButton,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -655,14 +659,14 @@ class _SearchWorker(QThread):
 
 
 class _TTSWorker(QThread):
-    """Runs Kokoro (MLX) text-to-speech off the UI thread; writes a WAV and
-    optionally ingests it into the sound library."""
+    """Runs text-to-speech (Kokoro, or the cloning engine when a reference
+    voice is given) off the UI thread; writes a WAV and optionally ingests it."""
 
     done = Signal(str, str, float)  # (clip_id, path, duration)
     failed = Signal(str, str)
 
     def __init__(self, clip_id: str, text: str, voice: str, speed: float, path: str,
-                 search=None) -> None:
+                 search=None, ref_voice=None) -> None:
         super().__init__()
         self._clip_id = clip_id
         self._text = text
@@ -670,20 +674,23 @@ class _TTSWorker(QThread):
         self._speed = speed
         self._path = path
         self._search = search
+        self._ref = ref_voice
 
     def run(self) -> None:
         try:
             from fantasia_core.tts import synthesize_to_file
 
             dur = synthesize_to_file(self._text, self._path, voice=self._voice,
-                                     speed=self._speed, sr_out=44100)
+                                     speed=self._speed, sr_out=44100,
+                                     ref_voice=self._ref)
             if self._search is not None:
                 try:
                     name = f"voice: {self._text[:40]}"
                     self._search.replace_name(name)  # same text → replace the old take
                     self._search.ingest_tagged([{
                         "path": self._path, "name": name,
-                        "tags": ["voice", "speech", "vocal", "tts", "spoken", self._voice]}])
+                        "tags": ["voice", "speech", "vocal", "tts", "spoken",
+                                 self._ref or self._voice]}])
                 except Exception:  # noqa: BLE001
                     pass
             self.done.emit(self._clip_id, self._path, dur)
@@ -692,7 +699,7 @@ class _TTSWorker(QThread):
 
 
 class _TTSDialog(QDialog):
-    """Text + voice + speed for Kokoro speech synthesis."""
+    """Text + voice + speed for speech synthesis (Kokoro or a cloned voice)."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -702,10 +709,7 @@ class _TTSDialog(QDialog):
         self.text.setPlaceholderText("Type what the voice should say…")
         self.text.setMinimumSize(360, 90)
         self.voice = QComboBox()
-        from fantasia_core.tts import VOICES
-
-        for vid, label in VOICES:
-            self.voice.addItem(label, vid)
+        _fill_voice_combo(self.voice)
         self.speed = QDoubleSpinBox()
         self.speed.setRange(0.5, 2.0)
         self.speed.setValue(1.0)
@@ -714,7 +718,10 @@ class _TTSDialog(QDialog):
         form.addRow("Text:", self.text)
         form.addRow("Voice:", self.voice)
         form.addRow("Speed:", self.speed)
-        note = QLabel("Runs on the Apple GPU (MLX) — first use loads the model (~10s).")
+        note = QLabel("Runs on the Apple GPU (MLX). Kokoro is near-instant; a cloned "
+                      "cloned voice is far more natural but takes "
+                      "a while per line.")
+        note.setWordWrap(True)
         note.setStyleSheet("color:#8a8f96; font-size:11px;")
         form.addRow(note)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -723,8 +730,181 @@ class _TTSDialog(QDialog):
         form.addRow(buttons)
 
     def result_values(self):
-        return (self.text.toPlainText().strip(), self.voice.currentData(),
-                float(self.speed.value()))
+        voice, ref = _voice_choice(self.voice)
+        return (self.text.toPlainText().strip(), voice, float(self.speed.value()), ref)
+
+
+def _fill_voice_combo(combo) -> None:
+    """Populate a voice picker with both engines.
+
+    Item data is ``(backend, id)``: Kokoro's nine fixed voices, then every
+    reference voice in the catalog — picking one of those routes synthesis
+    through Chatterbox, which clones it. Kept in one combo because from the
+    user's side it is a single question: which voice?
+    """
+    from fantasia_core import tts, voices as voice_cat
+
+    for vid, label in tts.VOICES:
+        combo.addItem(f"Kokoro · {label}", ("kokoro", vid))
+    refs = voice_cat.list_voices()
+    if not refs:
+        return
+    ready = tts.clone_downloaded()
+    suffix = "" if ready else "  ⬇ downloads model"
+    combo.insertSeparator(combo.count())
+    for v in refs:
+        combo.addItem(f"Clone · {v.name}{suffix}", ("clone", v.slug))
+
+
+def _voice_choice(combo):
+    """``(kokoro_voice_id, ref_voice_slug)`` from a combo filled by
+    :func:`_fill_voice_combo`; exactly one of the two is meaningful."""
+    data = combo.currentData()
+    if isinstance(data, tuple) and data[0] == "clone":
+        return "af_heart", data[1]
+    vid = data[1] if isinstance(data, tuple) else (data or "af_heart")
+    return vid, None
+
+
+class _SeedVoicesWorker(QThread):
+    """Renders the built-in reference clips (nine Kokoro voices) off the UI thread."""
+
+    progress = Signal(int, int, str)
+    done = Signal(int)
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            from fantasia_core import voices as voice_cat
+
+            made = voice_cat.build_builtin(
+                progress=lambda i, n, label: self.progress.emit(i, n, label))
+            self.done.emit(len(made))
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+
+
+class _VoiceCatalogDialog(QDialog):
+    """Manage the reference voices available for cloning.
+
+    The starter set is synthesized (Kokoro reading a fixed line), so a fresh
+    install has something to pick from without anyone's likeness in it. Your own
+    voice comes from importing a recording.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Reference Voices")
+        self.resize(520, 420)
+        lay = QVBoxLayout(self)
+
+        blurb = QLabel(
+            "Voices the synthesizer can clone. Pick any of these as the voice for "
+            "Text to Speech or Sing. Import a recording of yourself to sing in your "
+            "own voice — ten seconds of clear speech is plenty.")
+        blurb.setWordWrap(True)
+        blurb.setStyleSheet("color:#8a8f96; font-size:11px;")
+        lay.addWidget(blurb)
+
+        self.list = QListWidget()
+        lay.addWidget(self.list, 1)
+
+        row = QHBoxLayout()
+        self.btn_import = QPushButton("Import Recording…")
+        self.btn_seed = QPushButton("Add Built-in Voices")
+        self.btn_remove = QPushButton("Remove")
+        for b in (self.btn_import, self.btn_seed, self.btn_remove):
+            row.addWidget(b)
+        row.addStretch(1)
+        lay.addLayout(row)
+
+        self.status = QLabel("")
+        self.status.setStyleSheet("color:#8a8f96; font-size:11px;")
+        lay.addWidget(self.status)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        lay.addWidget(buttons)
+
+        self.btn_import.clicked.connect(self._import)
+        self.btn_seed.clicked.connect(self._seed)
+        self.btn_remove.clicked.connect(self._remove)
+        self._worker = None
+        self._refresh()
+
+    def _refresh(self) -> None:
+        from fantasia_core import tts, voices as voice_cat
+
+        self.list.clear()
+        for v in voice_cat.list_voices():
+            mark = "🎙" if v.source == "recording" else "🔊"
+            item = QListWidgetItem(f"{mark}  {v.name}   ·  {v.seconds:.0f}s")
+            item.setData(Qt.UserRole, v.slug)
+            self.list.addItem(item)
+        n = self.list.count()
+        extra = "" if tts.clone_downloaded() else "  ·  cloning model downloads on first use (~0.7GB)"
+        self.status.setText(f"{n} reference voice{'' if n == 1 else 's'}{extra}")
+
+    def _import(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose a voice recording", "",
+            "Audio (*.wav *.flac *.aiff *.aif *.mp3 *.m4a)")
+        if not path:
+            return
+        name, ok = QInputDialog.getText(self, "Name this voice", "Name:",
+                                        QLineEdit.Normal, "My Voice")
+        if not ok or not name.strip():
+            return
+        # Optional: only transcript-conditioned engines use it, and the current
+        # one doesn't — so never block the import on it.
+        text, _ok = QInputDialog.getText(
+            self, "Transcript (optional)",
+            "What is said in the clip? Leave blank to skip:", QLineEdit.Normal, "")
+        try:
+            from fantasia_core import voices as voice_cat
+
+            voice_cat.import_recording(path, name.strip(), (text or "").strip())
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Import failed", str(exc))
+            return
+        self._refresh()
+
+    def _seed(self) -> None:
+        if self._worker is not None:
+            return
+        self.btn_seed.setEnabled(False)
+        self._worker = _SeedVoicesWorker()
+        self._worker.progress.connect(
+            lambda i, n, label: self.status.setText(f"Rendering {i + 1}/{n} — {label}"))
+        self._worker.done.connect(self._seeded)
+        self._worker.failed.connect(self._seed_failed)
+        self._worker.start()
+
+    def _seeded(self, n: int) -> None:
+        self._worker = None
+        self.btn_seed.setEnabled(True)
+        self._refresh()
+
+    def _seed_failed(self, msg: str) -> None:
+        self._worker = None
+        self.btn_seed.setEnabled(True)
+        self.status.setText(f"Failed: {msg}")
+
+    def _remove(self) -> None:
+        item = self.list.currentItem()
+        if item is None:
+            return
+        slug = item.data(Qt.UserRole)
+        if QMessageBox.question(self, "Remove voice",
+                                f"Remove “{item.text().split('  ')[-1]}” from the "
+                                "catalog? The original file is not touched."
+                                ) != QMessageBox.Yes:
+            return
+        from fantasia_core import voices as voice_cat
+
+        voice_cat.remove(slug)
+        self._refresh()
 
 
 class _SingWorker(QThread):
@@ -735,7 +915,7 @@ class _SingWorker(QThread):
     failed = Signal(str, str)
 
     def __init__(self, clip_id: str, notes: list, lyrics: str, voice: str, path: str,
-                 search=None) -> None:
+                 search=None, ref_voice=None) -> None:
         super().__init__()
         self._clip_id = clip_id
         self._notes = notes
@@ -743,18 +923,20 @@ class _SingWorker(QThread):
         self._voice = voice
         self._path = path
         self._search = search
+        self._ref = ref_voice
 
     def run(self) -> None:
         try:
             from fantasia_core.sing import sing_to_file
 
             dur = sing_to_file(self._notes, self._lyrics, self._path,
-                               voice=self._voice, sr=44100)
+                               voice=self._voice, sr=44100, ref_voice=self._ref)
             if self._search is not None:
                 try:
                     self._search.ingest_tagged([{
                         "path": self._path, "name": f"vocal: {self._lyrics[:36]}",
-                        "tags": ["singing", "vocal", "voice", "melody", "sung", self._voice]}])
+                        "tags": ["singing", "vocal", "voice", "melody", "sung",
+                                 self._ref or self._voice]}])
                 except Exception:  # noqa: BLE001
                     pass
             self.done.emit(self._clip_id, self._path, dur)
@@ -774,10 +956,7 @@ class _SingDialog(QDialog):
                                      "fan-ta-si-a con-duc-tor")
         self.text.setMinimumSize(360, 90)
         self.voice = QComboBox()
-        from fantasia_core.tts import VOICES
-
-        for vid, label in VOICES:
-            self.voice.addItem(label, vid)
+        _fill_voice_combo(self.voice)
         form.addRow(f"Lyrics ({note_count} notes):", self.text)
         form.addRow("Voice:", self.voice)
         note = QLabel("Vocoder-style singing — each syllable is pitched to its note. "
@@ -791,7 +970,8 @@ class _SingDialog(QDialog):
         form.addRow(buttons)
 
     def result_values(self):
-        return self.text.toPlainText().strip(), self.voice.currentData()
+        voice, ref = _voice_choice(self.voice)
+        return self.text.toPlainText().strip(), voice, ref
 
 
 class _AutotuneDialog(QDialog):
@@ -976,7 +1156,8 @@ class _AgentWorker(QThread):
             cache.mkdir(parents=True, exist_ok=True)
             path = str(cache / f"sing_{uuid.uuid4().hex[:8]}.wav")
             dur = sing_to_file(info["notes"], str(args["lyrics"]), path,
-                               voice=args.get("voice", "af_heart"), sr=44100)
+                               voice=args.get("voice", "af_heart"), sr=44100,
+                               ref_voice=args.get("ref_voice"))
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
         if self._search is not None:
@@ -1044,13 +1225,15 @@ class _AgentWorker(QThread):
         info = self._marshal("_prep_sing", {"clip_id": args.get("clip_id")}) or {}
         if info.get("error"):
             return {"error": info["error"]}
-        self.note.emit("🎤 Singing the melody on the GPU…")
+        self.note.emit("🎤 Singing the melody in a cloned voice…"
+                       if args.get("ref_voice") else "🎤 Singing the melody on the GPU…")
         try:
             cache = pathlib.Path.cwd() / ".fantasia_cache" / "voice"
             cache.mkdir(parents=True, exist_ok=True)
             path = str(cache / f"sing_{uuid.uuid4().hex[:8]}.wav")
             dur = sing_to_file(info["notes"], str(args["lyrics"]), path,
-                               voice=args.get("voice", "af_heart"), sr=44100)
+                               voice=args.get("voice", "af_heart"), sr=44100,
+                               ref_voice=args.get("ref_voice"))
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
         if self._search is not None:
@@ -1073,14 +1256,16 @@ class _AgentWorker(QThread):
             return {"error": str(exc)}
         if not available():
             return {"error": "text-to-speech unavailable — pip install mlx-audio 'misaki[en]'"}
-        self.note.emit("🗣️ Synthesizing speech on the GPU…")
+        self.note.emit("🗣️ Cloning the reference voice…"
+                       if args.get("ref_voice") else "🗣️ Synthesizing speech on the GPU…")
         try:
             cache = pathlib.Path.cwd() / ".fantasia_cache" / "voice"
             cache.mkdir(parents=True, exist_ok=True)
             path = str(cache / f"tts_{uuid.uuid4().hex[:8]}.wav")
             dur = synthesize_to_file(str(args["text"]), path,
                                      voice=args.get("voice", "af_heart"),
-                                     speed=float(args.get("speed", 1.0)), sr_out=44100)
+                                     speed=float(args.get("speed", 1.0)), sr_out=44100,
+                                     ref_voice=args.get("ref_voice"))
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
         if self._search is not None:
@@ -1374,6 +1559,10 @@ class MainWindow(QMainWindow):
         self.act_set_key = QAction("Set API &Key…", self)
         self.act_set_key.triggered.connect(self._on_set_api_key)
         agent_menu.addAction(self.act_set_key)
+        self.act_voices = QAction("Reference &Voices…", self)
+        self.act_voices.setToolTip("Manage the voices available for cloning")
+        self.act_voices.triggered.connect(self._on_voice_catalog)
+        agent_menu.addAction(self.act_voices)
         model_menu = agent_menu.addMenu("&Model")
         self._model_group = QActionGroup(self)
         self._model_group.setExclusive(True)
@@ -1791,6 +1980,10 @@ class MainWindow(QMainWindow):
         self.agent.model = model_id
         self.statusBar().showMessage(f"Agent model → {label}")
         self.agent_panel.append("system", f"Model set to {model_id}.")
+
+    def _on_voice_catalog(self) -> None:
+        _VoiceCatalogDialog(self).exec()
+        self.statusBar().showMessage("Reference voices updated", 3000)
 
     def _on_set_api_key(self) -> None:
         key, ok = QInputDialog.getText(
@@ -2229,14 +2422,17 @@ class MainWindow(QMainWindow):
         dlg = _TTSDialog(self)
         if dlg.exec() != QDialog.Accepted:
             return
-        text, voice, speed = dlg.result_values()
+        text, voice, speed, ref_voice = dlg.result_values()
         if not text:
             return
         cache = _REPO_ROOT / ".fantasia_cache" / "voice"
         cache.mkdir(parents=True, exist_ok=True)
         path = str(cache / f"tts_{uuid.uuid4().hex[:8]}.wav")
-        self.statusBar().showMessage("Synthesizing speech on the GPU… (first use loads the model)")
-        worker = _TTSWorker(clip.id, text, voice, speed, path, search=self.search_service)
+        self.statusBar().showMessage(
+            "Cloning the reference voice… (slower — first use loads the model)"
+            if ref_voice else "Synthesizing speech on the GPU… (first use loads the model)")
+        worker = _TTSWorker(clip.id, text, voice, speed, path,
+                            search=self.search_service, ref_voice=ref_voice)
         worker.done.connect(self._on_generated)  # same fill-clip path as generation
         worker.failed.connect(self._on_generate_failed)
         worker.finished.connect(lambda w=worker: self._drop_worker(w))
@@ -2257,15 +2453,18 @@ class MainWindow(QMainWindow):
         dlg = _SingDialog(self, note_count=len(clip.notes))
         if dlg.exec() != QDialog.Accepted:
             return
-        lyrics, voice = dlg.result_values()
+        lyrics, voice, ref_voice = dlg.result_values()
         if not lyrics:
             return
         notes = [Note(n.pitch, n.start, n.duration, n.velocity) for n in clip.notes]
         cache = _REPO_ROOT / ".fantasia_cache" / "voice"
         cache.mkdir(parents=True, exist_ok=True)
         path = str(cache / f"sing_{uuid.uuid4().hex[:8]}.wav")
-        self.statusBar().showMessage("Singing the melody on the GPU… (a few seconds per note)")
-        worker = _SingWorker(clip.id, notes, lyrics, voice, path, search=self.search_service)
+        self.statusBar().showMessage(
+            "Singing in the cloned voice… (expect a few seconds per syllable)"
+            if ref_voice else "Singing the melody on the GPU… (a few seconds per note)")
+        worker = _SingWorker(clip.id, notes, lyrics, voice, path,
+                             search=self.search_service, ref_voice=ref_voice)
         worker.done.connect(self._on_sung)
         worker.failed.connect(self._on_generate_failed)
         worker.finished.connect(lambda w=worker: self._drop_worker(w))

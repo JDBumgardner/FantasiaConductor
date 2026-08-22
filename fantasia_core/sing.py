@@ -73,8 +73,14 @@ def _render_note(y: np.ndarray, sr: int, target_hz: float, target_len: int,
 
 
 def sing_notes(notes: Sequence, lyrics: str, voice: str = "af_heart",
-               sr: int = 44100) -> np.ndarray:
-    """Render a melody + lyrics to a mono float32 buffer at ``sr``."""
+               sr: int = 44100, ref_voice=None, backend=None) -> np.ndarray:
+    """Render a melody + lyrics to a mono float32 buffer at ``sr``.
+
+    ``ref_voice`` picks a cloned timbre from :mod:`fantasia_core.voices` and
+    routes syllable synthesis through the cloning engine instead of Kokoro. That
+    is several seconds per syllable, so syllables are cached — a lyric line
+    reuses most of them.
+    """
     import librosa
 
     from fantasia_core import tts
@@ -90,7 +96,8 @@ def sing_notes(notes: Sequence, lyrics: str, voice: str = "af_heart",
 
     for note, token in zip(ordered, tokens):
         try:
-            syl, ssr = tts.synthesize(token, voice=voice)
+            syl, ssr = tts.synthesize(token, voice=voice, backend=backend,
+                                      ref_voice=ref_voice, cache=True)
         except Exception:  # noqa: BLE001
             continue
         if len(syl) == 0:
@@ -115,12 +122,14 @@ def sing_notes(notes: Sequence, lyrics: str, voice: str = "af_heart",
 
 
 def sing_to_file(notes: Sequence, lyrics: str, path: str,
-                 voice: str = "af_heart", sr: int = 44100) -> float:
+                 voice: str = "af_heart", sr: int = 44100,
+                 ref_voice=None, backend=None) -> float:
     import os
 
     import soundfile as sf
 
-    audio = sing_notes(notes, lyrics, voice=voice, sr=sr)
+    audio = sing_notes(notes, lyrics, voice=voice, sr=sr,
+                       ref_voice=ref_voice, backend=backend)
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
