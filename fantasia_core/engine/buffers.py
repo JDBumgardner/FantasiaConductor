@@ -104,6 +104,43 @@ class AudioPool:
     def duration(self, path: str) -> float:
         return len(self.load(path)) / self.sr
 
+    def _warped_key(
+        self,
+        path: str,
+        offset: float,
+        src_span: float,
+        dest_dur: float,
+        pitch_semitones: float,
+        reversed: bool,
+    ) -> tuple:
+        return (
+            path,
+            round(float(offset), 5),
+            round(float(src_span), 5),
+            round(float(dest_dur), 5),
+            round(float(pitch_semitones), 3),
+            bool(reversed),
+        )
+
+    def _source_region(
+        self,
+        path: str,
+        offset: float,
+        src_span: float,
+        pitch_semitones: float,
+        reversed: bool,
+    ) -> np.ndarray:
+        if pitch_semitones:
+            base = self.load_pitched(path, pitch_semitones)
+        else:
+            base = self.load(path)
+        src_n = max(1, int(round(src_span * self.sr)))
+        if reversed:
+            src0 = len(base) - int(round(offset * self.sr)) - src_n
+            return base[max(0, src0) : max(0, src0) + src_n]
+        src0 = int(round(offset * self.sr))
+        return base[src0 : src0 + src_n]
+
     def load_warped(
         self,
         path: str,
@@ -112,39 +149,25 @@ class AudioPool:
         dest_dur: float,
         pitch_semitones: float = 0.0,
         reversed: bool = False,
-        quality: bool = False,
-    ) -> np.ndarray:
+        quality: bool = True,
+        compute: bool = True,
+    ) -> np.ndarray | None:
         """Source region ``[offset, offset+src_span)`` fitted to ``dest_dur``.
 
-        ``quality=True`` uses Rubber Band (pitch-preserving) when available;
-        otherwise (and on the audio thread) a fast linear resample (varispeed).
+        Always pitch-preserving (never varispeed). ``compute=False`` returns a
+        cached buffer or ``None`` so the audio callback never stretches.
+        ``quality`` is kept for callers; it selects a faster Rubber Band mode.
         """
-        key = (
-            path,
-            round(float(offset), 5),
-            round(float(src_span), 5),
-            round(float(dest_dur), 5),
-            round(float(pitch_semitones), 3),
-            bool(reversed),
-            bool(quality),
-        )
+        key = self._warped_key(path, offset, src_span, dest_dur, pitch_semitones, reversed)
         cached = self._warped.get(key)
         if cached is not None:
             return cached
-        if pitch_semitones:
-            base = self.load_pitched(path, pitch_semitones)
-        else:
-            base = self.load(path)
-        src_n = max(1, int(round(src_span * self.sr)))
+        if not compute:
+            return None
         dest_n = max(1, int(round(dest_dur * self.sr)))
-        if reversed:
-            src0 = len(base) - int(round(offset * self.sr)) - src_n
-            seg = base[max(0, src0) : max(0, src0) + src_n]
-        else:
-            src0 = int(round(offset * self.sr))
-            seg = base[src0 : src0 + src_n]
+        seg = self._source_region(path, offset, src_span, pitch_semitones, reversed)
         if len(seg) == 0:
-            out = np.zeros((dest_n, base.shape[1]), dtype=np.float32)
+            out = np.zeros((dest_n, 2), dtype=np.float32)
         elif abs(len(seg) - dest_n) <= 1:
             out = np.ascontiguousarray(seg, dtype=np.float32)
             if len(out) < dest_n:
@@ -153,20 +176,12 @@ class AudioPool:
             else:
                 out = out[:dest_n]
         else:
-            factor = dest_dur / max(src_span, 1e-9)
-            out = None
-            if quality:
-                try:
-                    from fantasia_core.stretch import available, stretch
+            from fantasia_core.stretch import stretch
 
-                    if available():
-                        out = stretch(seg, self.sr, factor)
-                        if len(out) != dest_n:
-                            out = resample_to_length(out, dest_n)
-                except Exception:  # noqa: BLE001
-                    out = None
-            if out is None:
-                out = resample_to_length(seg, dest_n)
+            factor = dest_dur / max(src_span, 1e-9)
+            out = stretch(seg, self.sr, factor, quality=quality)
+            if len(out) != dest_n:
+                out = resample_to_length(out, dest_n)
         self._warped[key] = out
         return out
 
@@ -183,6 +198,7 @@ class AudioPool:
                             self.load_warped(
                                 clip.source_path, clip.source_offset, span, clip.duration,
                                 clip.pitch_semitones, clip.reversed, quality=True,
+                                compute=True,
                             )
                     except Exception:  # noqa: BLE001 — missing/broken file shouldn't crash the UI
                         pass

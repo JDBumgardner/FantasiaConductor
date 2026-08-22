@@ -117,6 +117,7 @@ class PlaybackEngine:
             self.project, self.pool, self._cursor, frames, self.sr,
             fx_host=self._fx_host, midi_renderer=self.midi_renderer,
             synth_renderer=self.synth_renderer,
+            warp_compute=False,
         )
         if self.metronome_enabled:
             mix_metronome(

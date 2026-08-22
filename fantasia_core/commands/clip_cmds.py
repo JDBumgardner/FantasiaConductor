@@ -309,11 +309,16 @@ class SetClipGeometryCommand(Command):
         if clip is None:
             return
         if self._before is _UNSET:
-            self._before = (clip.start, clip.duration)
+            self._before = (clip.start, clip.duration, clip.source_duration)
+        # First audio resize freezes the file-native span so changing duration
+        # time-stretches (pitch-preserving) instead of trimming the file.
+        if (clip.source_path and float(getattr(clip, "source_duration", 0.0) or 0.0) <= 0.0
+                and abs(self.duration - clip.duration) > 1e-9):
+            clip.source_duration = float(clip.duration)
         clip.start = self.start
         clip.duration = self.duration
 
     def undo(self, project) -> None:  # noqa: ANN001
         _, clip = project.find_clip(self.clip_id)
         if clip is not None and self._before is not _UNSET:
-            clip.start, clip.duration = self._before
+            clip.start, clip.duration, clip.source_duration = self._before

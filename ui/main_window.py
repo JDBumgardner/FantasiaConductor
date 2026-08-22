@@ -737,11 +737,9 @@ class _AgentWorker(QThread):
 
     def _stretch(self, name: str, args: dict):
         try:
-            from fantasia_core.stretch import available, stretch_to_file
+            from fantasia_core.stretch import stretch_to_file
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
-        if not available():
-            return {"error": "time-stretch unavailable — brew install rubberband + pip install pyrubberband"}
         req = {"clip_id": args.get("clip_id")}
         if name == "stretch_clip_to_bars":
             req["bars"] = args.get("bars")
@@ -1451,12 +1449,6 @@ class MainWindow(QMainWindow):
             self._set_dirty(True)
             self.statusBar().showMessage(f"Unlocked '{clip.name}' from tempo")
             return
-        from fantasia_core import stretch as st
-
-        if not st.available():
-            self.statusBar().showMessage(
-                "Tempo-lock needs Rubber Band (brew install rubberband)")
-            return
         if not clip.source_path:
             self.statusBar().showMessage("Tempo-lock needs an audio clip")
             return
@@ -1465,9 +1457,11 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001
             self.statusBar().showMessage("Couldn't read the clip audio")
             return
+        from fantasia_core.document.tempo import source_span
+
         sr = self.project.sample_rate
         s = int(clip.source_offset * sr)
-        e = int((clip.source_offset + clip.duration) * sr)
+        e = int((clip.source_offset + source_span(clip)) * sr)
         seg = data[s:e]
         if len(seg) == 0:
             return
@@ -1490,7 +1484,7 @@ class MainWindow(QMainWindow):
         from fantasia_core import stretch as st
 
         changed = False
-        if st.available() and self.project.tempo > 0:
+        if self.project.tempo > 0:
             import soundfile as sf
 
             cache = _REPO_ROOT / ".fantasia_cache" / "lock"
@@ -1789,6 +1783,7 @@ class MainWindow(QMainWindow):
     def _on_clip_geometry(self, clip_id: str, start: float, duration: float) -> None:
         self.bus.dispatch(SetClipGeometryCommand(clip_id, start, duration))
         self.timeline.refresh_clip(clip_id)
+        self._warm()  # pitch-preserving warp of the new length, off the audio thread
 
     def _on_import_into_clip(self, clip_id: str) -> None:
         """Fill (or replace) a clip's audio content from a file."""
@@ -2131,14 +2126,8 @@ class MainWindow(QMainWindow):
         self._workers.append(worker)
         worker.start()
 
-    # ---- time stretch (Rubber Band) -------------------------------------
+    # ---- time stretch (pitch-preserving) --------------------------------
     def _stretch_clip_action(self, clip, which: str) -> None:
-        from fantasia_core import stretch as st
-
-        if not st.available():
-            self.statusBar().showMessage(
-                "Time-stretch needs Rubber Band (brew install rubberband) + pyrubberband")
-            return
         if not clip.source_path:
             self.statusBar().showMessage("Time-stretch needs an audio clip")
             return
@@ -2161,32 +2150,19 @@ class MainWindow(QMainWindow):
             bars, ok = QInputDialog.getInt(
                 self, "Fit to Bars", "Stretch the clip to span how many bars?",
                 cur, 1, 256)
-            if not ok or clip.duration <= 0:
+            if not ok or clip.duration <= 0 or bar <= 0:
                 return
             factor = (bars * bar) / clip.duration
         else:
             return
-        try:
-            data = self.pool.load(clip.source_path)
-        except Exception:  # noqa: BLE001
-            self.statusBar().showMessage("Couldn't read the clip audio")
-            return
-        sr = self.project.sample_rate
-        s = int(clip.source_offset * sr)
-        e = int((clip.source_offset + clip.duration) * sr)
-        seg = data[s:e]
-        if len(seg) == 0:
-            return
-        cache = _REPO_ROOT / ".fantasia_cache" / "stretch"
-        cache.mkdir(parents=True, exist_ok=True)
-        out = str(cache / f"str_{uuid.uuid4().hex[:8]}.wav")
-        self.statusBar().showMessage(f"Time-stretching ×{factor:.2f} (pitch preserved)…")
-        worker = _StretchWorker(clip.id, seg.copy(), sr, factor, out)
-        worker.done.connect(self._on_stretched)
-        worker.failed.connect(self._on_generate_failed)
-        worker.finished.connect(lambda w=worker: self._drop_worker(w))
-        self._workers.append(worker)
-        worker.start()
+        factor = max(0.05, min(20.0, float(factor)))
+        new_dur = max(0.05, clip.duration * factor)
+        self.bus.dispatch(SetClipGeometryCommand(clip.id, clip.start, new_dur))
+        self.timeline.refresh_clip(clip.id)
+        self._warm()
+        kind = "half speed" if abs(factor - 2.0) < 1e-6 else (
+            "double speed" if abs(factor - 0.5) < 1e-6 else f"×{factor:.2f}")
+        self.statusBar().showMessage(f"Time-stretched {kind} — pitch unchanged")
 
     def _on_stretched(self, clip_id: str, path: str, duration: float) -> None:
         self.bus.dispatch(SetClipSourceCommand(clip_id, path, 0.0, duration))
@@ -2423,9 +2399,11 @@ class MainWindow(QMainWindow):
             data = self.pool.load(clip.source_path)
         except Exception as exc:  # noqa: BLE001
             return {"error": f"couldn't read audio: {exc}"}
+        from fantasia_core.document.tempo import source_span
+
         sr = self.project.sample_rate
         s = int(clip.source_offset * sr)
-        e = int((clip.source_offset + clip.duration) * sr)
+        e = int((clip.source_offset + source_span(clip)) * sr)
         seg = data[s:e]
         if len(seg) == 0:
             return {"error": "empty clip"}
