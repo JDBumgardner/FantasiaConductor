@@ -15,6 +15,8 @@ from fantasia_core.engine.mixer import render_block
 def bounce_to_array(project, pool, sr: int, block: int = 8192, midi_renderer=None, synth_renderer=None) -> np.ndarray:  # noqa: ANN001
     total = int(project.duration * sr)
     out = np.zeros((max(total, 0), 2), dtype=np.float32)
+    if hasattr(pool, "preload"):
+        pool.preload(project)
     if midi_renderer is not None:
         midi_renderer.warm(project)  # ensure MIDI buffers are cached before mixing
     if synth_renderer is not None:

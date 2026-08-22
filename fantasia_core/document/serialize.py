@@ -26,6 +26,7 @@ def clip_to_dict(clip: Clip) -> dict[str, Any]:
         "content_type": clip.content_type,
         "source_path": clip.source_path,
         "source_offset": clip.source_offset,
+        "source_duration": clip.source_duration,
         "notes": [
             {"pitch": n.pitch, "start": n.start, "duration": n.duration, "velocity": n.velocity}
             for n in clip.notes
@@ -81,6 +82,7 @@ def clip_from_dict(data: dict[str, Any]) -> Clip:
         content_type=data.get("content_type", "audio"),
         source_path=data.get("source_path"),
         source_offset=float(data.get("source_offset", 0.0)),
+        source_duration=float(data.get("source_duration", 0.0)),
         notes=[
             Note(
                 pitch=int(nd["pitch"]),

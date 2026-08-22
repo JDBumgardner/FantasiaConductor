@@ -48,9 +48,10 @@ RULER_BG = QColor(0x14, 0x16, 0x2a)
 RULER_LINE = QColor(0x38, 0x3d, 0x6b)
 RULER_TEXT = QColor(0x8b, 0x92, 0xc8)
 
-# grid line colours as RGBA tuples (purple-tinted, translucent)
-GRID_BEAT = (124, 108, 255, 20)
-GRID_BAR = (124, 108, 255, 55)
+# grid line colours as RGBA tuples (bright lavender, high enough alpha to pop)
+GRID_SUBDIV = (220, 216, 255, 55)
+GRID_BEAT = (230, 226, 255, 95)
+GRID_BAR = (240, 236, 255, 160)
 
 # MIDI note preview inside a timeline clip
 MIDI_PREVIEW = QColor(0x25, 0xe6, 0xd5, 0xcc)  # cyan, glowy

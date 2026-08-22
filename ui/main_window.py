@@ -31,9 +31,11 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QSplitter,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -76,6 +78,7 @@ from fantasia_core.engine import (
 )
 from fantasia_core.search import SearchService
 from ui import theme
+from ui.grid import ADAPTIVE_LEVELS, FIXED_OPTIONS, GridSpec
 from ui.agent_panel import AgentPanel
 from ui.search_panel import SearchPanel
 from ui.gm_instruments import DRUM_KITS, gm_name
@@ -933,11 +936,9 @@ class _AgentWorker(QThread):
 
     def _stretch(self, name: str, args: dict):
         try:
-            from fantasia_core.stretch import available, stretch_to_file
+            from fantasia_core.stretch import stretch_to_file
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
-        if not available():
-            return {"error": "time-stretch unavailable — brew install rubberband + pip install pyrubberband"}
         req = {"clip_id": args.get("clip_id")}
         if name == "stretch_clip_to_bars":
             req["bars"] = args.get("bars")
@@ -1282,28 +1283,45 @@ class MainWindow(QMainWindow):
         self.header_panel = TrackHeaderPanel()
         self.timeline = TimelineView()
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self.header_panel)
-        splitter.addWidget(self.timeline)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setChildrenCollapsible(False)
-        splitter.setHandleWidth(7)          # grabbable, matches the dock separators
-        splitter.setSizes([240, 900])       # header starts at its old fixed width
+        arrangement = QSplitter(Qt.Horizontal)
+        arrangement.addWidget(self.header_panel)
+        arrangement.addWidget(self.timeline)
+        arrangement.setStretchFactor(0, 0)
+        arrangement.setStretchFactor(1, 1)
+        arrangement.setChildrenCollapsible(False)
+        arrangement.setHandleWidth(7)        # grabbable, matches the editor handle
+        arrangement.setSizes([240, 900])     # header starts at its old fixed width
+        arrangement.setMinimumHeight(100)
+
+        # Bottom editor sits in a vertical splitter so the piano roll can grow.
+        self.editor = EditorDock(self)
+        self.piano = self.editor.piano          # PianoRollPanel (edit_clip/reload/view/…)
+        self.synth_panel = self.editor.synth    # SynthPanel (set_track/param_changed)
+
+        self._editor_split = QSplitter(Qt.Vertical)
+        self._editor_split.setObjectName("editorSplit")
+        self._editor_split.setHandleWidth(7)
+        self._editor_split.setChildrenCollapsible(False)
+        self._editor_split.setStyleSheet(
+            f"QSplitter#editorSplit::handle:vertical {{"
+            f"  background: {theme.BORDER};"
+            f"}}"
+            f"QSplitter#editorSplit::handle:vertical:hover {{"
+            f"  background: {theme.ACCENT};"
+            f"}}"
+        )
+        self._editor_split.addWidget(arrangement)
+        self._editor_split.addWidget(self.editor)
+        self._editor_split.setStretchFactor(0, 3)
+        self._editor_split.setStretchFactor(1, 2)
+        self.editor.attach_splitter(self._editor_split)
 
         layout.addWidget(self.transport)
-        layout.addWidget(splitter, stretch=1)
+        layout.addWidget(self._editor_split, stretch=1)
         self.setCentralWidget(central)
 
         self.timeline.set_project(self.project)
         self.timeline.set_audio_pool(self.pool)
-
-        # One bottom editor dock with a Piano Roll / Synth mode switch.
-        self.editor = EditorDock(self)
-        self.addDockWidget(Qt.BottomDockWidgetArea, self.editor)
-        self.editor.hide()
-        self.piano = self.editor.piano          # PianoRollPanel (edit_clip/reload/view/…)
-        self.synth_panel = self.editor.synth    # SynthPanel (set_track/param_changed)
 
         self.agent_panel = AgentPanel(self)
         self.addDockWidget(Qt.RightDockWidgetArea, self.agent_panel)
@@ -1313,9 +1331,9 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.agent_panel, self.search_panel)
         self.agent_panel.raise_()
 
-        # Lock all docks in place — no floating/popping-out or closing (still
-        # movable between areas so the Agent/Search tabs work).
-        for dock in (self.editor, self.agent_panel, self.search_panel):
+        # Lock remaining docks in place — no floating/popping-out or closing
+        # (still movable between areas so the Agent/Search tabs work).
+        for dock in (self.agent_panel, self.search_panel):
             dock.setFeatures(QDockWidget.DockWidgetMovable)
 
     def _build_actions(self) -> None:
@@ -1355,6 +1373,9 @@ class MainWindow(QMainWindow):
         self.act_play = QAction("Play/Pause", self, shortcut=Qt.Key_Space)
         self.act_stop = QAction("Stop", self)
         transport_menu.addActions([self.act_play, self.act_stop])
+        self.act_metronome = QAction("&Metronome", self, checkable=True)
+        self.act_metronome.setChecked(False)
+        transport_menu.addAction(self.act_metronome)
         self.act_record = QAction("● Record", self, shortcut="Ctrl+R")
         self.act_record.setToolTip("Record the microphone into a clip on the selected track")
         self.act_record.triggered.connect(self._toggle_record)
@@ -1389,9 +1410,12 @@ class MainWindow(QMainWindow):
         view_menu = menubar.addMenu("&View")
         self.act_zoom_in = QAction("Zoom &In", self, shortcut=QKeySequence.ZoomIn)
         self.act_zoom_out = QAction("Zoom &Out", self, shortcut=QKeySequence.ZoomOut)
-        self.act_snap = QAction("&Snap to grid", self, checkable=True)
-        self.act_snap.setChecked(True)
-        view_menu.addActions([self.act_zoom_in, self.act_zoom_out, self.act_snap])
+        view_menu.addActions([self.act_zoom_in, self.act_zoom_out])
+        self._build_grid_actions()
+        self.menu_grid = view_menu.addMenu("&Grid")
+        self._fill_grid_menu(self.menu_grid)
+        self.grid_context_menu = QMenu("Grid", self)
+        self._fill_grid_menu(self.grid_context_menu)
 
         toolbar = self.addToolBar("Main")
         toolbar.setMovable(False)
@@ -1402,7 +1426,15 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.act_record)
         toolbar.addAction(self.act_import)
         toolbar.addSeparator()
-        toolbar.addActions([self.act_zoom_in, self.act_zoom_out, self.act_snap])
+        toolbar.addActions([self.act_zoom_in, self.act_zoom_out])
+        self.menu_grid_toolbar = QMenu("Grid", self)
+        self._fill_grid_menu(self.menu_grid_toolbar)
+        grid_btn = QToolButton()
+        grid_btn.setText("Grid")
+        grid_btn.setToolTip("Arrangement grid + snap interval")
+        grid_btn.setPopupMode(QToolButton.InstantPopup)
+        grid_btn.setMenu(self.menu_grid_toolbar)
+        toolbar.addWidget(grid_btn)
 
     def _connect(self) -> None:
         self.bus.add_listener(self._on_bus_change)
@@ -1423,14 +1455,16 @@ class MainWindow(QMainWindow):
         self.act_delete.triggered.connect(self._on_delete)
         self.act_play.triggered.connect(self._toggle_play)
         self.act_stop.triggered.connect(self._on_stop)
+        self.act_metronome.toggled.connect(self._on_metronome_toggled)
         self.act_zoom_in.triggered.connect(self.timeline.zoom_in)
         self.act_zoom_out.triggered.connect(self.timeline.zoom_out)
-        self.act_snap.toggled.connect(self._on_snap_toggled)
 
         self.transport.play_requested.connect(self._toggle_play)
         self.transport.stop_requested.connect(self._on_stop)
         self.transport.loop_toggled.connect(self._on_loop_toggled)
+        self.transport.metronome_toggled.connect(self._on_metronome_toggled)
         self.transport.tempo_changed.connect(self._on_tempo_changed)
+        self.timeline.grid_menu_requested.connect(self._on_grid_menu)
 
         self.header_panel.header_clicked.connect(self._on_track_selected)
         self.header_panel.renamed.connect(
@@ -1458,8 +1492,11 @@ class MainWindow(QMainWindow):
         self.timeline.paste_requested.connect(self._on_paste_clip)
         self.piano.notes_changed.connect(self._on_notes_changed)
         self.piano.copy_requested.connect(self._on_pr_copy)
+        self.piano.cut_requested.connect(self._on_pr_cut)
         self.piano.paste_requested.connect(self._on_pr_paste)
         self.piano.view.preview.connect(self._preview_pitch)
+        self.piano.view.split_requested.connect(self._on_pr_split)
+        self.piano.view.status.connect(self.statusBar().showMessage)
         self.synth_panel.param_changed.connect(self._on_synth_param)
         self.timeline.clip_geometry_edited.connect(self._on_clip_geometry)
         self.timeline.import_into_clip_requested.connect(self._on_import_into_clip)
@@ -1483,6 +1520,11 @@ class MainWindow(QMainWindow):
         if cmd is not None:
             self.statusBar().showMessage(cmd.label)
             self._set_dirty(True)
+            if isinstance(cmd, SetTempoCommand):
+                self._apply_locator_scale(getattr(cmd, "last_factor", 1.0))
+                self.timeline.refresh_geometries()
+                self.timeline.viewport().update()
+                self._tempo_conform_timer.start()
 
     # ---- unsaved-changes tracking ---------------------------------------
     def _set_dirty(self, dirty: bool) -> None:
@@ -1547,31 +1589,62 @@ class MainWindow(QMainWindow):
             self._on_play()
 
     def _on_play(self) -> None:
-        self.engine.set_playhead_seconds(self.timeline.playhead)
+        self.engine.set_playhead_seconds(self.timeline.start_position)
         if self.engine.play():
+            self.timeline.playback_active = True
             self._play_timer.start()
             self.statusBar().showMessage("Playing")
         else:
-            self.statusBar().showMessage("No audio output device available")
+            # Keep the macOS message short; on Linux/WSL, Pulse/ALSA is the usual culprit.
+            import sys
+
+            msg = "No audio output device available"
+            if sys.platform.startswith("linux"):
+                msg += " — check Audio menu / run tools/check_audio.sh (WSL: wsl --shutdown)"
+            self.statusBar().showMessage(msg)
+
+    def _return_to_start(self) -> None:
+        self.timeline.playback_active = False
+        self.timeline.set_playhead(self.timeline.start_position)
+        self.engine.set_playhead_seconds(self.timeline.start_position)
 
     def _on_stop(self) -> None:
         self.engine.stop()
         self._play_timer.stop()
+        self._return_to_start()
         self.statusBar().showMessage("Stopped")
 
     def _on_tick(self) -> None:
         self.timeline.set_playhead(self.engine.playhead)
         if not self.engine.is_playing:  # reached the end on its own
             self._play_timer.stop()
+            self._return_to_start()
             self.statusBar().showMessage("Stopped")
 
     def _on_loop_toggled(self, on: bool) -> None:
         self.engine.loop = on
 
+    def _on_metronome_toggled(self, on: bool) -> None:
+        self.engine.metronome_enabled = on
+        if self.act_metronome.isChecked() != on:
+            blocked = self.act_metronome.blockSignals(True)
+            self.act_metronome.setChecked(on)
+            self.act_metronome.blockSignals(blocked)
+        self.transport.set_metronome(on)
+
+    def _apply_locator_scale(self, factor: float) -> None:
+        """Keep the play-start locator (and running playhead) on the same beat."""
+        if factor <= 0 or abs(factor - 1.0) < 1e-12:
+            return
+        self.timeline.start_position = max(0.0, self.timeline.start_position * factor)
+        if self.engine.is_playing:
+            self.engine.set_playhead_seconds(self.engine.playhead * factor)
+        else:
+            self.timeline.set_playhead(self.timeline.start_position)
+
     def _on_tempo_changed(self, bpm: float) -> None:
         self.bus.dispatch(SetTempoCommand(bpm))  # undoable; slider drags coalesce
-        self.timeline.viewport().update()  # grid depends on tempo
-        self._tempo_conform_timer.start()  # re-stretch tempo-locked clips once settled
+        # Locator scale, clip geometry, and grid refresh happen in _on_bus_change.
 
     # ---- tempo-lock (#25) -----------------------------------------------
     def _toggle_tempo_lock(self, clip) -> None:
@@ -1582,12 +1655,6 @@ class MainWindow(QMainWindow):
             self._set_dirty(True)
             self.statusBar().showMessage(f"Unlocked '{clip.name}' from tempo")
             return
-        from fantasia_core import stretch as st
-
-        if not st.available():
-            self.statusBar().showMessage(
-                "Tempo-lock needs Rubber Band (brew install rubberband)")
-            return
         if not clip.source_path:
             self.statusBar().showMessage("Tempo-lock needs an audio clip")
             return
@@ -1596,9 +1663,11 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001
             self.statusBar().showMessage("Couldn't read the clip audio")
             return
+        from fantasia_core.document.tempo import source_span
+
         sr = self.project.sample_rate
         s = int(clip.source_offset * sr)
-        e = int((clip.source_offset + clip.duration) * sr)
+        e = int((clip.source_offset + source_span(clip)) * sr)
         seg = data[s:e]
         if len(seg) == 0:
             return
@@ -1620,32 +1689,36 @@ class MainWindow(QMainWindow):
         current project tempo. Derived from (orig, tempo), so undo/redo reconforms."""
         from fantasia_core import stretch as st
 
-        if not st.available() or self.project.tempo <= 0:
-            return
-        import soundfile as sf
-
-        cache = _REPO_ROOT / ".fantasia_cache" / "lock"
-        cache.mkdir(parents=True, exist_ok=True)
         changed = False
-        for track in self.project.tracks:
-            for clip in track.clips:
-                if clip.lock_tempo is None or not clip.orig_source_path or clip.lock_base_dur <= 0:
-                    continue
-                factor = clip.lock_tempo / self.project.tempo
-                target = clip.lock_base_dur * factor
-                if abs(clip.duration - target) < 0.005:
-                    continue  # already conformed
-                try:
-                    orig = self.pool.load(clip.orig_source_path)
-                    out = st.stretch(orig, self.project.sample_rate, factor)
-                    wav = str(cache / f"lk_{uuid.uuid4().hex[:8]}.wav")
-                    sf.write(wav, out, self.project.sample_rate)
-                    clip.source_path = wav
-                    clip.source_offset = 0.0
-                    clip.duration = len(out) / self.project.sample_rate
-                    changed = True
-                except Exception:  # noqa: BLE001
-                    pass
+        if self.project.tempo > 0:
+            import soundfile as sf
+
+            cache = _REPO_ROOT / ".fantasia_cache" / "lock"
+            cache.mkdir(parents=True, exist_ok=True)
+            for track in self.project.tracks:
+                for clip in track.clips:
+                    if clip.lock_tempo is None or not clip.orig_source_path or clip.lock_base_dur <= 0:
+                        continue
+                    factor = clip.lock_tempo / self.project.tempo
+                    target = clip.lock_base_dur * factor
+                    if abs(clip.duration - target) < 0.005:
+                        continue  # already conformed
+                    try:
+                        orig = self.pool.load(clip.orig_source_path)
+                        out = st.stretch(orig, self.project.sample_rate, factor)
+                        wav = str(cache / f"lk_{uuid.uuid4().hex[:8]}.wav")
+                        sf.write(wav, out, self.project.sample_rate)
+                        clip.source_path = wav
+                        clip.source_offset = 0.0
+                        clip.duration = len(out) / self.project.sample_rate
+                        clip.source_duration = clip.duration
+                        changed = True
+                    except Exception:  # noqa: BLE001
+                        pass
+        self._warm()
+        if self._editing_clip_id is not None:
+            _, clip = self.project.find_clip(self._editing_clip_id)
+            self.piano.reload(clip)
         if changed:
             self.pool.preload(self.project)
             self.timeline.rebuild()
@@ -1826,8 +1899,9 @@ class MainWindow(QMainWindow):
 
     # ---- rebuild ---------------------------------------------------------
     def _warm(self, project=None) -> None:
-        """Re-render MIDI (FluidSynth) and synth-track buffers off the audio thread."""
+        """Re-render MIDI/synth and tempo-warped audio off the audio thread."""
         p = project if project is not None else self.project
+        self.pool.preload(p)
         self.midi.warm(p)
         self.synth_engine.warm(p)
 
@@ -1865,8 +1939,65 @@ class MainWindow(QMainWindow):
             )
             self._rebuild_all()
 
-    def _on_snap_toggled(self, on: bool) -> None:
-        self.timeline.snap_enabled = on
+    def _build_grid_actions(self) -> None:
+        self._grid_group = QActionGroup(self)
+        self._grid_group.setExclusive(True)
+        self._grid_actions: dict[str, QAction] = {}
+
+        for name, key, _px in ADAPTIVE_LEVELS:
+            act = QAction(name, self, checkable=True)
+            act.setData(f"adaptive:{key}")
+            act.triggered.connect(lambda _=False: self._on_grid_action())
+            self._grid_group.addAction(act)
+            self._grid_actions[f"adaptive:{key}"] = act
+
+        for name, key in FIXED_OPTIONS:
+            act = QAction(name, self, checkable=True)
+            act.setData(f"fixed:{key}" if key != "off" else "off")
+            act.triggered.connect(lambda _=False: self._on_grid_action())
+            self._grid_group.addAction(act)
+            self._grid_actions["off" if key == "off" else f"fixed:{key}"] = act
+
+        self._grid_actions["fixed:1/4"].setChecked(True)
+        self.act_triplet_grid = QAction("Triplet Grid", self, checkable=True)
+        self.act_triplet_grid.setShortcut("Ctrl+3")
+        self.act_triplet_grid.toggled.connect(self._on_triplet_toggled)
+
+    def _fill_grid_menu(self, menu: QMenu) -> None:
+        menu.addSection("Adaptive Grid")
+        for _name, key, _px in ADAPTIVE_LEVELS:
+            menu.addAction(self._grid_actions[f"adaptive:{key}"])
+        menu.addSection("Fixed Grid")
+        for _name, key in FIXED_OPTIONS:
+            menu.addAction(self._grid_actions["off" if key == "off" else f"fixed:{key}"])
+        menu.addSeparator()
+        menu.addAction(self.act_triplet_grid)
+
+    def _on_grid_action(self) -> None:
+        act = self._grid_group.checkedAction()
+        if act is None:
+            return
+        key = act.data()
+        triplet = self.act_triplet_grid.isChecked()
+        if key == "off":
+            self.timeline.grid = GridSpec(kind="off", triplet=False)
+        elif isinstance(key, str) and key.startswith("adaptive:"):
+            self.timeline.grid = GridSpec(
+                kind="adaptive", adaptive=key.split(":", 1)[1], triplet=triplet
+            )
+        else:
+            self.timeline.grid = GridSpec(
+                kind="fixed", fixed_key=key.split(":", 1)[1], triplet=triplet
+            )
+        self.timeline.viewport().update()
+
+    def _on_triplet_toggled(self, on: bool) -> None:
+        if self.timeline.grid.kind != "off":
+            self.timeline.grid.triplet = on
+            self.timeline.viewport().update()
+
+    def _on_grid_menu(self, global_pos) -> None:  # noqa: ANN001
+        self.grid_context_menu.exec(global_pos)
 
     def _dispatch_attr(self, track_id: str, attr: str, value) -> None:
         self.bus.dispatch(
@@ -1878,6 +2009,7 @@ class MainWindow(QMainWindow):
     def _on_clip_geometry(self, clip_id: str, start: float, duration: float) -> None:
         self.bus.dispatch(SetClipGeometryCommand(clip_id, start, duration))
         self.timeline.refresh_clip(clip_id)
+        self._warm()  # pitch-preserving warp of the new length, off the audio thread
 
     def _on_import_into_clip(self, clip_id: str) -> None:
         """Fill (or replace) a clip's audio content from a file."""
@@ -1993,6 +2125,7 @@ class MainWindow(QMainWindow):
         self._clip_clipboard = {
             "name": clip.name, "duration": clip.duration, "content_type": clip.content_type,
             "source_path": clip.source_path, "source_offset": clip.source_offset,
+            "source_duration": clip.source_duration,
             "notes": [Note(n.pitch, n.start, n.duration, n.velocity) for n in clip.notes],
             "gain_db": clip.gain_db, "fade_in": clip.fade_in, "fade_out": clip.fade_out,
             "reversed": clip.reversed, "pitch_semitones": clip.pitch_semitones,
@@ -2013,7 +2146,8 @@ class MainWindow(QMainWindow):
         self.bus.dispatch(AddClipCommand(
             self.selected_track_id, start, cb["duration"], name=cb["name"],
             content_type=cb["content_type"], source_path=cb["source_path"],
-            source_offset=cb["source_offset"], notes=notes, gain_db=cb["gain_db"],
+            source_offset=cb["source_offset"], source_duration=cb.get("source_duration", 0.0),
+            notes=notes, gain_db=cb["gain_db"],
             fade_in=cb["fade_in"], fade_out=cb["fade_out"], reversed=cb["reversed"],
             pitch_semitones=cb["pitch_semitones"],
         ))
@@ -2029,6 +2163,24 @@ class MainWindow(QMainWindow):
             return
         self._note_clipboard = notes
         self.statusBar().showMessage(f"Copied {len(notes)} note(s)")
+
+    def _on_pr_cut(self) -> None:
+        notes = self.piano.view.selected_notes()
+        if not notes:
+            self.statusBar().showMessage("Select notes to cut")
+            return
+        self._note_clipboard = notes
+        self.piano.view.delete_selected()
+        self.statusBar().showMessage(f"Cut {len(notes)} note(s)")
+
+    def _on_pr_split(self) -> None:
+        if self._editing_clip_id is None:
+            return
+        _, clip = self.project.find_clip(self._editing_clip_id)
+        if clip is None:
+            return
+        at = self.timeline.playhead - clip.start
+        self.piano.view.split_notes_at(at)
 
     def _on_pr_paste(self) -> None:
         if not self._note_clipboard or self._editing_clip_id is None:
@@ -2272,14 +2424,8 @@ class MainWindow(QMainWindow):
         self._workers.append(worker)
         worker.start()
 
-    # ---- time stretch (Rubber Band) -------------------------------------
+    # ---- time stretch (pitch-preserving) --------------------------------
     def _stretch_clip_action(self, clip, which: str) -> None:
-        from fantasia_core import stretch as st
-
-        if not st.available():
-            self.statusBar().showMessage(
-                "Time-stretch needs Rubber Band (brew install rubberband) + pyrubberband")
-            return
         if not clip.source_path:
             self.statusBar().showMessage("Time-stretch needs an audio clip")
             return
@@ -2302,32 +2448,19 @@ class MainWindow(QMainWindow):
             bars, ok = QInputDialog.getInt(
                 self, "Fit to Bars", "Stretch the clip to span how many bars?",
                 cur, 1, 256)
-            if not ok or clip.duration <= 0:
+            if not ok or clip.duration <= 0 or bar <= 0:
                 return
             factor = (bars * bar) / clip.duration
         else:
             return
-        try:
-            data = self.pool.load(clip.source_path)
-        except Exception:  # noqa: BLE001
-            self.statusBar().showMessage("Couldn't read the clip audio")
-            return
-        sr = self.project.sample_rate
-        s = int(clip.source_offset * sr)
-        e = int((clip.source_offset + clip.duration) * sr)
-        seg = data[s:e]
-        if len(seg) == 0:
-            return
-        cache = _REPO_ROOT / ".fantasia_cache" / "stretch"
-        cache.mkdir(parents=True, exist_ok=True)
-        out = str(cache / f"str_{uuid.uuid4().hex[:8]}.wav")
-        self.statusBar().showMessage(f"Time-stretching ×{factor:.2f} (pitch preserved)…")
-        worker = _StretchWorker(clip.id, seg.copy(), sr, factor, out)
-        worker.done.connect(self._on_stretched)
-        worker.failed.connect(self._on_generate_failed)
-        worker.finished.connect(lambda w=worker: self._drop_worker(w))
-        self._workers.append(worker)
-        worker.start()
+        factor = max(0.05, min(20.0, float(factor)))
+        new_dur = max(0.05, clip.duration * factor)
+        self.bus.dispatch(SetClipGeometryCommand(clip.id, clip.start, new_dur))
+        self.timeline.refresh_clip(clip.id)
+        self._warm()
+        kind = "half speed" if abs(factor - 2.0) < 1e-6 else (
+            "double speed" if abs(factor - 0.5) < 1e-6 else f"×{factor:.2f}")
+        self.statusBar().showMessage(f"Time-stretched {kind} — pitch unchanged")
 
     def _on_stretched(self, clip_id: str, path: str, duration: float) -> None:
         self.bus.dispatch(SetClipSourceCommand(clip_id, path, 0.0, duration))
@@ -2564,9 +2697,11 @@ class MainWindow(QMainWindow):
             data = self.pool.load(clip.source_path)
         except Exception as exc:  # noqa: BLE001
             return {"error": f"couldn't read audio: {exc}"}
+        from fantasia_core.document.tempo import source_span
+
         sr = self.project.sample_rate
         s = int(clip.source_offset * sr)
-        e = int((clip.source_offset + clip.duration) * sr)
+        e = int((clip.source_offset + source_span(clip)) * sr)
         seg = data[s:e]
         if len(seg) == 0:
             return {"error": "empty clip"}

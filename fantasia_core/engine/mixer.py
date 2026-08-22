@@ -43,12 +43,40 @@ def _fade_env(clip, a: int, b: int, clip_start: int, clip_end: int, sr: int) -> 
     return env
 
 
-def _clip_buffer(pool, clip, sr: int, clip_len_frames: int):  # noqa: ANN001
-    """Pick the source buffer + start index, honouring pitch then reverse.
+def _clip_buffer(pool, clip, sr: int, clip_len_frames: int, warp_compute: bool = True):  # noqa: ANN001
+    """Pick the source buffer + start index, honouring pitch, reverse, and tempo warp.
 
-    Both transforms are length-preserving, so the slicing math is identical to a
-    plain forward clip once the right buffer/offset are chosen.
+    If ``source_duration`` differs from ``duration`` (tempo follow / stretch),
+    the source region is fitted to the clip length with pitch preserved.
     """
+    from fantasia_core.document.tempo import source_span
+
+    span = source_span(clip)
+    dest = float(clip.duration)
+    if dest > 0 and abs(span - dest) > 0.003 and hasattr(pool, "load_warped"):
+        data = pool.load_warped(
+            clip.source_path, clip.source_offset, span, dest,
+            getattr(clip, "pitch_semitones", 0.0), clip.reversed,
+            quality=True, compute=warp_compute,
+        )
+        if data is not None:
+            return data, 0
+        # Cache miss on the audio thread: play the source at original pitch
+        # (trimmed/padded) until preload finishes the real stretch.
+        dest_n = max(1, int(round(dest * sr)))
+        try:
+            seg = pool._source_region(
+                clip.source_path, clip.source_offset, span,
+                getattr(clip, "pitch_semitones", 0.0), clip.reversed,
+            )
+        except Exception:  # noqa: BLE001
+            seg = np.zeros((0, 2), dtype=np.float32)
+        if len(seg) >= dest_n:
+            return np.ascontiguousarray(seg[:dest_n], dtype=np.float32), 0
+        if len(seg) == 0:
+            return np.zeros((dest_n, 2), dtype=np.float32), 0
+        pad = np.zeros((dest_n - len(seg), seg.shape[1]), dtype=np.float32)
+        return np.vstack([seg, pad]), 0
     if clip.pitch_semitones:
         base = pool.load_pitched(clip.source_path, clip.pitch_semitones)
     else:
@@ -63,7 +91,8 @@ def _clip_buffer(pool, clip, sr: int, clip_len_frames: int):  # noqa: ANN001
 
 
 def render_track_block(
-    track, pool, start_frame: int, num_frames: int, sr: int, midi_renderer=None, synth_renderer=None
+    track, pool, start_frame: int, num_frames: int, sr: int, midi_renderer=None, synth_renderer=None,
+    warp_compute: bool = True,
 ) -> np.ndarray:  # noqa: ANN001
     """Render one track's clips (pre-FX, pre-track-gain/pan) as ``(num_frames, 2)``.
 
@@ -96,7 +125,9 @@ def render_track_block(
             if not clip.source_path:
                 continue
             try:
-                data, src0 = _clip_buffer(pool, clip, sr, clip_end - clip_start)
+                data, src0 = _clip_buffer(
+                    pool, clip, sr, clip_end - clip_start, warp_compute=warp_compute,
+                )
             except Exception:  # noqa: BLE001
                 continue
 
@@ -125,6 +156,7 @@ def render_track_block(
 def render_block(
     project, pool, start_frame: int, num_frames: int, sr: int,
     fx_host=None, midi_renderer=None, synth_renderer=None,
+    warp_compute: bool = True,
 ) -> np.ndarray:  # noqa: ANN001
     """Render one stereo block of the full mix as ``float32`` ``(num_frames, 2)``."""
     out = np.zeros((num_frames, 2), dtype=np.float32)
@@ -133,7 +165,10 @@ def render_block(
     for track in project.tracks:
         if track.mute or (any_solo and not track.solo):
             continue
-        tb = render_track_block(track, pool, start_frame, num_frames, sr, midi_renderer, synth_renderer)
+        tb = render_track_block(
+            track, pool, start_frame, num_frames, sr, midi_renderer, synth_renderer,
+            warp_compute=warp_compute,
+        )
         if getattr(track, "fx", None) and fx_host is not None:
             tb = fx_host.process(track, tb, sr)
         tgain = db_to_lin(track.gain_db)

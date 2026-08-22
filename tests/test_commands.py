@@ -79,6 +79,19 @@ def test_set_clip_geometry_undo():
     assert (c.start, c.duration) == (0.0, 2.0)
 
 
+def test_resize_audio_freezes_source_span():
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    c = bus.dispatch(AddClipCommand(t.id, 0.0, 4.0, "loop", source_path="/x.wav")).created_clip
+    assert c.source_duration == 0.0
+    bus.dispatch(SetClipGeometryCommand(c.id, 0.0, 2.0))
+    assert c.duration == 2.0
+    assert c.source_duration == 4.0
+    bus.undo()
+    assert c.duration == 4.0
+    assert c.source_duration == 0.0
+
+
 def test_fill_empty_clip_and_undo():
     bus = _bus()
     t = bus.dispatch(AddTrackCommand()).created_track
