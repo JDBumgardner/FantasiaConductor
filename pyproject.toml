@@ -60,6 +60,13 @@ voice = [
     "misaki[en]>=0.9",
     "pyworld>=0.3",  # WORLD vocoder: formant-preserving singing + vocal FX
 ]
+# Voice conversion — recast a vocal in another voice (Seed-VC, zero-shot, no
+# training). CPU only: it picks MPS by default and MPS dies on a float64 op in
+# the pitch extractor. ~10x slower than real time. Classic RVC is not an option
+# here — its packages pin fairseq and numpy<=1.23.
+voiceconv = [
+    "seed-vc>=0.4",
+]
 # Time-stretch (change length without pitch). Needs the `rubberband` CLI too:
 # `brew install rubberband`.
 stretch = [

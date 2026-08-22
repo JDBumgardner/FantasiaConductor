@@ -209,6 +209,10 @@ class ClipItem(QGraphicsRectItem):
         generate = menu.addAction("Generate Audio…")
         speak = menu.addAction("Text to Speech…")
         sing = menu.addAction("Sing Lyrics…") if self.clip.is_midi else None
+        convert = None
+        if not self.clip.is_midi and self.clip.source_path:
+            convert = menu.addAction("Convert Voice…")
+            convert.setToolTip("Re-render this vocal in another voice, keeping the melody")
         menu.addSeparator()
         act_split = menu.addAction("Split at Playhead")
         act_rev = menu.addAction("Reverse")
@@ -257,6 +261,8 @@ class ClipItem(QGraphicsRectItem):
         actions[speak] = "tts"
         if sing is not None:
             actions[sing] = "sing"
+        if convert is not None:
+            actions[convert] = "convert_voice"
         actions.update(vfx_map)
         name = actions.get(menu.exec(event.screenPos()))
         if name == "import":

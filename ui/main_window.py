@@ -20,6 +20,7 @@ import numpy as np
 from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSpinBox,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -907,6 +909,70 @@ class _VoiceCatalogDialog(QDialog):
         self._refresh()
 
 
+class _ConvertVoiceWorker(QThread):
+    """Neural voice conversion off the UI thread. Runs at roughly 10x the clip
+    length on CPU, so this is minutes, not seconds."""
+
+    done = Signal(str, str, float)      # (clip_id, out_path, duration)
+    failed = Signal(str, str)
+    progress = Signal(int, int)
+
+    def __init__(self, clip_id, samples, sr, ref_voice, semitones, fit_range, out_path):
+        super().__init__()
+        self._clip_id, self._samples, self._sr = clip_id, samples, sr
+        self._ref, self._semis, self._fit = ref_voice, semitones, fit_range
+        self._out = out_path
+
+    def run(self) -> None:
+        try:
+            import soundfile as sf
+
+            from fantasia_core import voiceconv
+
+            out, out_sr = voiceconv.convert(
+                self._samples, self._sr, self._ref, semitones=self._semis,
+                fit_range=self._fit,
+                progress=lambda i, n: self.progress.emit(i, n))
+            sf.write(self._out, out, out_sr, subtype="PCM_16")
+            self.done.emit(self._clip_id, self._out, len(out) / out_sr)
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(self._clip_id, str(exc))
+
+
+class _ConvertVoiceDialog(QDialog):
+    """Pick the voice to recast a vocal clip into."""
+
+    def __init__(self, parent=None, refs=(), clip_seconds: float = 0.0) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Convert Voice")
+        form = QFormLayout(self)
+        self.voice = QComboBox()
+        for v in refs:
+            self.voice.addItem(v.name, v.slug)
+        self.semis = QSpinBox()
+        self.semis.setRange(-12, 12)
+        self.semis.setSuffix(" semitones")
+        self.fit = QCheckBox("Move the melody into this voice's natural range")
+        self.fit.setToolTip("Changes the written notes — measured over an octave "
+                            "of transposition. Leave off for a scored vocal.")
+        form.addRow("Voice:", self.voice)
+        form.addRow("Transpose:", self.semis)
+        form.addRow("", self.fit)
+        est = QLabel(f"Keeps the performance and melody, replacing only the voice. "
+                     f"About {max(clip_seconds * 11 / 60, 0.1):.0f} min for this "
+                     f"{clip_seconds:.0f}s clip — it runs in the background.")
+        est.setWordWrap(True)
+        est.setStyleSheet("color:#8a8f96; font-size:11px;")
+        form.addRow(est)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def result_values(self):
+        return self.voice.currentData(), int(self.semis.value()), self.fit.isChecked()
+
+
 class _SingWorker(QThread):
     """Renders a melody + lyrics to a sung vocal (Kokoro syllables mapped onto the
     notes) off the UI thread; writes a WAV and optionally ingests it."""
@@ -1107,6 +1173,8 @@ class _AgentWorker(QThread):
             return self._sing_melody(args)  # compose-in-time singing
         if name == "vocal_fx":
             return self._vocalfx(args)  # WORLD vocal fx stays on this worker thread
+        if name == "convert_voice":
+            return self._convert_voice(args)  # neural VC, minutes long — worker only
         if name in ("stretch_clip", "stretch_clip_to_bars"):
             return self._stretch(name, args)
         return self._marshal(name, args)
@@ -1214,6 +1282,41 @@ class _AgentWorker(QThread):
         return dict(self._marshal("_apply_vocalfx_result", {
             "clip_id": args.get("clip_id"), "effect": eff, "path": path,
             "duration": dur, "base": info.get("base"), "start": info.get("start", 0.0)}) or {})
+
+    def _convert_voice(self, args: dict):
+        try:
+            import soundfile as sf
+
+            from fantasia_core import voiceconv
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        if not voiceconv.available():
+            return {"error": "voice conversion unavailable — pip install seed-vc"}
+        info = self._marshal("_prep_vocalfx", {"clip_id": args.get("clip_id")}) or {}
+        if info.get("error"):
+            return {"error": info["error"].replace("vocal_fx", "convert_voice")}
+        secs = len(info["samples"]) / max(info["sr"], 1)
+        self.note.emit(f"🎙️ Converting voice — {secs:.0f}s of audio, expect "
+                       f"about {secs * 11 / 60:.0f} min…")
+        try:
+            out, out_sr = voiceconv.convert(
+                info["samples"], info["sr"], args["ref_voice"],
+                semitones=int(args.get("semitones", 0)),
+                fit_range=bool(args.get("fit_range", False)),
+                progress=lambda i, n: self.note.emit(f"🎙️ Converting… part {i + 1}/{n}"))
+            cache = pathlib.Path.cwd() / ".fantasia_cache" / "voice"
+            cache.mkdir(parents=True, exist_ok=True)
+            path = str(cache / f"vc_{uuid.uuid4().hex[:8]}.wav")
+            sf.write(path, out, out_sr, subtype="PCM_16")
+            dur = len(out) / out_sr
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        res = dict(self._marshal("_apply_vocalfx_result", {
+            "clip_id": args.get("clip_id"), "effect": "convert", "path": path,
+            "duration": dur, "base": info.get("base"), "start": info.get("start", 0.0)}) or {})
+        res["converted_seconds"] = round(dur, 2)
+        res["voice"] = args["ref_voice"]
+        return res
 
     def _sing(self, args: dict):
         try:
@@ -2471,6 +2574,63 @@ class MainWindow(QMainWindow):
         self._workers.append(worker)
         worker.start()
 
+    # ---- voice conversion (Seed-VC) -------------------------------------
+    def _convert_voice_clip(self, clip) -> None:
+        from fantasia_core import voiceconv, voices as voice_cat
+
+        if not voiceconv.available():
+            self.statusBar().showMessage(
+                "Voice conversion needs seed-vc (pip install seed-vc)")
+            return
+        refs = voice_cat.list_voices()
+        if not refs:
+            self.statusBar().showMessage(
+                "No reference voices yet — add some under Agent ▸ Reference Voices")
+            return
+        dlg = _ConvertVoiceDialog(self, refs, clip.duration)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        slug, semis, fit = dlg.result_values()
+        try:
+            data = self.pool.load(clip.source_path)
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Couldn't read audio: {exc}")
+            return
+        sr = self.project.sample_rate
+        seg = data[int(clip.source_offset * sr):
+                   int((clip.source_offset + clip.duration) * sr)]
+        if not len(seg):
+            self.statusBar().showMessage("Empty clip")
+            return
+        cache = _REPO_ROOT / ".fantasia_cache" / "voice"
+        cache.mkdir(parents=True, exist_ok=True)
+        path = str(cache / f"vc_{uuid.uuid4().hex[:8]}.wav")
+        mins = len(seg) / sr * 11 / 60
+        self.statusBar().showMessage(
+            f"Converting voice… roughly {mins:.0f} min for this clip (runs in the background)")
+        worker = _ConvertVoiceWorker(clip.id, seg.copy(), sr, slug, semis, fit, path)
+        worker.done.connect(self._on_voice_converted)
+        worker.failed.connect(self._on_generate_failed)
+        worker.finished.connect(lambda w=worker: self._drop_worker(w))
+        self._workers.append(worker)
+        worker.start()
+
+    def _on_voice_converted(self, clip_id: str, path: str, duration: float) -> None:
+        _, clip = self.project.find_clip(clip_id)
+        if clip is None:
+            return
+        self.bus.dispatch(SetClipAttrCommand(clip_id, source_path=path,
+                                             source_offset=0.0, duration=duration))
+        self._refresh()
+        self.statusBar().showMessage("Voice converted", 4000)
+        if self.search_service is not None:
+            try:
+                self.search_service.ingest_tagged([{
+                    "path": path, "name": f"converted: {clip.name}",
+                    "tags": ["vocal", "voice", "converted", "singing"]}])
+            except Exception:  # noqa: BLE001
+                pass
+
     # ---- time stretch (Rubber Band) -------------------------------------
     def _stretch_clip_action(self, clip, which: str) -> None:
         from fantasia_core import stretch as st
@@ -2938,6 +3098,8 @@ class MainWindow(QMainWindow):
             self._separate_clip(clip)
         elif action == "tts":
             self._tts_into_clip(clip)
+        elif action == "convert_voice":
+            self._convert_voice_clip(clip)
         elif action == "sing":
             self._sing_clip(clip)
         elif action.startswith("vfx_"):

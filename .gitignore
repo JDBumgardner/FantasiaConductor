@@ -24,3 +24,6 @@ tracks_megadope/
 .DS_Store
 .idea/
 .vscode/
+
+# seed-vc writes here if its download dir patch ever fails
+checkpoints/

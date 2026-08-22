@@ -200,6 +200,11 @@ class AgentTools:
                  "required": ["text"]}},
             {"name": "list_reference_voices", "description": "List the reference voices available for cloning. Each has a 'slug' to pass as 'ref_voice' to speak/sing/sing_melody, which switches those tools to the cloning engine and reproduces that timbre. Call this before offering the user a choice of voice.",
              "input_schema": {"type": "object", "properties": {}}},
+            {"name": "convert_voice", "description": "Recast an existing vocal clip in a different voice, keeping the performance and the melody exactly as sung. This is the fix when a sung vocal sounds synthetic or vocoder-y: pick a 'ref_voice' slug from list_reference_voices and the clip is re-rendered with that voice's texture. Slow — roughly 10x the clip length — so use it on a finished vocal, not while iterating. Set fit_range only if you WANT the melody transposed into the target's comfortable range.",
+             "input_schema": {"type": "object", "required": ["clip_id", "ref_voice"], "properties": {
+                 "clip_id": {"type": "string"}, "ref_voice": {"type": "string", "description": "Slug from list_reference_voices"},
+                 "semitones": {"type": "integer", "description": "Transpose the result, default 0"},
+                 "fit_range": {"type": "boolean", "description": "Move the melody into the target's range (changes the written notes). Default false."}}}},
             {"name": "vocal_fx", "description": "Apply a WORLD-vocoder vocal effect to an audio (vocal) clip: 'autotune' (snap pitch to key+scale), 'harmony' (add a harmony voice a given interval up/down on a NEW track), 'formant_up'/'formant_down' (brighter/darker character), 'deess' (tame sibilance), 'double' (thicken). Formant-preserving, so it sounds natural.",
              "input_schema": {"type": "object", "properties": {
                  "clip_id": {"type": "string"},
@@ -454,6 +459,8 @@ class AgentTools:
             return {"error": "sing_melody must be run off the UI thread"}
         if name == "vocal_fx":
             return {"error": "vocal_fx must be run off the UI thread"}
+        if name == "convert_voice":
+            return {"error": "convert_voice must be run off the UI thread"}
         if name in ("stretch_clip", "stretch_clip_to_bars"):
             return {"error": f"{name} must be run off the UI thread"}
         if name == "_fill_generated":
