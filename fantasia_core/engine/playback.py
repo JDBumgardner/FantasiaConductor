@@ -137,6 +137,30 @@ class PlaybackEngine:
                 self._playing = False
 
     # ---- transport -------------------------------------------------------
+    @property
+    def has_stream(self) -> bool:
+        """True while a PortAudio stream is open. A device-list refresh
+        (terminate/initialize) is only safe when this is False."""
+        return self._stream is not None
+
+    def _close_stream(self) -> None:
+        """Tear the stream down. Uses abort() (discard buffered audio) rather
+        than stop() (drain it) — draining blocks the caller, badly so on
+        Bluetooth devices."""
+        if self._stream is not None:
+            try:
+                self._stream.abort()
+            except Exception:  # noqa: BLE001
+                try:
+                    self._stream.stop()
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                self._stream.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._stream = None
+
     def _try_open(self, device) -> bool:
         try:
             self._stream = sd.OutputStream(
@@ -179,23 +203,45 @@ class PlaybackEngine:
     def set_output_device(self, device) -> bool:
         """Route playback to a device index (``None`` = system default).
 
-        Recreates the stream on the new device, resuming if it was playing."""
-        if device == self.output_device and self._stream is not None:
-            return True
-        self.output_device = device
+        The device is opened *immediately* to verify it works, so a bad choice
+        is reported now instead of silently failing later at Play. Returns False
+        if the requested device could not be opened (playback falls back to the
+        system default so the app still makes sound)."""
+        if sd is None:
+            return False
         was_playing = self._playing
         self._playing = False
-        if self._stream is not None:
-            try:
-                self._stream.stop()
-                self._stream.close()
-            except Exception:  # noqa: BLE001
-                pass
-            self._stream = None
-        return self.play() if was_playing else True
+        self._close_stream()
+        self.output_device = device
+
+        ok = self._try_open(device)          # prove it can actually open
+        if not ok:
+            self._try_open(None)             # keep audio alive on the default
+
+        if was_playing:
+            self._playing = True             # resume on the new device
+        else:
+            # Idle: don't hold the device open — that would block the device-list
+            # refresh (and other apps). play() reopens it.
+            self._close_stream()
+            self.output_device = device if ok else None
+        return ok
 
     def stop(self) -> None:
+        """Stop playback instantly.
+
+        Deliberately does NOT tear down the stream: closing a device blocks the
+        calling (UI) thread while the driver shuts down — on Bluetooth that
+        reads as the app hanging. The callback outputs silence while stopped,
+        and the open device makes the next Play instant. Use release_device()
+        when the device itself genuinely has to be freed."""
         self._playing = False
+
+    def release_device(self) -> None:
+        """Close the stream so the OS device list can be re-read (or the device
+        handed to another app). Only safe/needed when not playing."""
+        if not self._playing:
+            self._close_stream()
 
     def close(self) -> None:
         self._playing = False

@@ -16,6 +16,10 @@ assets/soundfonts/
 # Audio renders / source material (large binaries)
 audio_files_gigadope/
 
+# Local project saves — personal work, not part of the codebase
+tracks_megadope/
+*.fcp
+
 # OS / editor
 .DS_Store
 .idea/

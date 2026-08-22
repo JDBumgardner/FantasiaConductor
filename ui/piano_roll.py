@@ -46,6 +46,13 @@ PITCH_LO = 21
 PITCH_HI = 108
 RESIZE_EDGE = 9
 MIN_NOTE = midi_ops.MIN_NOTE
+PR_RULER_H = 22      # bar/beat ruler pinned to the top of the roll
+_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def note_name(pitch: int) -> str:
+    """MIDI number → scientific pitch name (60 → C4)."""
+    return f"{_NAMES[int(pitch) % 12]}{int(pitch) // 12 - 1}"
 _BLACK_KEYS = {1, 3, 6, 8, 10}
 
 DRUM_LANES = [
@@ -90,7 +97,14 @@ class NoteItem(QGraphicsRectItem):
         painter.setBrush(QBrush(c))
         painter.setPen(QPen(theme.NOTE_SELECTED, 1.5) if self.isSelected()
                        else QPen(theme.NOTE_BORDER, 1))
-        painter.drawRoundedRect(self.rect(), 2, 2)
+        r = self.rect()
+        painter.drawRoundedRect(r, 2, 2)
+        # Label the note so you can read the pitch straight off the block.
+        if not self._view.drum_mode and r.width() >= 26 and r.height() >= 9:
+            painter.setPen(QPen(QColor(theme.FG_BRIGHT)))
+            painter.setFont(QFont("", 7))
+            painter.drawText(r.adjusted(3, 0, -2, 0), Qt.AlignVCenter | Qt.AlignLeft,
+                             note_name(self.note.pitch))
 
     def hoverMoveEvent(self, event) -> None:  # noqa: N802
         x = event.pos().x()
@@ -159,7 +173,8 @@ class PianoRollView(QGraphicsView):
     paste_requested = Signal()
     split_requested = Signal()
     preview = Signal(int)
-    status = Signal(str)
+    status = Signal(str)   # transient action feedback ("Split 3 notes")
+    info = Signal(str)     # live "C#4 · bar 2 beat 3.5" readout while editing
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         self._scene = QGraphicsScene()
@@ -187,6 +202,8 @@ class PianoRollView(QGraphicsView):
         self._draw_anchor = 0.0
         self._just_drew = False
         self._note_len_beats = 1.0
+        self._peaks = None          # (min,max) envelope of the clip's rendered audio
+        self.clip_bar = 1           # song bar this clip starts on (for the ruler)
         self._snap_beats: Optional[float] = 0.25
         self._drag_mode: Optional[str] = None
         self._drag_origin = None
@@ -219,10 +236,10 @@ class PianoRollView(QGraphicsView):
             row = self._pitch_row.get(p, self._nearest_row(p) if self._lane_pitch else 0)
         else:
             row = PITCH_HI - p
-        return row * self.row_h()
+        return PR_RULER_H + row * self.row_h()
 
     def y_to_pitch(self, y: float) -> int:
-        row = int(y / self.row_h())
+        row = int((y - PR_RULER_H) / self.row_h())
         if self.drum_mode or self.fold:
             if not self._lane_pitch:
                 return 60
@@ -300,7 +317,108 @@ class PianoRollView(QGraphicsView):
 
     def _update_scene_rect(self) -> None:
         width = KEY_W + max(self.duration + 2.0, 8.0) * self.pps
-        self._scene.setSceneRect(0, 0, width, self._rows() * self.row_h())
+        self._scene.setSceneRect(0, 0, width,
+                                 PR_RULER_H + self._rows() * self.row_h())
+
+
+
+    def bar_beat(self, t: float) -> tuple:
+        """Clip-relative seconds → (bar, beat) in song terms, both 1-based."""
+        if self.spb <= 0:
+            return (self.clip_bar, 1.0)
+        total = t / self.spb                      # beats from the clip start
+        bar = self.clip_bar + int(total // self.bpb)
+        beat = total % self.bpb + 1.0
+        return (bar, beat)
+
+
+    def describe(self, pitch: int, t: float) -> str:
+        bar, beat = self.bar_beat(t)
+        label = note_name(pitch)
+        if self.drum_mode:
+            label = dict(DRUM_LANES).get(pitch, label)
+        return f"{label} · bar {bar} beat {beat:g}"
+
+
+    def set_waveform(self, samples, sr: int) -> None:
+        """Store a min/max envelope of the clip's rendered audio to paint behind
+        the notes (see the reference: waveform superimposed on the roll)."""
+        try:
+            import numpy as np
+
+            if samples is None or len(samples) == 0:
+                self._peaks = None
+            else:
+                mono = samples if samples.ndim == 1 else samples.mean(axis=1)
+                buckets = 1400
+                step = max(1, len(mono) // buckets)
+                trimmed = mono[: step * (len(mono) // step)].reshape(-1, step)
+                self._peaks = (trimmed.min(axis=1), trimmed.max(axis=1))
+        except Exception:  # noqa: BLE001
+            self._peaks = None
+        self.viewport().update()
+
+
+    def _paint_ruler(self, painter: QPainter, rect: QRectF) -> None:
+        """Bar/beat ruler pinned to the top of the viewport, numbered in SONG
+        bars (so what you read here matches what you tell the agent)."""
+        view_top = self.mapToScene(0, 0).y()
+        view_left = self.mapToScene(0, 0).x()
+        painter.fillRect(QRectF(rect.left(), view_top, rect.width(), PR_RULER_H),
+                         theme.RULER_BG)
+        painter.setPen(theme.RULER_LINE)
+        painter.drawLine(int(rect.left()), int(view_top + PR_RULER_H),
+                         int(rect.right()), int(view_top + PR_RULER_H))
+        beat_px = self.spb * self.pps
+        if beat_px > 0:
+            n_beats = int(self.duration / self.spb) + 2
+            for b in range(n_beats):
+                x = KEY_W + b * beat_px
+                if x < rect.left() - beat_px or x > rect.right():
+                    continue
+                bar = self.clip_bar + b // self.bpb
+                beat = b % self.bpb + 1
+                downbeat = beat == 1
+                painter.setPen(theme.RULER_LINE if downbeat else QColor(*theme.GRID_BEAT))
+                painter.drawLine(int(x), int(view_top + (4 if downbeat else 12)),
+                                 int(x), int(view_top + PR_RULER_H))
+                painter.setFont(QFont("", 8 if downbeat else 7))
+                painter.setPen(QColor(theme.CYAN if downbeat else theme.FG_DIM))
+                painter.drawText(int(x) + 3, int(view_top + 11),
+                                 f"{bar}" if downbeat else f"{bar}.{beat}")
+        # keep the gutter corner clean
+        painter.fillRect(QRectF(view_left, view_top, KEY_W, PR_RULER_H),
+                         QColor(theme.BG_PANEL))
+        painter.setPen(QColor(theme.FG_DIM))
+        painter.setFont(QFont("", 7))
+        painter.drawText(int(view_left) + 6, int(view_top + 14), "bar.beat")
+
+
+    def _paint_waveform(self, painter: QPainter, rect: QRectF) -> None:
+        """The clip's rendered audio, superimposed faintly across the roll."""
+        if self._peaks is None or self.duration <= 0:
+            return
+        lo, hi = self._peaks
+        n = len(lo)
+        if n == 0:
+            return
+        top = PR_RULER_H
+        height = self._rows() * self.row_h()
+        mid = top + height / 2
+        scale = height * 0.42
+        col = QColor(theme.CYAN)
+        col.setAlpha(46)                     # behind the notes, never competing
+        painter.setPen(QPen(col, 1))
+        x0, x1 = self.time_to_x(0.0), self.time_to_x(self.duration)
+        step = (x1 - x0) / n
+        first = max(0, int((rect.left() - x0) / step) - 1) if step > 0 else 0
+        last = min(n, int((rect.right() - x0) / step) + 2) if step > 0 else n
+        for i in range(first, last):
+            x = x0 + i * step
+            painter.drawLine(int(x), int(mid - hi[i] * scale),
+                             int(x), int(mid - lo[i] * scale))
+
+    # ---- foreground: left gutter pinned -------------------------------
 
     def _apply_lanes(self) -> None:
         if self.drum_mode:
@@ -418,6 +536,7 @@ class PianoRollView(QGraphicsView):
         self._scene.clearSelection()
         item.setSelected(True)
         self.preview.emit(pitch)
+        self.info.emit(self.describe(pitch, start))
         return item
 
     # ---- note drag (move / resize / velocity of the selection) -----------
@@ -479,10 +598,12 @@ class PianoRollView(QGraphicsView):
             item.note.pitch = int(max(lo, min(hi, pitch + dp)))
             item.refresh()
         if self._drag_snapshot:
-            new_p = self._drag_snapshot[0][0].note.pitch
+            lead = self._drag_snapshot[0][0].note
+            new_p = lead.pitch
             if new_p != getattr(self, "_last_preview", None):
                 self._last_preview = new_p
-                self.preview.emit(new_p)
+                self.preview.emit(new_p)          # audition the pitch as it changes
+            self.info.emit(self.describe(new_p, lead.start))
 
     def end_note_drag(self) -> None:
         if not self._drag_snapshot:
@@ -767,7 +888,7 @@ class PianoRollView(QGraphicsView):
         if self.drum_mode or self.fold:
             pitches = self._lane_pitch
             for i, p in enumerate(pitches):
-                y = i * rh
+                y = PR_RULER_H + i * rh
                 shade = theme.LANE_ODD if (p % 12) in _BLACK_KEYS else theme.LANE_EVEN
                 if self.drum_mode:
                     shade = theme.LANE_EVEN if i % 2 == 0 else theme.LANE_ODD
@@ -798,6 +919,8 @@ class PianoRollView(QGraphicsView):
                 painter.setPen(QColor(*color))
                 painter.drawLine(int(x), int(rect.top()), int(x), int(rect.bottom()))
 
+        self._paint_waveform(painter, rect)
+
         endx = self.time_to_x(self.duration)
         end_pen = QColor(theme.PLAYHEAD)
         end_pen.setAlpha(120)
@@ -805,6 +928,7 @@ class PianoRollView(QGraphicsView):
         painter.drawLine(int(endx), int(rect.top()), int(endx), int(rect.bottom()))
 
     def drawForeground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
+        self._paint_ruler(painter, rect)
         view_left = self.mapToScene(0, 0).x()
         rh = self.row_h()
         painter.fillRect(QRectF(view_left, rect.top(), KEY_W, rect.height()), QColor(theme.BG_PANEL))
@@ -812,7 +936,7 @@ class PianoRollView(QGraphicsView):
         if self.drum_mode:
             labels = getattr(self, "_drum_labels", {p: n for p, n in DRUM_LANES})
             for i, p in enumerate(self._lane_pitch):
-                y = i * rh
+                y = PR_RULER_H + i * rh
                 painter.setPen(QColor(*theme.GRID_BEAT))
                 painter.drawLine(int(view_left), int(y), int(view_left + KEY_W), int(y))
                 painter.setPen(QColor(theme.FG))
@@ -821,7 +945,7 @@ class PianoRollView(QGraphicsView):
             painter.setFont(QFont("", 7))
             if self.fold:
                 for i, p in enumerate(self._lane_pitch):
-                    y = i * rh
+                    y = PR_RULER_H + i * rh
                     if p % 12 == 0:
                         painter.setPen(QColor(theme.CYAN))
                         painter.drawText(int(view_left) + 4, int(y + rh - 2), f"C{p // 12 - 1}")
@@ -910,6 +1034,11 @@ class PianoRollPanel(QWidget):
         top_row.addWidget(self._title, 1)
         top_row.addWidget(self.btn_draw)
         top_row.addWidget(self.btn_fold)
+        self.readout = QLabel("")
+        self.readout.setMinimumWidth(150)
+        self.readout.setStyleSheet(
+            f"color:{theme.NOTE_BORDER.name()}; background:transparent; font-weight:600;")
+        top_row.addWidget(self.readout)
         top_row.addWidget(note_label)
         top_row.addWidget(self.note_value)
         top_row.addWidget(snap_label)
@@ -922,6 +1051,7 @@ class PianoRollPanel(QWidget):
         self.view.cut_requested.connect(self.cut_requested.emit)
         self.view.paste_requested.connect(self.paste_requested.emit)
         self.view.status.connect(self._on_status)
+        self.view.info.connect(self.readout.setText)
 
     def _on_status(self, msg: str) -> None:
         # Keep Draw/Fold buttons matched when toggled from the keyboard.
@@ -942,7 +1072,9 @@ class PianoRollPanel(QWidget):
                 self.snap_value.blockSignals(blocked)
                 break
 
-    def edit_clip(self, clip, spb: float, bpb: int, drum_mode: bool = False) -> None:  # noqa: ANN001
+    def edit_clip(self, clip, spb: float, bpb: int, drum_mode: bool = False,
+                  clip_bar: int = 1) -> None:  # noqa: ANN001
+        self.view.clip_bar = clip_bar        # ruler numbers in song bars
         self.view.set_clip(clip, spb, bpb, drum_mode)
         self.refresh_title(clip, drum_mode)
         self.view.setFocus(Qt.OtherFocusReason)

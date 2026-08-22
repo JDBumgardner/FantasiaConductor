@@ -1,4 +1,4 @@
-"""Combined bottom editor — Piano Roll / Synth, hosted in the main vertical splitter."""
+"""Combined bottom editor — Piano Roll / Synth / EQ, hosted in the main vertical splitter."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui import theme
+from ui.eq_curve import EqCurveView
 from ui.piano_roll import PianoRollPanel
 from ui.synth_panel import SynthPanel
 
@@ -55,22 +57,35 @@ class EditorDock(QWidget):
         row.setSpacing(6)
         self.btn_piano = QPushButton("🎹 Piano Roll")
         self.btn_synth = QPushButton("🎛 Synth")
+        self.btn_eq = QPushButton("📈 EQ")
         group = QButtonGroup(self)
         group.setExclusive(True)
-        for b in (self.btn_piano, self.btn_synth):
+        for b in (self.btn_piano, self.btn_synth, self.btn_eq):
             b.setCheckable(True)
             b.setMinimumWidth(110)
             group.addButton(b)
         self.btn_piano.setChecked(True)
         row.addWidget(self.btn_piano)
         row.addWidget(self.btn_synth)
+        row.addWidget(self.btn_eq)
         row.addStretch(1)
 
         self.stack = QStackedWidget()
         self.piano = PianoRollPanel()
         self.synth = SynthPanel()
-        self.stack.addWidget(self.piano)   # index 0
-        self.stack.addWidget(self.synth)   # index 1
+        # The synth's slider grid has a tall minimum that would fight the
+        # splitter when dragged small — let it scroll instead.
+        synth_scroll = QScrollArea()
+        synth_scroll.setWidget(self.synth)
+        synth_scroll.setWidgetResizable(True)
+        synth_scroll.setFrameShape(QScrollArea.NoFrame)
+        synth_scroll.setMinimumHeight(60)
+        self.piano.setMinimumHeight(60)
+        self.eq = EqCurveView()
+        self.stack.addWidget(self.piano)         # index 0
+        self.stack.addWidget(synth_scroll)       # index 1
+        self.stack.addWidget(self.eq)            # index 2
+        self.stack.setMinimumHeight(60)
         self.view = self.piano.view        # convenience alias used by the window
 
         v.addWidget(bar)
@@ -78,6 +93,7 @@ class EditorDock(QWidget):
 
         self.btn_piano.clicked.connect(lambda: self.switch_to_piano_mode())
         self.btn_synth.clicked.connect(lambda: self._set_mode(1))
+        self.btn_eq.clicked.connect(lambda: self._set_mode(2))
         self.hide()
 
     def attach_splitter(self, split: QSplitter) -> None:
@@ -106,6 +122,7 @@ class EditorDock(QWidget):
         self.stack.setCurrentIndex(idx)
         self.btn_piano.setChecked(idx == 0)
         self.btn_synth.setChecked(idx == 1)
+        self.btn_eq.setChecked(idx == 2)
 
     def switch_to_piano_mode(self) -> None:
         """Flip to piano-roll mode without forcing the editor open."""
@@ -119,4 +136,9 @@ class EditorDock(QWidget):
     def show_synth(self, track) -> None:  # noqa: ANN001
         self.synth.set_track(track)
         self._set_mode(1)
+        self._reveal()
+
+    def show_eq(self, specs, sr: int = 44100, title: str = "") -> None:
+        self.eq.set_chain(specs, sr, title)
+        self._set_mode(2)
         self._reveal()

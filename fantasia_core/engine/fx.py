@@ -47,10 +47,53 @@ def _make(spec: dict):
             return pb.Chorus()
         if kind == "distortion":
             return pb.Distortion(drive_db=p.get("drive", 12.0))
+
+        # ---- EQ bands -----------------------------------------------------
+        # A "bell": boost/cut a band centred on freq. Q sets its width
+        # (0.7 broad and musical, 4+ surgical).
+        if kind == "eq_peak":
+            return pb.PeakFilter(cutoff_frequency_hz=p.get("freq", 1000.0),
+                                 gain_db=p.get("gain", 0.0), q=p.get("q", 1.0))
+        # Shelves tilt everything above/below the corner instead of a band.
+        if kind == "eq_low_shelf":
+            return pb.LowShelfFilter(cutoff_frequency_hz=p.get("freq", 200.0),
+                                     gain_db=p.get("gain", 0.0), q=p.get("q", 0.7))
+        if kind == "eq_high_shelf":
+            return pb.HighShelfFilter(cutoff_frequency_hz=p.get("freq", 6000.0),
+                                      gain_db=p.get("gain", 0.0), q=p.get("q", 0.7))
+
+        # ---- dynamics -----------------------------------------------------
         if kind == "compressor":
             return pb.Compressor(
-                threshold_db=p.get("threshold", -16.0), ratio=p.get("ratio", 4.0)
+                threshold_db=p.get("threshold", -16.0), ratio=p.get("ratio", 4.0),
+                attack_ms=p.get("attack", 10.0), release_ms=p.get("release", 100.0),
             )
+        if kind == "limiter":
+            # NOT pedalboard's Limiter: that one applies makeup gain up to the
+            # threshold (a maximizer), so it can push a quiet track to full
+            # scale — the opposite of what you want on an insert. A compressor
+            # with a near-infinite ratio and fast attack caps predictably.
+            return pb.Compressor(
+                threshold_db=p.get("threshold", -1.0), ratio=p.get("ratio", 20.0),
+                attack_ms=p.get("attack", 1.0), release_ms=p.get("release", 100.0),
+            )
+        if kind == "gate":
+            return pb.NoiseGate(threshold_db=p.get("threshold", -50.0),
+                                ratio=p.get("ratio", 4.0),
+                                attack_ms=p.get("attack", 1.0),
+                                release_ms=p.get("release", 100.0))
+
+        # ---- colour -------------------------------------------------------
+        # Saturation = drive into a soft curve for harmonics, then pull the
+        # level back so it warms rather than just gets louder.
+        if kind == "saturator":
+            drive = float(p.get("drive", 5.0))
+            return pb.Pedalboard([
+                pb.Distortion(drive_db=drive),
+                pb.Gain(gain_db=p.get("output", -drive * 0.6)),
+            ])
+        if kind == "gain":
+            return pb.Gain(gain_db=p.get("gain", 0.0))
     except Exception:  # noqa: BLE001 — bad params shouldn't crash audio
         return None
     return None

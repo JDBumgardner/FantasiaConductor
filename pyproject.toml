@@ -64,6 +64,10 @@ voice = [
 stretch = [
     "pyrubberband>=0.3",
 ]
+# Standard MIDI file import + strum-pattern translation.
+midi_files = [
+    "mido>=1.3",
+]
 # M6 — agent.
 agent = [
     "anthropic>=0.40",
