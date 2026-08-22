@@ -161,6 +161,15 @@ QDialog QLineEdit, QDialog QSpinBox, QDialog QDoubleSpinBox, QInputDialog QLineE
     border-radius: 4px; padding: 5px; selection-background-color: {theme.ACCENT};
     selection-color: #12030c; }}
 QDialogButtonBox QPushButton {{ min-width: 68px; padding: 5px 12px; }}
+
+/* Drag handles. The defaults are ~4px and invisible on a dark theme, which
+   makes panels feel unresizable — give them width and a hover highlight. */
+QMainWindow::separator {{ background: {theme.BORDER}; width: 7px; height: 7px; }}
+QMainWindow::separator:hover {{ background: {theme.ACCENT}; }}
+QSplitter::handle {{ background: {theme.BORDER}; }}
+QSplitter::handle:horizontal {{ width: 7px; }}
+QSplitter::handle:vertical {{ height: 7px; }}
+QSplitter::handle:hover {{ background: {theme.ACCENT}; }}
 """
 
 _SECRETS_PATH = _REPO_ROOT / ".fantasia_cache" / "secrets.env"
@@ -275,6 +284,131 @@ _EXPORT_FORMATS = {
 }
 
 
+class _FxDialog(QDialog):
+    """Parameter editor for one effect. Spec: [(key, label, lo, hi, default, suffix)]."""
+
+    def __init__(self, title: str, spec: list, hint: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        form = QFormLayout(self)
+        self._spins = {}
+        for key, label, lo, hi, default, suffix in spec:
+            box = QDoubleSpinBox()
+            box.setRange(lo, hi)
+            box.setDecimals(2 if hi <= 50 else 0)
+            box.setSingleStep((hi - lo) / 100.0)
+            box.setValue(default)
+            if suffix:
+                box.setSuffix(f" {suffix}")
+            form.addRow(label, box)
+            self._spins[key] = box
+        if hint:
+            note = QLabel(hint)
+            note.setWordWrap(True)
+            note.setStyleSheet("color:#8a8f96; font-size:11px;")
+            form.addRow(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def params(self) -> dict:
+        return {k: b.value() for k, b in self._spins.items()}
+
+
+# Effects that open a parameter dialog: action -> (fx type, title, spec, hint)
+_FX_DIALOGS = {
+    "add_eq_peak": ("eq_peak", "Bell / Peak EQ", [
+        ("freq", "Frequency", 20.0, 20000.0, 1000.0, "Hz"),
+        ("gain", "Gain", -24.0, 24.0, 0.0, "dB"),
+        ("q", "Q (width)", 0.1, 10.0, 1.0, ""),
+    ], "Boost or cut a band. Low Q is broad and musical; high Q is surgical. "
+       "Cutting usually sounds more natural than boosting."),
+    "add_eq_low_shelf": ("eq_low_shelf", "Low Shelf EQ", [
+        ("freq", "Corner", 20.0, 2000.0, 200.0, "Hz"),
+        ("gain", "Gain", -24.0, 24.0, 0.0, "dB"),
+        ("q", "Q", 0.1, 4.0, 0.7, ""),
+    ], "Tilts everything BELOW the corner — weight and body."),
+    "add_eq_high_shelf": ("eq_high_shelf", "High Shelf EQ", [
+        ("freq", "Corner", 1000.0, 20000.0, 6000.0, "Hz"),
+        ("gain", "Gain", -24.0, 24.0, 0.0, "dB"),
+        ("q", "Q", 0.1, 4.0, 0.7, ""),
+    ], "Tilts everything ABOVE the corner — air and brightness."),
+    "add_saturator": ("saturator", "Saturator", [
+        ("drive", "Drive", 0.0, 30.0, 5.0, "dB"),
+        ("output", "Output trim", -24.0, 6.0, -3.0, "dB"),
+    ], "Adds harmonics so the track reads louder and warmer without more level. "
+       "Output trim compensates for the drive — keep it roughly −0.6× drive."),
+    "add_compressor": ("compressor", "Compressor", [
+        ("threshold", "Threshold", -60.0, 0.0, -16.0, "dB"),
+        ("ratio", "Ratio (n:1)", 1.0, 20.0, 4.0, ""),
+        ("attack", "Attack", 0.1, 200.0, 10.0, "ms"),
+        ("release", "Release", 5.0, 1000.0, 100.0, "ms"),
+    ], "Turns down anything above the threshold. Fast attack tames transients "
+       "(less punch); slow attack lets the hit through. 4:1 is a good default."),
+}
+
+# Effects added straight from the menu with sensible defaults.
+_FX_PRESETS_EXTRA = {
+    "add_limiter": {"type": "limiter", "params": {"threshold": -1.0, "release": 100.0}},
+    "add_gate": {"type": "gate", "params": {"threshold": -45.0, "ratio": 4.0}},
+    "add_distortion": {"type": "distortion", "params": {"drive": 12.0}},
+}
+
+
+class _MidiImportDialog(QDialog):
+    """How to bring a .mid in — as-is, or translated into a real strum."""
+
+    def __init__(self, filename: str, is_pattern: bool, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Import MIDI")
+        form = QFormLayout(self)
+        self.mode = QComboBox()
+        if is_pattern:
+            self.mode.addItem("Play as a strum (recommended)", "strum")
+        self.mode.addItem("Import notes exactly as written", "raw")
+        if is_pattern:
+            self.mode.addItem("Import notes, drop keyswitches", "raw_clean")
+        self.chord = QComboBox()
+        from fantasia_core.strum import CHORDS
+        for name in CHORDS:
+            self.chord.addItem(name)
+        self.chord.setCurrentText("G")
+        self.strum_ms = QDoubleSpinBox()
+        self.strum_ms.setRange(0.0, 120.0)
+        self.strum_ms.setValue(22.0)
+        self.strum_ms.setSuffix(" ms")
+        form.addRow(QLabel(f"<b>{filename}</b>"))
+        form.addRow("Mode:", self.mode)
+        form.addRow("Chord:", self.chord)
+        form.addRow("Strum speed:", self.strum_ms)
+        if is_pattern:
+            hint = ("This file drives a sample library with keyswitches — its notes are "
+                    "triggers, not music. 'Play as a strum' keeps the rhythm, accents and "
+                    "stroke direction and plays them on the chord you pick.")
+        else:
+            hint = "Notes are placed against the project tempo, so they land on your grid."
+        note = QLabel(hint)
+        note.setWordWrap(True)
+        note.setStyleSheet("color:#8a8f96; font-size:11px;")
+        form.addRow(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+        self.mode.currentIndexChanged.connect(self._sync)
+        self._sync()
+
+    def _sync(self) -> None:
+        strum = self.mode.currentData() == "strum"
+        self.chord.setEnabled(strum)
+        self.strum_ms.setEnabled(strum)
+
+    def values(self):
+        return (self.mode.currentData(), self.chord.currentText(),
+                float(self.strum_ms.value()))
+
+
 class _ExportDialog(QDialog):
     """Choose mix-vs-stems, format, and quality for audio export."""
 
@@ -338,6 +472,71 @@ class _TranscribeWorker(QThread):
             self.done.emit(self._clip_id, notes)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(self._clip_id, str(exc))
+
+
+class _HumWorker(QThread):
+    """Monophonic hum → melody off the UI thread."""
+
+    done = Signal(str, list)   # (clip_id, list[Note])
+    failed = Signal(str, str)
+
+    def __init__(self, clip_id: str, samples, sr: int, spb: float, bpb: int,
+                 quantize: bool, key=None, scale: str = "major") -> None:
+        super().__init__()
+        self._clip_id = clip_id
+        self._samples = samples
+        self._sr = sr
+        self._spb = spb
+        self._bpb = bpb
+        self._quantize = quantize
+        self._key = key
+        self._scale = scale
+
+    def run(self) -> None:
+        try:
+            from fantasia_core.hum import transcribe_hum
+
+            notes = transcribe_hum(self._samples, self._sr, spb=self._spb,
+                                   bpb=self._bpb, quantize=self._quantize,
+                                   key=self._key, scale=self._scale)
+            self.done.emit(self._clip_id, notes)
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(self._clip_id, str(exc))
+
+
+class _HumDialog(QDialog):
+    """Options for turning a hum into notes."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Hum → Melody")
+        form = QFormLayout(self)
+        self.quantize = QComboBox()
+        self.quantize.addItem("Snap to the grid (1/16)", True)
+        self.quantize.addItem("Keep my exact timing", False)
+        self.key = QComboBox()
+        self.key.addItem("Any note (chromatic)", None)
+        for k in ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]:
+            self.key.addItem(f"Snap to {k}", k)
+        self.scale = QComboBox()
+        for s in ("major", "minor", "pentatonic"):
+            self.scale.addItem(s)
+        form.addRow("Timing:", self.quantize)
+        form.addRow("Key:", self.key)
+        form.addRow("Scale:", self.scale)
+        note = QLabel("Tracks a single voice — hum, whistle or sing one note at a "
+                      "time. Slides between notes are ignored.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color:#8a8f96; font-size:11px;")
+        form.addRow(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def values(self):
+        return (bool(self.quantize.currentData()), self.key.currentData(),
+                self.scale.currentText())
 
 
 class _GenerateWorker(QThread):
@@ -1008,6 +1207,7 @@ class MainWindow(QMainWindow):
         self._seed_folder = str(_REPO_ROOT / "assets" / "samples")
         self._search_worker = None
 
+        self._preview_lock = threading.Lock()  # serialises note-preview playback
         self.recorder = Recorder(sample_rate=self.project.sample_rate)
         self.record_input_device = None
         self._rec_timer = QTimer(self)
@@ -1088,6 +1288,8 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(7)          # grabbable, matches the dock separators
+        splitter.setSizes([240, 900])       # header starts at its old fixed width
 
         layout.addWidget(self.transport)
         layout.addWidget(splitter, stretch=1)
@@ -1125,11 +1327,12 @@ class MainWindow(QMainWindow):
         self.act_save = QAction("&Save", self, shortcut=QKeySequence.Save)
         self.act_save_as = QAction("Save &As…", self, shortcut=QKeySequence.SaveAs)
         self.act_import = QAction("&Import Audio…", self, shortcut="Ctrl+I")
+        self.act_import_midi = QAction("Import &MIDI…", self, shortcut="Ctrl+Shift+I")
         self.act_demo = QAction("Load &Demo Arrangement", self)
         self.act_export = QAction("&Export Audio…", self, shortcut="Ctrl+Shift+E")
         file_menu.addActions([self.act_new, self.act_open, self.act_save, self.act_save_as])
         file_menu.addSeparator()
-        file_menu.addActions([self.act_import, self.act_demo])
+        file_menu.addActions([self.act_import, self.act_import_midi, self.act_demo])
         file_menu.addSeparator()
         file_menu.addAction(self.act_export)
 
@@ -1209,6 +1412,7 @@ class MainWindow(QMainWindow):
         self.act_save.triggered.connect(self._on_save)
         self.act_save_as.triggered.connect(self._on_save_as)
         self.act_import.triggered.connect(self._on_import)
+        self.act_import_midi.triggered.connect(self._on_import_midi)
         self.act_demo.triggered.connect(self._on_load_demo)
         self.act_export.triggered.connect(self._on_export)
         self.act_split.triggered.connect(self._on_split_selected)
@@ -1460,9 +1664,12 @@ class MainWindow(QMainWindow):
         self._output_group = QActionGroup(self)
         self._output_group.setExclusive(True)
 
-        # Re-read the OS device list only when NO stream is open. Re-initialising
-        # PortAudio with a live stream corrupts its state and renumbers devices,
-        # which is what made a freshly-picked output silently fail to play.
+        # Re-initialising PortAudio with a live stream corrupts its state and
+        # renumbers devices (that's what made a freshly-picked output silently
+        # fail). Stop no longer closes the device — closing blocks the UI — so
+        # release it here instead: opening this menu is rare and deliberate.
+        if not self.engine.is_playing:
+            self.engine.release_device()
         devices = list_output_devices(refresh=not self.engine.has_stream)
         valid = {i for i, _ in devices}
         # Drop a stale selection (e.g. headphones that were unplugged mid-session).
@@ -1748,11 +1955,29 @@ class MainWindow(QMainWindow):
             note = Note(int(pitch), 0.0, 0.3, 112)
             clip = Clip(id="_preview", name="_", start=0.0, duration=0.4,
                         content_type="midi", notes=[note])
+            # Render on this (UI) thread — FluidSynth is not thread-safe — but
+            # hand playback to a worker: sd.play() opens a device and blocks the
+            # caller ~125ms, which freezes the UI on every pitch change of a drag.
             if getattr(track, "is_synth", False):
                 buf = self.synth_engine.render(clip, getattr(track, "synth", {}) or {})
             else:
                 buf = self.midi.render(clip, track.instrument, getattr(track, "is_drum", False))
-            sd.play(buf, sr, device=self.engine.output_device)
+            device = self.engine.output_device
+
+            def _play(buf=buf, sr=sr, device=device) -> None:
+                # Drop the preview if one is still starting — stale auditions
+                # are worse than a missed one, and it keeps sd's global stream
+                # from being reopened concurrently.
+                if not self._preview_lock.acquire(blocking=False):
+                    return
+                try:
+                    sd.play(buf, sr, device=device)
+                except Exception:  # noqa: BLE001
+                    pass
+                finally:
+                    self._preview_lock.release()
+
+            threading.Thread(target=_play, daemon=True, name="note-preview").start()
         except Exception:  # noqa: BLE001
             pass
 
@@ -1842,6 +2067,40 @@ class MainWindow(QMainWindow):
     def _drop_worker(self, worker) -> None:
         if worker in self._workers:
             self._workers.remove(worker)
+
+    def _hum_to_melody(self, clip) -> None:
+        """Turn a hummed/sung recording into a monophonic MIDI melody."""
+        from fantasia_core import hum as hum_mod
+
+        if not hum_mod.available():
+            self.statusBar().showMessage("Hum → Melody needs librosa")
+            return
+        if not clip.source_path:
+            self.statusBar().showMessage("Hum → Melody needs an audio clip")
+            return
+        dlg = _HumDialog(self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        quantize, key, scale = dlg.values()
+        try:
+            data = self.pool.load(clip.source_path)
+        except Exception:  # noqa: BLE001
+            self.statusBar().showMessage("Couldn't read the clip audio")
+            return
+        sr = self.project.sample_rate
+        s = int(clip.source_offset * sr)
+        e = int((clip.source_offset + clip.duration) * sr)
+        seg = data[s:e]
+        if len(seg) == 0:
+            return
+        self.statusBar().showMessage("Tracking the hum…")
+        worker = _HumWorker(clip.id, seg.copy(), sr, self.project.seconds_per_beat(),
+                            self.project.beats_per_bar, quantize, key, scale)
+        worker.done.connect(self._on_transcribed)   # same clip-fill path
+        worker.failed.connect(self._on_transcribe_failed)
+        worker.finished.connect(lambda w=worker: self._drop_worker(w))
+        self._workers.append(worker)
+        worker.start()
 
     def _on_transcribed(self, clip_id: str, notes: list) -> None:
         track, clip = self.project.find_clip(clip_id)
@@ -2472,6 +2731,8 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(msg)
         elif action == "transcribe":
             self._transcribe_clip(clip)
+        elif action == "hum":
+            self._hum_to_melody(clip)
         elif action == "generate":
             self._generate_into_clip(clip)
         elif action == "separate":
@@ -2571,7 +2832,8 @@ class MainWindow(QMainWindow):
         "add_reverb": {"type": "reverb", "params": {"wet": 0.4}},
         "add_delay": {"type": "delay", "params": {"time": 0.3, "feedback": 0.35, "mix": 0.3}},
         "add_lowpass": {"type": "lowpass", "params": {"cutoff": 1200}},
-        "add_highpass": {"type": "highpass", "params": {"cutoff": 250}},
+        "add_highpass": {"type": "highpass", "params": {"cutoff": 120}},  # classic rumble cut
+        **_FX_PRESETS_EXTRA,
     }
 
     def _on_fx_action(self, track_id: str, action: str) -> None:
@@ -2607,6 +2869,18 @@ class MainWindow(QMainWindow):
         elif action == "clear_fx":
             self.bus.dispatch(SetTrackFxCommand(track_id, [], label="Clear track FX"))
             self.statusBar().showMessage(f"Cleared FX on {track.name}")
+        elif action in _FX_DIALOGS:
+            fx_type, title, spec, hint = _FX_DIALOGS[action]
+            dlg = _FxDialog(title, spec, hint, self)
+            if dlg.exec() != QDialog.Accepted:
+                return
+            entry = {"type": fx_type, "params": dlg.params()}
+            self.bus.dispatch(SetTrackFxCommand(
+                track_id, list(track.fx) + [entry], label=f"Add {fx_type}"))
+            self.statusBar().showMessage(f"Added {title.lower()} to {track.name}")
+            if fx_type.startswith("eq_"):   # show what the curve now looks like
+                self.editor.show_eq(list(track.fx), self.project.sample_rate,
+                                    f"EQ — {track.name}")
         elif action in self._FX_PRESETS:
             spec = self._FX_PRESETS[action]
             self.bus.dispatch(
@@ -2618,6 +2892,7 @@ class MainWindow(QMainWindow):
         else:
             return
         self._rebuild_all()  # refresh the FX badge on the header
+        self._refresh_eq_curve()  # and the curve, if the chain changed
 
     def _on_export(self) -> None:
         if self.project.duration <= 0:
@@ -2698,10 +2973,23 @@ class MainWindow(QMainWindow):
             if self.selected_track_id
             else None
         )
-        if track is not None and getattr(track, "is_synth", False):
+        self._refresh_eq_curve()
+        if self.editor.stack.currentIndex() == 2:
+            pass  # keep the EQ view up while stepping through tracks
+        elif track is not None and getattr(track, "is_synth", False):
             self.editor.show_synth(track)
         else:
             self.editor.switch_to_piano_mode()
+
+    def _refresh_eq_curve(self) -> None:
+        """Keep the EQ plot showing the selected track's filter chain."""
+        track = (self.project.track_by_id(self.selected_track_id)
+                 if self.selected_track_id else None)
+        if track is None:
+            self.editor.eq.set_chain([], self.project.sample_rate, "No track selected")
+        else:
+            self.editor.eq.set_chain(list(track.fx), self.project.sample_rate,
+                                     f"EQ — {track.name}")
 
     def _on_synth_param(self, track_id: str, key: str, value) -> None:
         self.bus.dispatch(SetTrackSynthParamCommand(track_id, key, value))
@@ -2747,6 +3035,63 @@ class MainWindow(QMainWindow):
         self.timeline.rebuild()
         self._ingest_to_library(ingest_items)  # make imports searchable too
         self.statusBar().showMessage(f"Imported {imported} clip(s)")
+
+    def _on_import_midi(self) -> None:
+        """Import a .mid — either verbatim, or translated into a real strum."""
+        from fantasia_core import midi_io
+
+        if not midi_io.available():
+            self.statusBar().showMessage("MIDI import needs mido (pip install mido)")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import MIDI", "", "MIDI (*.mid *.midi)")
+        if not path:
+            return
+        try:
+            is_pattern = midi_io.has_keyswitches(path)
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Couldn't read that MIDI file: {exc}")
+            return
+        dlg = _MidiImportDialog(os.path.basename(path), is_pattern, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        mode, chord, strum_ms = dlg.values()
+        spb = self.project.seconds_per_beat()
+        try:
+            if mode == "strum":
+                from fantasia_core.strum import import_strum
+                notes = import_strum(path, spb, chord, strum_ms=strum_ms)
+                label = f"{os.path.splitext(os.path.basename(path))[0]} ({chord})"
+            else:
+                notes = midi_io.import_notes(
+                    path, spb, drop_keyswitches=(mode == "raw_clean"))
+                label = os.path.splitext(os.path.basename(path))[0]
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"MIDI import failed: {exc}")
+            return
+        if not notes:
+            self.statusBar().showMessage("That MIDI file has no notes")
+            return
+
+        if self.selected_track_id is None:
+            if not self.project.tracks:
+                self.selected_track_id = self.bus.dispatch(AddTrackCommand()).created_track.id
+            else:
+                self.selected_track_id = self.project.tracks[0].id
+        # Notes come back relative to the file's start; place the clip at the
+        # playhead and keep them clip-relative.
+        start = self.timeline.playhead
+        dur = max(n.start + n.duration for n in notes)
+        cmd = self.bus.dispatch(AddClipCommand(self.selected_track_id, start, dur, name=label))
+        clip = cmd.created_clip
+        if clip is None:
+            return
+        self.bus.dispatch(MakeMidiClipCommand(clip.id, notes))
+        self._warm()
+        self.timeline.rebuild()
+        self.statusBar().showMessage(
+            f"Imported {len(notes)} notes from {os.path.basename(path)}"
+            + (f" as a {chord} strum" if mode == "strum" else ""))
 
     def _on_load_demo(self) -> None:
         if not self._maybe_discard():

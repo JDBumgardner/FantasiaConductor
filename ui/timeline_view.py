@@ -179,8 +179,10 @@ class ClipItem(QGraphicsRectItem):
         transcribe = None
         separate = None
         vfx_map = {}
+        hum = None
         if self.clip.source_path and not self.clip.is_midi:
-            transcribe = menu.addAction("Transcribe to MIDI")
+            hum = menu.addAction("Hum → Melody  (monophonic)")
+            transcribe = menu.addAction("Transcribe to MIDI  (polyphonic)")
             separate = menu.addAction("Separate Stems (Demucs)")
             vfx = menu.addMenu("Vocal FX")
             vfx_map = {
@@ -247,6 +249,8 @@ class ClipItem(QGraphicsRectItem):
             actions[write_midi] = "write_midi"
         if transcribe is not None:
             actions[transcribe] = "transcribe"
+        if hum is not None:
+            actions[hum] = "hum"
         if separate is not None:
             actions[separate] = "separate"
         actions[generate] = "generate"

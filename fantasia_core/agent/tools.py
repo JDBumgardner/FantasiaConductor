@@ -132,10 +132,22 @@ class AgentTools:
                  "gain_db": {"type": "number"}, "pan": {"type": "number", "description": "-1 (L) to 1 (R)"},
                  "is_drum": {"type": "boolean"}, "is_synth": {"type": "boolean"},
                  "instrument": {"type": "integer"}}, "required": ["track_id"]}},
-            {"name": "add_fx", "description": "Append an effect to a track's FX chain.",
+            {"name": "add_fx", "description": (
+                "Append an effect to a track's FX chain. Mixing order is EQ -> colour -> dynamics.\n"
+                "EQ: highpass/lowpass {cutoff Hz}; eq_peak {freq, gain dB, q} bell boost/cut; "
+                "eq_low_shelf / eq_high_shelf {freq, gain, q} tilt below/above a corner. "
+                "A high-pass around 100-150 Hz on non-bass tracks removes rumble.\n"
+                "Colour: saturator {drive dB, output dB} adds harmonics/warmth; distortion {drive}.\n"
+                "Dynamics: compressor {threshold dB, ratio, attack ms, release ms} evens out level "
+                "(4:1 at -16 dB is a good start); limiter {threshold, release} catches peaks; "
+                "gate {threshold, ratio} cuts silence/bleed.\n"
+                "Space: reverb {wet, room_size}; delay {time s, feedback, mix}."),
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"},
-                 "type": {"type": "string", "enum": ["reverb", "delay", "lowpass", "highpass"]},
+                 "type": {"type": "string", "enum": [
+                     "highpass", "lowpass", "eq_peak", "eq_low_shelf", "eq_high_shelf",
+                     "saturator", "distortion", "compressor", "limiter", "gate",
+                     "reverb", "delay", "gain"]},
                  "params": {"type": "object"}}, "required": ["track_id", "type"]}},
             {"name": "clear_fx", "description": "Remove all effects from a track.",
              "input_schema": {"type": "object", "properties": {"track_id": {"type": "string"}}, "required": ["track_id"]}},
@@ -228,6 +240,22 @@ class AgentTools:
                  "track_id": {"type": "string"}, "name": {"type": "string"}}, "required": ["track_id"]}},
             {"name": "set_tempo", "description": "Set the project tempo in BPM.",
              "input_schema": {"type": "object", "properties": {"bpm": {"type": "number"}}, "required": ["bpm"]}},
+            {"name": "list_midi_patterns", "description": "Search a folder of .mid files (e.g. a Big Fish Audio / construction-kit library). Returns each file's path, bar length, source tempo, and whether it is a keyswitch pattern (those must be imported with mode='strum' — imported raw they are a static chord plus inaudible trigger notes). Use `query` to filter on the filename, e.g. 'swing', '3 Count', 'Pattern 01'.",
+             "input_schema": {"type": "object", "properties": {
+                 "folder": {"type": "string", "description": "folder to search (recursive); ~ is expanded"},
+                 "query": {"type": "string", "description": "case-insensitive filename filter"},
+                 "limit": {"type": "integer", "description": "max results, default 25"}},
+                 "required": ["folder"]}},
+            {"name": "import_midi", "description": "Import a .mid onto a track as a MIDI clip, positioned in BARS. mode='strum' translates a keyswitch guitar pattern into a real strum on `chord` (keeps the pattern's rhythm, accents and up/down strokes) — use it for keyswitch patterns, and import the SAME pattern at different bars with different chords to build a progression. mode='raw' imports notes exactly; mode='raw_clean' drops keyswitch notes. Chords: E Em A Am D Dm G C F Bm.",
+             "input_schema": {"type": "object", "properties": {
+                 "path": {"type": "string"},
+                 "track_id": {"type": "string"},
+                 "bar": {"type": "integer", "description": "1-based measure to place it at"},
+                 "mode": {"type": "string", "enum": ["strum", "raw", "raw_clean"]},
+                 "chord": {"type": "string", "description": "chord for mode='strum'"},
+                 "strum_ms": {"type": "number", "description": "pick travel time, default 22"},
+                 "name": {"type": "string"}},
+                 "required": ["path", "track_id"]}},
             {"name": "undo", "description": "Undo the last edit.", "input_schema": {"type": "object", "properties": {}}},
             {"name": "redo", "description": "Redo.", "input_schema": {"type": "object", "properties": {}}},
         ]
@@ -451,6 +479,84 @@ class AgentTools:
                 return {"error": "could not create clip"}
             self.bus.dispatch(SetClipSourceCommand(cid, a["path"], 0.0, dur))
             return {"ok": True, "clip_id": cid}
+        if name == "list_midi_patterns":
+            import glob as _glob
+            import os as _os
+
+            from fantasia_core import midi_io
+            if not midi_io.available():
+                return {"error": "MIDI support needs mido"}
+            folder = _os.path.expanduser(a["folder"])
+            if not _os.path.isdir(folder):
+                return {"error": f"no such folder: {folder}"}
+            q = (a.get("query") or "").lower()
+            hits = []
+            for f in sorted(_glob.glob(_os.path.join(folder, "**", "*.mid"), recursive=True)):
+                if q and q not in _os.path.basename(f).lower():
+                    continue
+                try:
+                    info = midi_io.read_events(f)
+                    hits.append({"path": f, "name": _os.path.basename(f),
+                                 "bars": round(info["length_beats"] / max(p.beats_per_bar, 1), 2),
+                                 "source_bpm": info["source_bpm"],
+                                 "keyswitch_pattern": midi_io.has_keyswitches(f)})
+                except Exception:  # noqa: BLE001
+                    continue
+                if len(hits) >= int(a.get("limit", 25)):
+                    break
+            return {"count": len(hits), "patterns": hits}
+        if name == "import_midi":
+            import os as _os
+
+            from fantasia_core import midi_io
+            if not midi_io.available():
+                return {"error": "MIDI support needs mido"}
+            path = _os.path.expanduser(a["path"])
+            if not _os.path.isfile(path):
+                return {"error": f"no such file: {path}"}
+            track = p.track_by_id(a["track_id"])
+            if track is None:
+                return {"error": "track not found"}
+            spb = p.seconds_per_beat()
+            mode = a.get("mode") or ("strum" if midi_io.has_keyswitches(path) else "raw")
+            chord = a.get("chord", "E")
+            # Asking for a strum on a file that has no keyswitch layer would
+            # quietly render whatever stray high notes exist and throw away the
+            # real music. Fall back to a plain import and say so.
+            fallback = None
+            if mode == "strum" and not midi_io.has_keyswitches(path):
+                fallback = ("this file has no keyswitch layer, so it was imported "
+                            "as written rather than translated into a strum")
+                mode = "raw"
+            try:
+                if mode == "strum":
+                    from fantasia_core.strum import import_strum
+                    notes = import_strum(path, spb, chord,
+                                         strum_ms=float(a.get("strum_ms", 22.0)))
+                else:
+                    notes = midi_io.import_notes(path, spb,
+                                                 drop_keyswitches=(mode == "raw_clean"))
+            except Exception as exc:  # noqa: BLE001
+                return {"error": str(exc)}
+            if not notes:
+                return {"error": "that file produced no notes"}
+            bar_len = p.beats_per_bar * spb
+            start = (int(a.get("bar", 1)) - 1) * bar_len
+            dur = max(n.start + n.duration for n in notes)
+            label = a.get("name") or _os.path.splitext(_os.path.basename(path))[0]
+            if mode == "strum":
+                label = f"{label} ({chord})"
+            cmd = self.bus.dispatch(AddClipCommand(a["track_id"], start, dur, name=label))
+            clip = cmd.created_clip
+            if clip is None:
+                return {"error": "could not create clip"}
+            self.bus.dispatch(MakeMidiClipCommand(clip.id, notes))
+            result = {"ok": True, "clip_id": clip.id, "num_notes": len(notes),
+                      "bar": int(a.get("bar", 1)), "bars": round(dur / bar_len, 2),
+                      "mode": mode, "chord": chord if mode == "strum" else None}
+            if fallback:
+                result["note"] = fallback
+            return result
         if name == "set_tempo":
             self.bus.dispatch(SetTempoCommand(float(a["bpm"])))  # undoable
             return {"ok": True, "tempo": p.tempo}

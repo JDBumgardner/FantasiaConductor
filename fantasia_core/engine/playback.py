@@ -134,9 +134,18 @@ class PlaybackEngine:
         return self._stream is not None
 
     def _close_stream(self) -> None:
+        """Tear the stream down. Uses abort() (discard buffered audio) rather
+        than stop() (drain it) — draining blocks the caller, badly so on
+        Bluetooth devices."""
         if self._stream is not None:
             try:
-                self._stream.stop()
+                self._stream.abort()
+            except Exception:  # noqa: BLE001
+                try:
+                    self._stream.stop()
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
                 self._stream.close()
             except Exception:  # noqa: BLE001
                 pass
@@ -209,10 +218,20 @@ class PlaybackEngine:
         return ok
 
     def stop(self) -> None:
-        # Close the stream too: leaving it open blocks refresh_devices() and
-        # leaves a stale handle if the OS device list changes while idle.
+        """Stop playback instantly.
+
+        Deliberately does NOT tear down the stream: closing a device blocks the
+        calling (UI) thread while the driver shuts down — on Bluetooth that
+        reads as the app hanging. The callback outputs silence while stopped,
+        and the open device makes the next Play instant. Use release_device()
+        when the device itself genuinely has to be freed."""
         self._playing = False
-        self._close_stream()
+
+    def release_device(self) -> None:
+        """Close the stream so the OS device list can be re-read (or the device
+        handed to another app). Only safe/needed when not playing."""
+        if not self._playing:
+            self._close_stream()
 
     def close(self) -> None:
         self._playing = False

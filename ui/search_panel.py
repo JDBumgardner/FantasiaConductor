@@ -34,7 +34,7 @@ class SearchPanel(QDockWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("Sound Search", parent)
         self.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(220)
 
         body = QWidget()
         layout = QVBoxLayout(body)
