@@ -346,15 +346,29 @@ def plan(notes: Sequence, lyrics: str, hop: int = HOP, sr: int = SR,
         gap = float(first.start) - cursor
         if gap * sr / hop >= gap_frames:
             _add_rest(p, _frames(gap, hop, sr), first.pitch)
-        text = "".join(tokens[i][0] for i in widx)
-        phones = g2p(text)
-        if not phones:                      # unknown word: one phone per syllable
-            phones = [tokens[i][0][:2] or REST for i in widx]
-        p.phones += phones
-        p.word_div.append(len(phones))
-        span = sum(_frames(ordered[i].duration, hop, sr) for i in widx)
-        p.word_dur.append(span)
-        p.ph_midi += [int(first.pitch)] * len(phones)
+
+        syls = [tokens[i][0] for i in widx]
+        durs = [_frames(ordered[i].duration, hop, sr) for i in widx]
+        phones = g2p("".join(syls))
+        if phones:
+            # A known word: it spans its notes as one unit, and the models
+            # spread its phonemes across them.
+            p.phones += phones
+            p.word_div.append(len(phones))
+            p.word_dur.append(sum(durs))
+            p.ph_midi += [int(first.pitch)] * len(phones)
+        else:
+            # Hyphenation that does not rejoin into a dictionary word — either a
+            # made-up split ("be-ter") or a melisma stretching one word over more
+            # notes than it has syllables ("a-lo-one"). Phonemize each syllable
+            # on its own and give it its own note, which is what the singer is
+            # actually doing.
+            for i, syl in zip(widx, syls):
+                ph = g2p(syl) or [syl[:2] or REST]
+                p.phones += ph
+                p.word_div.append(len(ph))
+                p.word_dur.append(_frames(ordered[i].duration, hop, sr))
+                p.ph_midi += [int(ordered[i].pitch)] * len(ph)
         for i in widx:
             p.note_midi.append(float(ordered[i].pitch))
             p.note_dur.append(_frames(ordered[i].duration, hop, sr))

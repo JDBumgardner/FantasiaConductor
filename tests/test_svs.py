@@ -211,3 +211,34 @@ def test_pitch_guard_can_be_disabled():
     base = np.full((1, 80), 62.0, dtype=np.float32)
     wild = base - 10.0
     assert np.allclose(svs._hold_the_tune(wild, base, _P(), leeway=0), wild)
+
+
+# ---- hyphenation that is not a dictionary word --------------------------
+def test_melisma_gives_each_syllable_its_own_note():
+    """"a-lo-one" is one word stretched over three notes. It does not rejoin
+    into a dictionary word, so each piece is phonemized on its own — which is
+    what the singer is doing anyway."""
+    notes = [N(65, 0.0, 0.5), N(64, 0.5, 0.5), N(64, 1.0, 2.0)]
+    p = svs.plan(notes, "a-lo-one")
+    assert len(p.note_midi) == 3
+    assert p.phones == ["ah", "l", "ow", "w", "ah", "n"]
+    assert p.word_div == [1, 2, 3]          # one entry per sung syllable
+
+
+def test_invented_syllable_splits_still_phonemize():
+    """"be-ter" is how the line scans, but "beter" is not a word."""
+    p = svs.plan([N(67, 0.0, 0.5), N(65, 0.5, 0.5)], "be-ter")
+    assert p.phones == ["b", "iy", "t", "er"]
+
+
+def test_a_real_word_still_spans_its_notes_as_one_unit():
+    """The fallback must not fire for words the dictionary knows."""
+    p = svs.plan([N(60, 0.0, 0.5), N(62, 0.5, 0.5)], "to-day")
+    assert p.word_div == [4]
+    assert p.word_dur[0] == sum(p.note_dur)
+
+
+def test_unknown_syllable_does_not_crash_the_plan():
+    p = svs.plan([N(60, 0.0, 0.5), N(62, 0.5, 0.5)], "zqx-vbn")
+    assert len(p.note_midi) == 2
+    assert sum(p.word_div) == len(p.phones)
