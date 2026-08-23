@@ -46,6 +46,12 @@ SR = 44100
 ACOUSTIC_STEPS = 30
 VARIANCE_STEPS = 10
 REST = "SP"          # the phoneme every bank uses for silence
+# How far the predicted f0 may wander from the written note, in semitones.
+# Banks differ in how freely their pitch models sing: Peiton drifts about four
+# semitones below the note across a half-note, which reads as out of tune rather
+# than expressive. Wide enough to keep scoops, vibrato and glides between notes;
+# narrow enough that the melody stays the melody.
+PITCH_LEEWAY = 2.5
 
 
 def banks_dir() -> pathlib.Path:
@@ -408,6 +414,29 @@ def _feed(session, args: Dict[str, object]) -> Dict[str, object]:
     return out
 
 
+def _hold_the_tune(pitch: np.ndarray, base: np.ndarray, pl: "_Plan",
+                   leeway: float = PITCH_LEEWAY) -> np.ndarray:
+    """Keep a predicted f0 curve within ``leeway`` semitones of the written note.
+
+    The target is smoothed across note boundaries first, so a leap still glides
+    instead of being clipped — the bound is on drifting away from a note, not on
+    moving between them.
+    """
+    if leeway <= 0 or pitch.shape != base.shape:
+        return pitch
+    # Ramp the target over ~60ms at each change so transitions stay free.
+    win = max(1, int(0.06 * 1000.0 / 5.0))
+    k = np.ones(win, dtype=np.float64) / win
+    tgt = np.convolve(np.pad(base[0], (win, win), mode="edge"), k, mode="same")[win:-win]
+    lo, hi = tgt - leeway, tgt + leeway
+    out = np.clip(pitch[0], lo, hi)
+    # Rests carry no pitch, so leave whatever the model produced there.
+    voiced = np.concatenate([np.full(d, m > 0) for d, m in
+                             zip(pl.note_dur, pl.note_midi)])
+    voiced = np.resize(voiced, len(out))
+    return np.where(voiced, out, pitch[0])[None].astype(np.float32)
+
+
 def sing_notes(notes: Sequence, lyrics: str, voicebank: Optional[str] = None,
                speaker: Optional[str] = None, sr: int = SR,
                steps: int = ACOUSTIC_STEPS, gender: float = 0.0,
@@ -476,6 +505,7 @@ def sing_notes(notes: Sequence, lyrics: str, voicebank: Optional[str] = None,
             "steps": np.array(VARIANCE_STEPS), "speedup": np.array(5)}))[0]
     else:
         pitch = base                      # no pitch model: sing the notes flat
+    pitch = _hold_the_tune(pitch, base, pl)
     f0 = (440.0 * 2 ** ((pitch - 69) / 12)).astype(np.float32)
 
     # --- 3. expression -------------------------------------------------

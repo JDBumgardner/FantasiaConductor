@@ -172,3 +172,42 @@ def test_root_config_found_in_either_layout(tmp_path):
     (nested / "configs").mkdir(parents=True)
     (nested / "configs" / "dsconfig.yaml").write_text("acoustic: a.onnx\n")
     assert svs._root_config(nested) == nested / "configs" / "dsconfig.yaml"
+
+
+# ---- keeping the written melody -----------------------------------------
+class _P:
+    note_dur = [40, 40]
+    note_midi = [62.0, 67.0]
+
+
+def test_pitch_guard_bounds_drift_from_the_written_note():
+    """Peiton's pitch model wanders about four semitones below the note across a
+    half-note, which reads as out of tune rather than expressive.
+
+    The bound is measured against a target smoothed across note boundaries, so
+    only the steady middle of a note is checked here — near a transition the
+    band deliberately sits between the two notes so leaps can glide.
+    """
+    base = np.concatenate([np.full(40, 62.0), np.full(40, 67.0)])[None].astype(np.float32)
+    out = svs._hold_the_tune(base - 4.0, base, _P(), leeway=2.5)
+    assert out.shape == base.shape
+    steady = np.concatenate([out[0][15:35], out[0][55:75]])
+    want = np.concatenate([base[0][15:35], base[0][55:75]])
+    assert np.all(steady >= want - 2.6), "drift is not bounded inside a note"
+    assert np.all(steady < want), "a flat prediction should still read as flat"
+
+
+def test_pitch_guard_leaves_expression_alone():
+    """Vibrato inside the bound must pass through; only the note transition is
+    touched, and only slightly."""
+    base = np.concatenate([np.full(40, 62.0), np.full(40, 67.0)])[None].astype(np.float32)
+    expressive = base + np.sin(np.linspace(0, 8 * np.pi, 80))[None] * 0.6
+    out = svs._hold_the_tune(expressive, base, _P(), leeway=2.5)
+    steady = np.r_[0:35, 45:80]
+    assert np.allclose(out[0][steady], expressive[0][steady], atol=1e-4)
+
+
+def test_pitch_guard_can_be_disabled():
+    base = np.full((1, 80), 62.0, dtype=np.float32)
+    wild = base - 10.0
+    assert np.allclose(svs._hold_the_tune(wild, base, _P(), leeway=0), wild)
