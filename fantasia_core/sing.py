@@ -96,42 +96,182 @@ def trim_silence(y: np.ndarray, sr: int, thresh: float = 0.02,
 # even-split segmentation below gets unreliable, and singers breathe anyway, so
 # long lines are cut into phrases of this many notes.
 PHRASE_MAX = 8
+# Speaking rates tried for a phrase, fastest first. Dense lines need the slow
+# ones: at normal rate Kokoro runs "fantasia conductor sings" together in 1.6s,
+# 86% voiced across two unbroken runs, and no segmenter finds the syllables in
+# that — the last note came out holding a second of "sss". At 0.5x the same line
+# is 3.4s and breaks into 7 voiced runs for 8 syllables.
+#
+# Slowing down is not free: it opens real gaps between syllables and roughly
+# doubles the envelope discontinuity on easy lines. So the rate is chosen per
+# phrase rather than fixed — the fastest one whose segmentation gives every note
+# a vowel wins, leaving simple phrases smooth and only paying for dense ones.
+PHRASE_SPEEDS = (1.0, 0.7, 0.5)
 
 
-def syllable_bounds(y: np.ndarray, sr: int, n: int, frame: int = 512,
+def word_groups(tokens: List[Tuple[str, bool]]) -> List[int]:
+    """Syllables per word, from the continuation flags: fan-ta-si-a con-duc-tor
+    sings -> [4, 3, 1]."""
+    groups: List[int] = []
+    for _tok, cont in tokens:
+        if cont and groups:
+            groups[-1] += 1
+        else:
+            groups.append(1)
+    return groups
+
+
+def _split_evenly(env: np.ndarray, lo: int, hi: int, n: int) -> List[int]:
+    """n-1 boundaries inside [lo, hi), each snapped to the quietest frame near
+    where an even split would put it."""
+    if n <= 1 or hi - lo < 2:
+        return []
+    seg = (hi - lo) / n
+    out = []
+    for k in range(1, n):
+        centre = lo + k * seg
+        half = seg * 0.4                      # bound how lopsided a split can get
+        a, b = int(max(lo + 1, centre - half)), int(min(hi - 1, centre + half))
+        out.append(int(centre) if b <= a else a + int(np.argmin(env[a:b])))
+    return out
+
+
+def syllable_bounds(y: np.ndarray, sr: int, groups, frame: int = 512,
                     hop: int = 128) -> List[int]:
-    """Sample offsets splitting a spoken phrase into ``n`` segments, one per note.
+    """Sample offsets splitting a spoken phrase into one segment per note.
 
-    Taking the n-1 globally quietest points does not work: the quietest places in
-    an utterance are its own head and tail, so the outer syllables collapse to a
-    few milliseconds and their notes come out unvoiced. Each boundary is instead
-    searched for only near where an even split would put it, which bounds how
-    lopsided the segments can get.
+    ``groups`` is syllables-per-word (see :func:`word_groups`); an int means a
+    single word of that many syllables.
+
+    Splitting the whole phrase evenly does not survive real lyrics: "fantasia
+    conductor sings" is 4+3+1 syllables over words of very different lengths, so
+    evenly spaced boundaries drift and the error compounds — the last note ended
+    up holding only the "s" of "sings", a full second of unvoiced hiss. Words are
+    therefore located first (the TTS puts a genuine pause at every space, which
+    is far easier to find than a boundary inside a word) and only then is each
+    word split by its own syllable count, where even spacing does hold up.
+
+    Taking the globally quietest points instead fails differently: the quietest
+    places in an utterance are its head and tail, which collapses the outer
+    syllables to a few milliseconds.
     """
     import librosa
 
+    if isinstance(groups, int):
+        groups = [groups]
+    groups = [g for g in groups if g > 0] or [1]
+    n = sum(groups)
     if n <= 1 or len(y) == 0:
         return [0, len(y)]
+
     env = np.abs(librosa.util.frame(y, frame_length=frame, hop_length=hop)).max(axis=0)
     env = env / (float(env.max()) or 1.0)
     nf = len(env)
-    seg = nf / n
-    bounds = [0]
-    for k in range(1, n):
-        centre = k * seg
-        half = seg * 0.4                      # stay within 40% of the even split
-        lo, hi = int(max(1, centre - half)), int(min(nf - 1, centre + half))
-        idx = int(centre) if hi <= lo else lo + int(np.argmin(env[lo:hi]))
-        bounds.append(int(idx * hop + frame / 2))
-    bounds.append(len(y))
-    for i in range(1, len(bounds)):           # keep strictly increasing
+
+    # 1. word boundaries — the real pauses. Each search is fenced so that the
+    #    words on either side keep room for their own syllables; without that
+    #    fence the last window reaches the utterance's silent tail, picks it as
+    #    the "gap", and the final word collapses to a few milliseconds.
+    min_syl = max(1.0, nf / n * 0.4)
+    word_edges = [0]
+    if len(groups) > 1:
+        acc = 0
+        for wi, g in enumerate(groups[:-1]):
+            acc += g
+            centre = acc / n * nf
+            span = nf / len(groups) * 0.45
+            floor = word_edges[-1] + groups[wi] * min_syl
+            ceil = nf - sum(groups[wi + 1:]) * min_syl
+            a = int(max(1, centre - span, floor))
+            b = int(min(nf - 1, centre + span, ceil))
+            word_edges.append(int(min(max(centre, a), max(a, b)))
+                              if b <= a else a + int(np.argmin(env[a:b])))
+        for i in range(1, len(word_edges)):   # keep increasing
+            if word_edges[i] <= word_edges[i - 1]:
+                word_edges[i] = word_edges[i - 1] + 1
+    word_edges.append(nf)
+
+    # 2. syllables inside each word, where even spacing is a fair assumption
+    frames: List[int] = [0]
+    for wi, g in enumerate(groups):
+        lo, hi = word_edges[wi], word_edges[wi + 1]
+        frames.extend(_split_evenly(env, lo, hi, g))
+        frames.append(hi)
+    frames = frames[:n] + [nf]
+
+    bounds = [0] + [int(f * hop + frame / 2) for f in frames[1:-1]] + [len(y)]
+    for i in range(1, len(bounds)):
         if bounds[i] <= bounds[i - 1]:
             bounds[i] = min(len(y), bounds[i - 1] + 1)
     return bounds
 
 
-def _render_phrase(y: np.ndarray, sr: int, notes: Sequence,
-                   prev_hz: float = 0.0) -> List[Tuple[float, np.ndarray]]:
+def _sustain_map(voiced: np.ndarray, tframes: int) -> np.ndarray:
+    """Frame indices for stretching a syllable to ``tframes``, holding the vowel.
+
+    Uniform stretching is what a vocoder does, not what a singer does. Held
+    "sings" spoken in 150ms became a full second of sibilant hiss, because the
+    unvoiced "s" was stretched by the same factor as everything else. A singer
+    keeps the consonants roughly their natural length and sustains the vowel.
+
+    Consonant frames are therefore allowed to grow only a little, and whatever
+    time is left over goes to the voiced run.
+    """
+    n = len(voiced)
+    if n == 0:
+        return np.zeros(tframes, dtype=np.float64)
+    if not voiced.any() or tframes <= n:
+        return np.linspace(0, n - 1, tframes)          # nothing to sustain
+
+    idx = np.nonzero(voiced)[0]
+    v0, v1 = int(idx[0]), int(idx[-1]) + 1             # the vowel run
+    head, tail = v0, n - v1
+    # Consonants may stretch up to 1.5x; the vowel absorbs the rest.
+    grow = min(1.5, tframes / n)
+    h_out = int(round(head * grow))
+    t_out = int(round(tail * grow))
+    v_out = max(1, tframes - h_out - t_out)
+    parts = []
+    if h_out:
+        parts.append(np.linspace(0, v0, h_out, endpoint=False))
+    parts.append(np.linspace(v0, v1 - 1, v_out))
+    if t_out:
+        parts.append(np.linspace(v1, n - 1, t_out))
+    out = np.concatenate(parts)
+    if len(out) != tframes:                            # rounding guard
+        out = np.interp(np.linspace(0, len(out) - 1, tframes),
+                        np.arange(len(out)), out)
+    return out
+
+
+def _tighten(lo: int, hi: int, voiced: np.ndarray, energy: np.ndarray,
+             floor: float = 0.06) -> Tuple[int, int]:
+    """Shrink a syllable's frame span to its voiced core plus its consonants.
+
+    Speaking the phrase slowly is what makes syllables findable at all, but it
+    also leaves real gaps between them. Carrying that dead air into the note
+    puts the choppiness back, so each segment is trimmed to the part that
+    actually sounds before it is stretched.
+    """
+    if hi - lo < 3:
+        return lo, hi
+    span = np.arange(lo, hi)
+    keep = voiced[lo:hi] | (energy[lo:hi] > floor)
+    if not keep.any():
+        return lo, hi
+    idx = span[keep]
+    a, b = int(idx[0]), int(idx[-1]) + 1
+    return (a, b) if b - a >= 2 else (lo, hi)
+
+
+def _take(arr: np.ndarray, mapping: np.ndarray) -> np.ndarray:
+    """Sample ``arr`` (frames on axis 0) at fractional frame positions."""
+    i = np.clip(np.rint(mapping).astype(int), 0, len(arr) - 1)
+    return arr[i]
+
+
+def _render_phrase(y: np.ndarray, sr: int, notes: Sequence, prev_hz: float = 0.0,
+                   groups=None) -> List[Tuple[float, np.ndarray]]:
     """Warp one spoken phrase across ``notes``; returns ``(start, audio)`` per note.
 
     The whole phrase goes through a single WORLD resynthesis, so the vocal tract
@@ -145,7 +285,14 @@ def _render_phrase(y: np.ndarray, sr: int, notes: Sequence,
     if len(f0) == 0:
         return []
     fps = 1000.0 / vf.FRAME_PERIOD
-    bounds = syllable_bounds(y, sr, len(notes))
+    # Per-frame energy, used to trim dead air at each syllable's edges.
+    step = max(1, int(round(sr * vf.FRAME_PERIOD / 1000.0)))
+    pad = np.pad(y, (0, step))
+    energy = np.array([float(np.abs(pad[i * step:(i + 1) * step]).max())
+                       for i in range(len(f0))])
+    energy /= (float(energy.max()) or 1.0)
+    voiced_all = f0 > 0
+    bounds = syllable_bounds(y, sr, groups or len(notes))
     fb = [min(len(f0), max(0, int(b / sr * fps))) for b in bounds]
     fb[-1] = len(f0)
 
@@ -153,11 +300,14 @@ def _render_phrase(y: np.ndarray, sr: int, notes: Sequence,
     for i, note in enumerate(notes):
         lo = fb[i]
         hi = max(lo + 2, fb[i + 1])
+        lo, hi = _tighten(lo, min(hi, len(f0)), voiced_all, energy)
+        hi = max(lo + 2, hi)
         tframes = max(2, int(round(note.duration * fps)))
-        sp_parts.append(vf.resample_frames(sp[lo:hi], tframes))
-        ap_parts.append(vf.resample_frames(ap[lo:hi], tframes))
-        vuv_parts.append(vf.resample_frames((f0[lo:hi] > 0).astype(np.float64),
-                                            tframes) > 0.5)
+        seg_voiced = f0[lo:hi] > 0
+        m = _sustain_map(seg_voiced, tframes)
+        sp_parts.append(_take(sp[lo:hi], m))
+        ap_parts.append(_take(ap[lo:hi], m))
+        vuv_parts.append(_take(seg_voiced.astype(np.float64), m) > 0.5)
         hz = _midi_hz(note.pitch)
         pitch = np.full(tframes, hz, dtype=np.float64)
         if prev_hz > 0:                       # portamento into the note (~60ms)
@@ -169,6 +319,11 @@ def _render_phrase(y: np.ndarray, sr: int, notes: Sequence,
         pitch_parts.append(pitch)
         counts.append(tframes)
         prev_hz = hz
+
+    # A segment with no voiced frame means the segmentation missed that
+    # syllable's vowel; the caller retries more slowly rather than render hiss.
+    if not all(v.any() for v in vuv_parts):
+        return []
 
     out = vf.synth(np.where(np.concatenate(vuv_parts), np.concatenate(pitch_parts), 0.0),
                    np.concatenate(sp_parts, axis=0),
@@ -249,10 +404,10 @@ def sing_notes(notes: Sequence, lyrics: str, voice: str = "af_heart",
     out = np.zeros(total, dtype=np.float32)
     xfade = int(0.02 * sr)
 
-    def _speak(text):
+    def _speak(text, speed: float = 1.0):
         try:
             y, ssr = tts.synthesize(text, voice=voice, backend=backend,
-                                    ref_voice=ref_voice, cache=True)
+                                    ref_voice=ref_voice, speed=speed, cache=True)
         except Exception:  # noqa: BLE001
             return None
         if len(y) == 0:
@@ -279,12 +434,19 @@ def sing_notes(notes: Sequence, lyrics: str, voice: str = "af_heart",
     for chunk_notes, chunk_tokens in _phrase_chunks(ordered, tokens):
         pieces = []
         if not per_syllable:
-            spoken = _speak(phrase_text(chunk_tokens))
-            if spoken is not None:
+            text = phrase_text(chunk_tokens)
+            groups = word_groups(chunk_tokens)
+            for speed in PHRASE_SPEEDS:
+                spoken = _speak(text, speed)
+                if spoken is None:
+                    continue
                 try:
-                    pieces = _render_phrase(spoken, sr, chunk_notes, prev_hz)
+                    pieces = _render_phrase(spoken, sr, chunk_notes, prev_hz,
+                                            groups=groups)
                 except Exception:  # noqa: BLE001 — fall back to per-syllable below
                     pieces = []
+                if pieces:
+                    break
         if not pieces:
             # Fallback: the old one-utterance-per-syllable path.
             for note, (token, _cont) in zip(chunk_notes, chunk_tokens):

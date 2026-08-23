@@ -105,3 +105,66 @@ def test_long_lines_are_cut_into_singable_phrases():
     chunks = list(sing._phrase_chunks(notes, toks))
     assert all(len(cn) <= sing.PHRASE_MAX for cn, _ in chunks)
     assert sum(len(cn) for cn, _ in chunks) == 20      # nothing dropped
+
+
+# ---- word-structure segmentation ---------------------------------------
+def test_word_groups_counts_syllables_per_word():
+    toks = sing.split_lyrics_joined("fan-ta-si-a con-duc-tor sings", 8)
+    assert sing.word_groups(toks) == [4, 3, 1]
+
+
+def test_bounds_respect_word_structure():
+    """Splitting the phrase evenly ignores that words differ in length, and the
+    error compounds — the last note ended up holding only the 's' of 'sings'."""
+    y = _speech(2.4, lead=0.02, trail=0.02)
+    b = sing.syllable_bounds(y, SR, [4, 3, 1])
+    assert len(b) == 9                          # 8 syllables -> 9 edges
+    # The single-syllable word must not be squeezed to nothing.
+    assert (b[8] - b[7]) / SR > 0.05
+
+
+def test_bounds_accept_a_plain_count():
+    y = _speech(1.0)
+    assert len(sing.syllable_bounds(y, SR, 4)) == 5
+
+
+# ---- vowel sustain ------------------------------------------------------
+def test_sustain_map_holds_the_vowel_not_the_consonants():
+    """Stretching a syllable uniformly turned a 150ms 'sings' into a second of
+    sibilant hiss. The vowel should absorb the added time."""
+    voiced = np.array([0, 0, 1, 1, 1, 1, 0, 0], dtype=bool)
+    m = sing._sustain_map(voiced, 40)
+    assert len(m) == 40
+    stretched = voiced[np.rint(m).astype(int)]
+    assert stretched.mean() > 0.75              # natural is 0.50
+    assert stretched[0] == False and stretched[-1] == False   # consonants survive
+
+
+def test_sustain_map_is_uniform_when_there_is_no_vowel():
+    voiced = np.zeros(8, dtype=bool)
+    m = sing._sustain_map(voiced, 20)
+    assert len(m) == 20
+    assert np.all(np.diff(m) >= 0)
+
+
+def test_sustain_map_compressing_does_not_expand():
+    m = sing._sustain_map(np.array([0, 1, 1, 0], dtype=bool), 2)
+    assert len(m) == 2
+
+
+# ---- adaptive speaking rate --------------------------------------------
+def test_phrase_speeds_go_fastest_first():
+    """Slowing down fixes dense lines but roughly doubles envelope
+    discontinuity, so it must only be reached for phrases that need it."""
+    assert sing.PHRASE_SPEEDS[0] == 1.0
+    assert list(sing.PHRASE_SPEEDS) == sorted(sing.PHRASE_SPEEDS, reverse=True)
+
+
+def test_render_phrase_rejects_a_segment_with_no_vowel():
+    """This is the signal the retry loop keys on: a voiceless segment means the
+    segmentation missed that syllable, and rendering it produces hiss."""
+    sr = SR
+    y = np.zeros(int(0.6 * sr), dtype=np.float32)      # silence: no vowels at all
+    notes = [type("N", (), {"start": 0.0, "duration": 0.5, "pitch": 60,
+                            "velocity": 100})()]
+    assert sing._render_phrase(y, sr, notes, 0.0, groups=[1]) == []
