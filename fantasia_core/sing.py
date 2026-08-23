@@ -264,40 +264,31 @@ def _tighten(lo: int, hi: int, voiced: np.ndarray, energy: np.ndarray,
     return (a, b) if b - a >= 2 else (lo, hi)
 
 
-def _compress_map(voiced: np.ndarray, tframes: int) -> np.ndarray:
+def _compress_map(voiced: np.ndarray, tframes: int,
+                  max_rate: float = 1.35) -> np.ndarray:
     """Frame indices for fitting a syllable into a note SHORTER than it.
 
-    Resampling the whole syllable faster is what makes short notes mushy: the
-    consonants are sped up along with the vowel, so the word stops being
-    articulated. A singer on a short note does not talk faster — they clip the
-    vowel and keep the consonants intact. On a 0.25-beat note (125ms against a
-    ~400ms spoken syllable) that is the difference between a word and a blur.
+    Resampling the whole syllable faster is what makes short notes sound
+    clipped: "sing" spoken over 69 frames squeezed into a 25-frame note is
+    played 2.8x too fast, and the word turns to mush. Guarding the consonants
+    does not help either — after trimming to its voiced core a syllable is
+    voiced end to end, so there are no unvoiced frames to protect.
+
+    A singer on a short note does not talk faster. They articulate the onset at
+    its normal speed and stop. So playback runs at natural rate (allowing a
+    slight nudge up to ``max_rate``) and whatever does not fit is simply not
+    heard — the note keeps the attack, which is what carries the word.
     """
     n = len(voiced)
     if n == 0:
         return np.zeros(tframes, dtype=np.float64)
-    if tframes >= n or not voiced.any():
-        return np.linspace(0, max(n - 1, 0), tframes)
-
-    idx = np.nonzero(voiced)[0]
-    v0, v1 = int(idx[0]), int(idx[-1]) + 1
-    head, tail = v0, n - v1
-    # Only worth doing if the consonants actually fit with a vowel left over.
-    if head + tail + 2 > tframes:
+    if tframes >= n:
         return np.linspace(0, n - 1, tframes)
-
-    vowel_out = tframes - head - tail
-    parts = []
-    if head:
-        parts.append(np.arange(0, v0, dtype=np.float64))
-    parts.append(np.linspace(v0, v1 - 1, vowel_out))
-    if tail:
-        parts.append(np.arange(v1, n, dtype=np.float64))
-    out = np.concatenate(parts)
-    if len(out) != tframes:
-        out = np.interp(np.linspace(0, len(out) - 1, tframes),
-                        np.arange(len(out)), out)
-    return out
+    # Speed up a little before truncating, so a mild overrun is absorbed rather
+    # than lopping off an audible chunk.
+    rate = min(max_rate, n / max(tframes, 1))
+    out = np.arange(tframes, dtype=np.float64) * rate
+    return np.clip(out, 0.0, n - 1)
 
 
 def _take(arr: np.ndarray, mapping: np.ndarray) -> np.ndarray:

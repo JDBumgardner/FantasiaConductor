@@ -254,25 +254,25 @@ def test_edges_from_durations_handles_a_single_word():
 
 
 # ---- short notes --------------------------------------------------------
-def test_short_notes_clip_the_vowel_not_the_consonants():
-    """Resampling the whole syllable faster makes short notes mushy — the
-    consonants get sped up with the vowel and the word stops being articulated.
-    A singer clips the vowel instead."""
-    voiced = np.zeros(80, dtype=bool)
-    voiced[10:70] = True                       # 10 onset, 60 vowel, 10 coda
-    m = sing._compress_map(voiced, 30)
-    assert len(m) == 30
-    steps = np.abs(np.diff(m))
-    assert np.sum(np.abs(steps - 1.0) < 0.01) >= 18   # consonants at natural rate
-    assert np.median(steps[10:20]) > 3                # vowel is what gets cut
+def test_short_notes_keep_natural_rate_rather_than_speeding_up():
+    """"sing" spoken over 69 frames squeezed into a 25-frame note plays 2.8x too
+    fast and turns to mush. The onset should be articulated normally and the
+    rest simply not heard."""
+    m = sing._compress_map(np.ones(69, dtype=bool), 25)
+    assert len(m) == 25
+    rate = float(np.median(np.diff(m)))
+    assert rate <= 1.4, f"playing back at {rate:.1f}x is a speed-up, not singing"
+    assert m[0] == 0.0                       # the attack is kept
 
 
-def test_compress_map_falls_back_when_consonants_do_not_fit():
-    voiced = np.zeros(40, dtype=bool)
-    voiced[18:22] = True                       # mostly consonant
-    m = sing._compress_map(voiced, 5)
-    assert len(m) == 5
-    assert np.all(np.diff(m) >= 0)
+def test_compress_absorbs_a_mild_overrun_instead_of_truncating():
+    m = sing._compress_map(np.ones(30, dtype=bool), 25)
+    assert m[-1] >= 28                       # nearly all of it still fits
+
+
+def test_compress_never_indexes_past_the_source():
+    m = sing._compress_map(np.ones(10, dtype=bool), 4)
+    assert m.max() <= 9
 
 
 def test_compress_map_is_a_noop_when_the_note_is_long_enough():
