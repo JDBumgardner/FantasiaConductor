@@ -225,3 +225,29 @@ def test_a_word_longer_than_the_chunk_limit_still_progresses():
     toks = [("syl", i > 0) for i in range(10)]
     chunks = list(sing._phrase_chunks(list(range(10)), toks))
     assert sum(len(cn) for cn, _ in chunks) == 10
+
+
+# ---- duration-guided boundaries in a connected phrase -------------------
+def test_edges_from_durations_follow_relative_word_length():
+    """Per-word takes align perfectly but ruin delivery — an isolated "let" has
+    a hard released /t/ that connected speech reduces, and nothing flows into
+    the next word. The words are measured separately, but the connected take is
+    what gets sung."""
+    sr = SR
+    y = _speech(3.0, lead=0.0, trail=0.0)
+    edges = sing._edges_from_durations(y, sr, [1000, 3000, 1000])   # 1:3:1
+    assert edges[0] == 0 and edges[-1] == len(y)
+    spans = [edges[i + 1] - edges[i] for i in range(3)]
+    assert spans[1] > spans[0] * 2          # the long word gets the long span
+    assert abs(spans[0] - spans[2]) < len(y) * 0.12
+
+
+def test_edges_from_durations_are_strictly_increasing():
+    y = _speech(0.4, lead=0.0, trail=0.0)
+    edges = sing._edges_from_durations(y, SR, [10, 10, 10, 10, 10, 10])
+    assert all(edges[i] < edges[i + 1] for i in range(len(edges) - 1))
+
+
+def test_edges_from_durations_handles_a_single_word():
+    y = _speech(0.5)
+    assert sing._edges_from_durations(y, SR, [100]) == [0, len(y)]

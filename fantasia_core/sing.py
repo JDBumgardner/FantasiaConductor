@@ -401,6 +401,46 @@ def _speak_words(speak, words: List[str], speed: float):
     return np.concatenate(parts), edges
 
 
+def _edges_from_durations(y: np.ndarray, sr: int, word_lens: List[int],
+                          frame: int = 512, hop: int = 128) -> List[int]:
+    """Word boundaries inside a connected phrase, guided by how long each word
+    takes on its own.
+
+    Speaking every word separately gets the boundaries exactly right but ruins
+    the delivery: an isolated "let" is produced with a fully released /t/ that
+    connected speech reduces, and nothing flows into the next word. Speaking the
+    phrase whole keeps the flow but leaves the boundaries to guesswork, and a
+    flat guess gave "let" 87ms against "sing" 258ms.
+
+    So the words are still spoken separately, but only to measure them: their
+    relative lengths place the joins in the connected take, and each join is
+    then nudged to the quietest frame nearby.
+    """
+    import librosa
+
+    total = float(sum(word_lens)) or 1.0
+    env = np.abs(librosa.util.frame(y, frame_length=frame, hop_length=hop)).max(axis=0)
+    env = env / (float(env.max()) or 1.0)
+    nf = len(env)
+
+    edges, acc = [0], 0
+    for wl in word_lens[:-1]:
+        acc += wl
+        centre = acc / total * nf
+        # Only a small nudge: the proportion is the good estimate here, the
+        # energy dip just snaps it onto the actual consonant boundary.
+        half = max(2.0, nf * 0.03)
+        a = int(max(1, centre - half))
+        b = int(min(nf - 1, centre + half))
+        f = int(centre) if b <= a else a + int(np.argmin(env[a:b]))
+        edges.append(int(f * hop + frame / 2))
+    edges.append(len(y))
+    for i in range(1, len(edges)):
+        if edges[i] <= edges[i - 1]:
+            edges[i] = min(len(y), edges[i - 1] + 1)
+    return edges
+
+
 def _phrase_chunks(notes: Sequence, tokens: List[Tuple[str, bool]]):
     """Group (note, token) pairs into singable phrases of at most PHRASE_MAX.
 
@@ -510,10 +550,16 @@ def sing_notes(notes: Sequence, lyrics: str, voice: str = "af_heart",
         if not per_syllable:
             groups = word_groups(chunk_tokens)
             words = _chunk_words(chunk_tokens)
+            text = phrase_text(chunk_tokens)
             for speed in PHRASE_SPEEDS:
-                spoken, edges = _speak_words(_speak, words, speed)
-                if spoken is None:
+                # Separate takes measure the words; the connected take is what
+                # actually gets sung, so consonants and word joins stay natural.
+                _joined, per_word = _speak_words(_speak, words, speed)
+                spoken = _speak(text, speed)
+                if spoken is None or per_word is None:
                     continue
+                lens = [per_word[i + 1] - per_word[i] for i in range(len(words))]
+                edges = _edges_from_durations(spoken, sr, lens)
                 try:
                     pieces = _render_phrase(spoken, sr, chunk_notes, prev_hz,
                                             groups=groups, word_edges=edges)
