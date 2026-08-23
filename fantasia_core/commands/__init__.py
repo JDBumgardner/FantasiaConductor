@@ -8,6 +8,7 @@ come from one mechanism instead of two.
 from fantasia_core.commands.base import Command, CommandBus
 from fantasia_core.commands.clip_cmds import (
     AddClipCommand,
+    DuplicateClipsCommand,
     MakeMidiClipCommand,
     RemoveClipCommand,
     SetClipAttrCommand,
@@ -37,6 +38,7 @@ __all__ = [
     "SetTrackSynthCommand",
     "SetTrackSynthParamCommand",
     "AddClipCommand",
+    "DuplicateClipsCommand",
     "MakeMidiClipCommand",
     "RemoveClipCommand",
     "SetClipAttrCommand",

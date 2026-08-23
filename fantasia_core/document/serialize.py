@@ -68,6 +68,9 @@ def project_to_dict(project: Project) -> dict[str, Any]:
         "sample_rate": project.sample_rate,
         "tempo": project.tempo,
         "beats_per_bar": project.beats_per_bar,
+        "loop_enabled": bool(project.loop_enabled),
+        "loop_start": float(project.loop_start),
+        "loop_end": float(project.loop_end),
         "next_id": project._next_id,
         "tracks": [track_to_dict(t) for t in project.tracks],
     }
@@ -132,6 +135,9 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         beats_per_bar=int(data.get("beats_per_bar", 4)),
     )
     project.tracks = [track_from_dict(t) for t in data.get("tracks", [])]
+    project.loop_enabled = bool(data.get("loop_enabled", False))
+    project.loop_start = float(data.get("loop_start", 0.0))
+    project.loop_end = float(data.get("loop_end", 8.0))
     project._next_id = int(data.get("next_id", 1))
     return project
 

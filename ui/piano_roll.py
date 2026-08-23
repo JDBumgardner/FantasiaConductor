@@ -995,8 +995,12 @@ class PianoRollView(QGraphicsView):
                    Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
             return True
         if ctrl and key in (Qt.Key_A, Qt.Key_C, Qt.Key_X, Qt.Key_V, Qt.Key_D,
-                            Qt.Key_I, Qt.Key_L, Qt.Key_U, Qt.Key_E,
+                            Qt.Key_I, Qt.Key_U, Qt.Key_E,
                             Qt.Key_1, Qt.Key_2, Qt.Key_3, Qt.Key_4, Qt.Key_5):
+            return True
+        # Ctrl+L is legato only when notes are selected; otherwise let the
+        # window toggle the arrangement loop (Ableton-style).
+        if ctrl and key == Qt.Key_L and self.selected_items():
             return True
         return False
 

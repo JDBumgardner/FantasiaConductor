@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fantasia_core.commands.base import _UNSET, Command
-from fantasia_core.document.model import Clip
+from fantasia_core.document.model import Clip, Note
 
 
 class AddClipCommand(Command):
@@ -297,6 +297,70 @@ class SetClipSourceCommand(Command):
             clip.source_duration = src_dur
             clip.duration = dur
             clip.notes = list(notes)
+
+
+def _clip_copy_kwargs(clip: Clip) -> dict:
+    return {
+        "content_type": clip.content_type,
+        "source_path": clip.source_path,
+        "source_offset": clip.source_offset,
+        "source_duration": clip.source_duration,
+        "notes": [Note(n.pitch, n.start, n.duration, n.velocity) for n in clip.notes],
+        "gain_db": clip.gain_db,
+        "fade_in": clip.fade_in,
+        "fade_out": clip.fade_out,
+        "reversed": clip.reversed,
+        "pitch_semitones": clip.pitch_semitones,
+        "lock_tempo": clip.lock_tempo,
+        "orig_source_path": clip.orig_source_path,
+        "lock_base_dur": clip.lock_base_dur,
+    }
+
+
+class DuplicateClipsCommand(Command):
+    """Copy selected clips onto the same tracks, immediately after the selection."""
+
+    def __init__(self, clip_ids: list[str]) -> None:
+        self.clip_ids = list(clip_ids)
+        self._created: list[tuple[str, Clip]] = []
+        self.label = "Duplicate clips"
+
+    def do(self, project) -> None:  # noqa: ANN001
+        if self._created:
+            for tid, clip in self._created:
+                track = project.track_by_id(tid)
+                if track is not None and clip not in track.clips:
+                    track.clips.append(clip)
+            return
+        found: list[tuple[object, Clip]] = []
+        for cid in self.clip_ids:
+            track, clip = project.find_clip(cid)
+            if track is not None and clip is not None:
+                found.append((track, clip))
+        if not found:
+            return
+        starts = [c.start for _, c in found]
+        ends = [c.start + c.duration for _, c in found]
+        span = max(ends) - min(starts)
+        if span <= 0:
+            span = found[0][1].duration
+        for track, clip in found:
+            copy = project.add_clip(
+                track.id, clip.start + span, clip.duration, clip.name,
+                **_clip_copy_kwargs(clip),
+            )
+            if copy is not None:
+                self._created.append((track.id, copy))
+
+    def undo(self, project) -> None:  # noqa: ANN001
+        for tid, clip in self._created:
+            track = project.track_by_id(tid)
+            if track is not None and clip in track.clips:
+                track.clips.remove(clip)
+
+    @property
+    def created_ids(self) -> list[str]:
+        return [c.id for _, c in self._created]
 
 
 class SetClipGeometryCommand(Command):

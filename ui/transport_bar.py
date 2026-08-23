@@ -49,7 +49,7 @@ class TransportBar(QWidget):
         self.stop_btn.clicked.connect(self.stop_requested.emit)
 
         self.loop_btn = QPushButton("↺")  # ↺
-        self.loop_btn.setToolTip("Loop")
+        self.loop_btn.setToolTip("Loop (Ctrl+L) — drag the brace in the arrangement ruler")
         self.loop_btn.setCheckable(True)
         self.loop_btn.setFixedWidth(40)
         self.loop_btn.toggled.connect(self.loop_toggled.emit)
@@ -83,6 +83,12 @@ class TransportBar(QWidget):
         layout.addStretch(1)
         layout.addWidget(tempo_label)
         layout.addWidget(self.tempo_spin)
+
+    def set_loop(self, on: bool) -> None:
+        """Sync the button without emitting loop_toggled."""
+        blocked = self.loop_btn.blockSignals(True)
+        self.loop_btn.setChecked(bool(on))
+        self.loop_btn.blockSignals(blocked)
 
     def set_metronome(self, on: bool) -> None:
         """Sync the button without emitting metronome_toggled."""
