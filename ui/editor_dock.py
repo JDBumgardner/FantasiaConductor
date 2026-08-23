@@ -37,21 +37,23 @@ class EditorDock(QWidget):
 
         bar = QWidget()
         bar.setObjectName("editorModeBar")
-        bar.setStyleSheet(
-            f"QWidget#editorModeBar {{ background:{theme.BG_PANEL}; }}"
-            f"QWidget#editorModeBar QPushButton {{"
+        # Set the style on each button so the window-wide
+        # ``QPushButton:checked`` (magenta on near-black) cannot win.
+        tab_btn = (
+            f"QPushButton {{"
             f"  background: transparent; color: {theme.FG_DIM};"
             f"  border: none; border-bottom: 2px solid transparent;"
             f"  border-radius: 0; padding: 4px 12px; font-weight: 600;"
             f"}}"
-            f"QWidget#editorModeBar QPushButton:hover {{"
+            f"QPushButton:hover {{"
             f"  color: {theme.FG_BRIGHT}; background: {theme.BG_HOVER};"
             f"}}"
-            f"QWidget#editorModeBar QPushButton:checked {{"
+            f"QPushButton:checked {{"
             f"  color: {theme.FG_BRIGHT}; background: {theme.BG_SELECTED};"
-            f"  border-bottom: 2px solid {theme.ACCENT}; font-weight: 700;"
+            f"  border: none; border-bottom: 2px solid {theme.ACCENT}; font-weight: 700;"
             f"}}"
         )
+        bar.setStyleSheet(f"QWidget#editorModeBar {{ background:{theme.BG_PANEL}; }}")
         row = QHBoxLayout(bar)
         row.setContentsMargins(6, 4, 6, 4)
         row.setSpacing(6)
@@ -63,6 +65,7 @@ class EditorDock(QWidget):
         for b in (self.btn_piano, self.btn_synth, self.btn_eq):
             b.setCheckable(True)
             b.setMinimumWidth(110)
+            b.setStyleSheet(tab_btn)
             group.addButton(b)
         self.btn_piano.setChecked(True)
         row.addWidget(self.btn_piano)
@@ -80,6 +83,12 @@ class EditorDock(QWidget):
         synth_scroll.setWidgetResizable(True)
         synth_scroll.setFrameShape(QScrollArea.NoFrame)
         synth_scroll.setMinimumHeight(60)
+        synth_scroll.setStyleSheet(
+            f"QScrollArea {{ background: {theme.BG_PANEL}; border: none; }}"
+            f"QScrollArea > QWidget {{ background: {theme.BG_PANEL}; }}"
+        )
+        synth_scroll.viewport().setStyleSheet(f"background: {theme.BG_PANEL};")
+        self.stack.setStyleSheet(f"QStackedWidget {{ background: {theme.BG_PANEL}; }}")
         self.piano.setMinimumHeight(60)
         self.eq = EqCurveView()
         self.stack.addWidget(self.piano)         # index 0

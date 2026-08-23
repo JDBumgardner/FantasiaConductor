@@ -2256,9 +2256,9 @@ class MainWindow(QMainWindow):
         _, clip = self.project.find_clip(self._editing_clip_id)
         if clip is None:
             return
-        anchor = max(0.0, min(self.timeline.playhead - clip.start, clip.duration))
-        self.piano.view.paste_notes(anchor, self._note_clipboard)
-        self.statusBar().showMessage(f"Pasted {len(self._note_clipboard)} note(s)")
+        self.piano.view.paste_notes(self._note_clipboard)
+        self.statusBar().showMessage(
+            f"Pasted {len(self._note_clipboard)} note(s) on top of the original(s)")
 
     # ---- audio → MIDI transcription -------------------------------------
     def _transcribe_clip(self, clip) -> None:

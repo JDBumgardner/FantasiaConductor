@@ -105,6 +105,33 @@ def test_constrain_delta_picks_dominant_axis():
     assert midi_ops.constrain_delta(5.0, 5.0) == (5.0, 0.0)
 
 
+def test_scale_rows_harmonic_minor_in_a():
+    # A harmonic minor: A B C D E F G#
+    rows = midi_ops.scale_rows("Harmonic Minor", root=9, lo=57, hi=69)
+    assert rows == [69, 68, 65, 64, 62, 60, 59, 57]  # A4 … A3, high→low
+
+
+def test_step_in_scale_skips_out_of_scale():
+    pcs = midi_ops.scale_pitch_classes("Major", 0)  # C major
+    assert midi_ops.step_in_scale(60, 1, pcs) == 62  # C → D
+    assert midi_ops.step_in_scale(60, -1, pcs) == 59  # C → B
+    assert midi_ops.step_in_scale(60, 12, pcs) == 72  # octave
+
+
+def test_transpose_in_scale_moves_chord_together():
+    notes = _notes((60, 0.0, 0.5, 100), (64, 0.0, 0.5, 100), (67, 0.0, 0.5, 100))
+    pcs = midi_ops.scale_pitch_classes("Major", 0)
+    midi_ops.transpose_in_scale(notes, 1, pcs)
+    assert [n.pitch for n in notes] == [62, 66, 69]  # C E G → D F# A (same shape, +2)
+
+
+def test_clone_keeps_absolute_start():
+    src = _notes((60, 1.25, 0.5, 100), (64, 1.5, 0.25, 90))
+    copies = midi_ops.clone_notes(src)
+    assert copies[0].start == 1.25
+    assert copies[1].start == 1.5
+
+
 def test_split_at_creates_right_hand_piece():
     notes = _notes((60, 0.0, 1.0, 100), (64, 0.8, 0.1, 90))
     created = midi_ops.split_at(notes, 0.4)

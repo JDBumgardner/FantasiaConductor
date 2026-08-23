@@ -42,12 +42,16 @@ from ui import theme
 
 NOTE_H = 14
 DRUM_ROW_H = 22
-KEY_W = 92
+ZOOM_STRIP_W = 16     # Ableton-style vertical zoom grip at the far left
+KEY_LABEL_W = 76
+KEY_W = ZOOM_STRIP_W + KEY_LABEL_W
 PR_PPS = 160.0
 PITCH_LO = 21
 PITCH_HI = 108
 RESIZE_EDGE = 9
 MIN_NOTE = midi_ops.MIN_NOTE
+ROW_SCALE_MIN = 0.4
+ROW_SCALE_MAX = 3.5
 PR_RULER_H = 22      # bar/beat ruler pinned to the top of the roll
 _NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
@@ -201,7 +205,14 @@ class PianoRollView(QGraphicsView):
         self.drum_mode = False
         self.draw_mode = False
         self.fold = False
+        self.scale_name = "Chromatic"
+        self.scale_root = 0
         self._row_scale = 1.0
+        self._zoom_drag = False
+        self._zoom_start_scale = 1.0
+        self._zoom_start_y = 0.0
+        self._zoom_anchor_pitch = 60
+        self._zoom_anchor_vy = 0.0
         self._lane_pitch: List[int] = []
         self._pitch_row: Dict[int, int] = {}
         self._items: List[NoteItem] = []
@@ -229,11 +240,19 @@ class PianoRollView(QGraphicsView):
         base = DRUM_ROW_H if self.drum_mode else NOTE_H
         return max(8.0, base * self._row_scale)
 
-    def set_row_scale(self, scale: float) -> None:
-        self._row_scale = max(0.55, min(2.4, scale))
+    def set_row_scale(self, scale: float, anchor_pitch: Optional[int] = None,
+                      anchor_vy: Optional[float] = None) -> None:
+        self._row_scale = max(ROW_SCALE_MIN, min(ROW_SCALE_MAX, scale))
         for item in self._items:
             item.refresh()
         self._update_scene_rect()
+        if anchor_pitch is not None and anchor_vy is not None:
+            target = self.pitch_to_y(anchor_pitch) + self.row_h() * 0.5
+            cur = self.mapFromScene(KEY_W + 1, target).y()
+            delta = int(cur - anchor_vy)
+            if delta:
+                bar = self.verticalScrollBar()
+                bar.setValue(bar.value() + delta)
         self.viewport().update()
 
     def _nearest_row(self, pitch: int) -> int:
@@ -244,8 +263,11 @@ class PianoRollView(QGraphicsView):
                 bd, best = d, i
         return best
 
+    def _laned(self) -> bool:
+        return self.drum_mode or self.fold or not midi_ops.is_chromatic(self.scale_name)
+
     def pitch_to_y(self, p: int) -> float:
-        if self.drum_mode or self.fold:
+        if self._laned():
             row = self._pitch_row.get(p, self._nearest_row(p) if self._lane_pitch else 0)
         else:
             row = PITCH_HI - p
@@ -253,7 +275,7 @@ class PianoRollView(QGraphicsView):
 
     def y_to_pitch(self, y: float) -> int:
         row = int((y - PR_RULER_H) / self.row_h())
-        if self.drum_mode or self.fold:
+        if self._laned():
             if not self._lane_pitch:
                 return 60
             row = max(0, min(len(self._lane_pitch) - 1, row))
@@ -298,12 +320,30 @@ class PianoRollView(QGraphicsView):
 
     def set_fold(self, on: bool) -> None:
         self.fold = bool(on)
+        self._relayout_lanes()
+        self.status.emit("Fold on" if self.fold else "Fold off")
+
+    def set_scale(self, name: str, root: int = 0) -> None:
+        self.scale_name = name if name in midi_ops.SCALES else "Chromatic"
+        self.scale_root = int(root) % 12
+        self._relayout_lanes()
+        if midi_ops.is_chromatic(self.scale_name):
+            self.status.emit("Scale Chromatic")
+        else:
+            root_name = midi_ops.SCALE_ROOTS[self.scale_root]
+            self.status.emit(f"Scale {root_name} {self.scale_name}")
+
+    def _relayout_lanes(self) -> None:
         self._apply_lanes()
         for item in self._items:
             item.refresh()
         self._update_scene_rect()
         self.viewport().update()
-        self.status.emit("Fold on" if self.fold else "Fold off")
+
+    def _scale_pcs(self):
+        if midi_ops.is_chromatic(self.scale_name):
+            return None
+        return midi_ops.scale_pitch_classes(self.scale_name, self.scale_root)
 
     def wheelEvent(self, event) -> None:  # noqa: N802
         mods = event.modifiers()
@@ -324,7 +364,7 @@ class PianoRollView(QGraphicsView):
         super().wheelEvent(event)
 
     def _rows(self) -> int:
-        if self.drum_mode or self.fold:
+        if self._laned():
             return max(len(self._lane_pitch), 1)
         return PITCH_HI - PITCH_LO + 1
 
@@ -444,7 +484,16 @@ class PianoRollView(QGraphicsView):
             self._drum_labels = {p: name for p, name in lanes}
             return
         self._drum_labels = {}
-        if self.fold:
+        if not midi_ops.is_chromatic(self.scale_name):
+            pitches = midi_ops.scale_rows(self.scale_name, self.scale_root, PITCH_LO, PITCH_HI)
+            if self.fold:
+                used = {i.note.pitch for i in self._items}
+                if used:
+                    pitches = [p for p in pitches if p in used]
+            self._lane_pitch = pitches or midi_ops.scale_rows(
+                self.scale_name, self.scale_root, 60, 72)
+            self._pitch_row = {p: i for i, p in enumerate(self._lane_pitch)}
+        elif self.fold:
             pitches = midi_ops.fold_rows([i.note.pitch for i in self._items], pad=1,
                                          lo=PITCH_LO, hi=PITCH_HI)
             self._lane_pitch = pitches
@@ -552,9 +601,13 @@ class PianoRollView(QGraphicsView):
         self._items.append(item)
         self._scene.clearSelection()
         item.setSelected(True)
-        self.preview.emit(pitch)
+        self._audition(pitch)
         self.info.emit(self.describe(pitch, start))
         return item
+
+    def _audition(self, pitch: int) -> None:
+        if self.draw_mode:
+            self.preview.emit(int(pitch))
 
     def _ensure_clip(self) -> bool:
         if self.clip_id:
@@ -624,7 +677,7 @@ class PianoRollView(QGraphicsView):
         dt = dx / self.pps
         dp = -int(round(dy / self.row_h()))
         lo, hi = (min(self._lane_pitch or [0]), max(self._lane_pitch or [127])) if (
-            self.drum_mode or self.fold) else (PITCH_LO, PITCH_HI)
+            self._laned()) else (PITCH_LO, PITCH_HI)
         # Keep the whole selection in range / on the timeline.
         min_start = min(s for _i, s, _p, _d, _v in self._drag_snapshot)
         if min_start + dt < 0:
@@ -638,7 +691,7 @@ class PianoRollView(QGraphicsView):
             new_p = lead.pitch
             if new_p != getattr(self, "_last_preview", None):
                 self._last_preview = new_p
-                self.preview.emit(new_p)          # audition the pitch as it changes
+                self._audition(new_p)
             self.info.emit(self.describe(new_p, lead.start))
 
     def end_note_drag(self) -> None:
@@ -715,12 +768,21 @@ class PianoRollView(QGraphicsView):
         vp = self._view_pos(event)
         scene_pos = self.mapToScene(vp)
         item = self._note_at(vp)
-        if event.button() == Qt.LeftButton and scene_pos.x() < KEY_W:
+        if event.button() == Qt.LeftButton and vp.x() < ZOOM_STRIP_W:
+            self._zoom_drag = True
+            self._zoom_start_scale = self._row_scale
+            self._zoom_start_y = float(vp.y())
+            self._zoom_anchor_vy = float(vp.y())
+            self._zoom_anchor_pitch = self.y_to_pitch(scene_pos.y())
+            self.setCursor(Qt.SizeVerCursor)
+            event.accept()
+            return
+        if event.button() == Qt.LeftButton and vp.x() < KEY_W:
             if not self._ensure_clip():
                 event.accept()
                 return
             pitch = self.y_to_pitch(scene_pos.y())
-            self.preview.emit(pitch)
+            self._audition(pitch)
             if not (event.modifiers() & Qt.ShiftModifier):
                 self._scene.clearSelection()
             for note_item in self._items:
@@ -767,6 +829,21 @@ class PianoRollView(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if not self._zoom_drag and self._drawing is None and self._rubber_origin is None:
+            if self._view_pos(event).x() < ZOOM_STRIP_W:
+                self.setCursor(Qt.SizeVerCursor)
+            elif self.cursor().shape() == Qt.SizeVerCursor:
+                self.unsetCursor()
+        if self._zoom_drag:
+            vp = self._view_pos(event)
+            dy = self._zoom_start_y - float(vp.y())  # drag up = zoom in
+            self.set_row_scale(
+                self._zoom_start_scale * (1.02 ** dy),
+                anchor_pitch=self._zoom_anchor_pitch,
+                anchor_vy=self._zoom_anchor_vy,
+            )
+            event.accept()
+            return
         if self._drawing is not None:
             scene_x = self.mapToScene(self._view_pos(event)).x()
             end = self.snap_time(self.x_to_time(scene_x))
@@ -800,6 +877,11 @@ class PianoRollView(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._zoom_drag:
+            self._zoom_drag = False
+            self.unsetCursor()
+            event.accept()
+            return
         if self._drawing is not None:
             self._drawing = None
             self.commit()
@@ -933,13 +1015,15 @@ class PianoRollView(QGraphicsView):
                 return
 
         if key in (Qt.Key_Up, Qt.Key_Down) and sel and not ctrl:
-            semis = (12 if shift else 1) * (1 if key == Qt.Key_Up else -1)
+            steps = (12 if shift else 1) * (1 if key == Qt.Key_Up else -1)
             lo, hi = (min(self._lane_pitch or [0]), max(self._lane_pitch or [127])) if (
-                self.drum_mode or self.fold) else (PITCH_LO, PITCH_HI)
-            midi_ops.transpose(sel, semis, lo, hi)
+                self._laned()) else (PITCH_LO, PITCH_HI)
+            pcs = self._scale_pcs()
+            midi_ops.transpose_in_scale(sel, steps, pcs, lo, hi)
             for i in self._items:
                 i.refresh()
             self.commit()
+            self.ensure_selection_visible()
             event.accept()
             return
         if key in (Qt.Key_Left, Qt.Key_Right) and sel and not ctrl:
@@ -951,33 +1035,43 @@ class PianoRollView(QGraphicsView):
                     i.note.start = self.snap_time(i.note.start)
                 i.refresh()
             self.commit()
+            self.ensure_selection_visible()
             event.accept()
             return
         super().keyPressEvent(event)
 
-    def selected_notes(self) -> List[Note]:
-        sel = [i.note for i in self._items if i.isSelected()]
-        if not sel:
-            return []
-        base = min(n.start for n in sel)
-        return [Note(n.pitch, n.start - base, n.duration, n.velocity) for n in sel]
+    def ensure_selection_visible(self) -> None:
+        items = self.selected_items()
+        if not items:
+            return
+        rect = items[0].sceneBoundingRect()
+        for item in items[1:]:
+            rect = rect.united(item.sceneBoundingRect())
+        rect.adjust(-24, -self.row_h(), 24, self.row_h())
+        self.ensureVisible(rect, 48, 28)
 
-    def paste_notes(self, anchor: float, notes: List[Note]) -> None:
+    def selected_notes(self) -> List[Note]:
+        """Clipboard payload — original clip-relative times (paste stacks on top)."""
+        return midi_ops.clone_notes(i.note for i in self._items if i.isSelected())
+
+    def paste_notes(self, notes: List[Note], anchor: Optional[float] = None) -> None:
         if not notes or self.clip_id is None:
             return
         self._scene.clearSelection()
         for n in notes:
-            item = NoteItem(Note(n.pitch, max(0.0, anchor + n.start), n.duration, n.velocity), self)
+            start = n.start if anchor is None else max(0.0, anchor + n.start)
+            item = NoteItem(Note(n.pitch, max(0.0, start), n.duration, n.velocity), self)
             self._scene.addItem(item)
             self._items.append(item)
             item.setSelected(True)
         self.commit()
+        self.ensure_selection_visible()
 
     # ---- background / gutter --------------------------------------------
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
         super().drawBackground(painter, rect)
         rh = self.row_h()
-        if self.drum_mode or self.fold:
+        if self._laned():
             pitches = self._lane_pitch
             for i, p in enumerate(pitches):
                 y = PR_RULER_H + i * rh
@@ -1024,41 +1118,58 @@ class PianoRollView(QGraphicsView):
         view_left = self.mapToScene(0, 0).x()
         rh = self.row_h()
         painter.fillRect(QRectF(view_left, rect.top(), KEY_W, rect.height()), QColor(theme.BG_PANEL))
+        self._paint_zoom_strip(painter, view_left, rect)
+        label_x = int(view_left) + ZOOM_STRIP_W + 4
         painter.setFont(QFont("", 8))
         if self.drum_mode:
             labels = getattr(self, "_drum_labels", {p: n for p, n in DRUM_LANES})
             for i, p in enumerate(self._lane_pitch):
                 y = PR_RULER_H + i * rh
                 painter.setPen(QColor(*theme.GRID_BEAT))
-                painter.drawLine(int(view_left), int(y), int(view_left + KEY_W), int(y))
+                painter.drawLine(int(view_left + ZOOM_STRIP_W), int(y),
+                                 int(view_left + KEY_W), int(y))
                 painter.setPen(QColor(theme.FG))
-                painter.drawText(int(view_left) + 6, int(y + rh - 6), labels.get(p, str(p)))
+                painter.drawText(label_x, int(y + rh - 6), labels.get(p, str(p)))
         else:
             painter.setFont(QFont("", 7))
-            if self.fold:
+            if self._laned():
                 for i, p in enumerate(self._lane_pitch):
                     y = PR_RULER_H + i * rh
                     if p % 12 == 0:
                         painter.setPen(QColor(theme.CYAN))
-                        painter.drawText(int(view_left) + 4, int(y + rh - 2), f"C{p // 12 - 1}")
+                        painter.drawText(label_x, int(y + rh - 2), f"C{p // 12 - 1}")
                     else:
-                        names = "C C# D D# E F F# G G# A A# B".split()
                         painter.setPen(QColor(theme.FG_DIM))
-                        painter.drawText(int(view_left) + 4, int(y + rh - 2), names[p % 12])
+                        painter.drawText(label_x, int(y + rh - 2), _NAMES[p % 12])
             else:
                 for p in range(PITCH_LO, PITCH_HI + 1):
                     if p % 12 == 0:
                         y = self.pitch_to_y(p)
                         painter.setPen(QColor(*theme.GRID_BAR))
-                        painter.drawLine(int(view_left), int(y), int(view_left + KEY_W), int(y))
+                        painter.drawLine(int(view_left + ZOOM_STRIP_W), int(y),
+                                         int(view_left + KEY_W), int(y))
                         painter.setPen(QColor(theme.CYAN))
-                        painter.drawText(int(view_left) + 4, int(y) + int(self.row_h()) - 2,
+                        painter.drawText(label_x, int(y) + int(self.row_h()) - 2,
                                          f"C{p // 12 - 1}")
         painter.setPen(theme.RULER_LINE)
         painter.drawLine(
             int(view_left + KEY_W), int(rect.top()),
             int(view_left + KEY_W), int(rect.bottom()),
         )
+
+    def _paint_zoom_strip(self, painter: QPainter, view_left: float, rect: QRectF) -> None:
+        strip = QRectF(view_left, rect.top(), ZOOM_STRIP_W, rect.height())
+        painter.fillRect(strip, QColor(theme.BG_ELEVATED))
+        painter.setPen(QPen(QColor(theme.BORDER), 1))
+        painter.drawLine(int(view_left + ZOOM_STRIP_W), int(rect.top()),
+                         int(view_left + ZOOM_STRIP_W), int(rect.bottom()))
+        painter.setPen(QColor(theme.FG_DIM))
+        painter.setFont(QFont("", 8, QFont.Bold))
+        cx = int(view_left + ZOOM_STRIP_W / 2 - 3)
+        mid = int(self.mapToScene(0, self.viewport().height() // 2).y())
+        painter.drawText(cx, mid - 8, "+")
+        painter.drawText(cx + 1, mid + 4, "↕")
+        painter.drawText(cx, mid + 16, "−")
 
 
 class PianoRollPanel(QWidget):
@@ -1096,9 +1207,30 @@ class PianoRollPanel(QWidget):
         self.btn_draw.toggled.connect(self.view.set_draw_mode)
         self.btn_fold = QPushButton("Fold (F)")
         self.btn_fold.setCheckable(True)
-        self.btn_fold.setToolTip("Show only pitches that have notes")
+        self.btn_fold.setToolTip(
+            "Hide unused pitches (Ableton Fold). Combine with Scale to keep only "
+            "in-scale notes that are already in the clip.")
         self.btn_fold.setStyleSheet(btn_style)
         self.btn_fold.toggled.connect(self.view.set_fold)
+
+        root_label = QLabel("Root")
+        root_label.setStyleSheet(f"color:{theme.FG_DIM}; background:transparent;")
+        self.scale_root = QComboBox()
+        for i, name in enumerate(midi_ops.SCALE_ROOTS):
+            self.scale_root.addItem(name, i)
+        self.scale_root.setToolTip("Scale root — used with the Scale filter")
+        self.scale_root.currentIndexChanged.connect(self._on_scale_changed)
+
+        scale_label = QLabel("Scale")
+        scale_label.setStyleSheet(f"color:{theme.FG_DIM}; background:transparent;")
+        self.scale_value = QComboBox()
+        for name in midi_ops.SCALES:
+            self.scale_value.addItem(name)
+        self.scale_value.setCurrentText("Chromatic")
+        self.scale_value.setToolTip(
+            "Show only degrees of this scale. Chromatic = every key. "
+            "Arrow-nudge stays in the scale.")
+        self.scale_value.currentIndexChanged.connect(self._on_scale_changed)
 
         note_label = QLabel("Note")
         note_label.setStyleSheet(f"color:{theme.FG_DIM}; background:transparent;")
@@ -1127,6 +1259,10 @@ class PianoRollPanel(QWidget):
         top_row.addWidget(self._title, 1)
         top_row.addWidget(self.btn_draw)
         top_row.addWidget(self.btn_fold)
+        top_row.addWidget(root_label)
+        top_row.addWidget(self.scale_root)
+        top_row.addWidget(scale_label)
+        top_row.addWidget(self.scale_value)
         self.readout = QLabel("")
         self.readout.setMinimumWidth(150)
         self.readout.setStyleSheet(
@@ -1155,6 +1291,10 @@ class PianoRollPanel(QWidget):
         sc_f = QShortcut(QKeySequence(Qt.Key_F), self)
         sc_f.setContext(Qt.WidgetWithChildrenShortcut)
         sc_f.activated.connect(lambda: self.view.set_fold(not self.view.fold))
+
+    def _on_scale_changed(self, _=0) -> None:
+        self.view.set_scale(self.scale_value.currentText(),
+                            int(self.scale_root.currentData() or 0))
 
     def _on_status(self, msg: str) -> None:
         # Keep Draw/Fold buttons matched when toggled from the keyboard.
@@ -1186,8 +1326,8 @@ class PianoRollPanel(QWidget):
         self.view.reload(clip)
         self.refresh_title(clip, self.view.drum_mode)
 
-    _HINT = ("dbl-click add/delete · B draw · F fold · arrows nudge · "
-             "Ctrl+D duplicate · drag the split above to resize")
+    _HINT = ("dbl-click add/delete · B draw · drag left strip to zoom · "
+             "arrows nudge · Ctrl+V pastes on top")
 
     def refresh_title(self, clip, drum_mode: bool = False) -> None:  # noqa: ANN001
         if clip is not None and clip.id == self.view.clip_id:

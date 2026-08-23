@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
@@ -49,9 +50,15 @@ class SynthPanel(QWidget):
         self.track_id: Optional[str] = None
 
         self.setObjectName("synthBody")
+        self.setAutoFillBackground(True)
+        pal = self.palette()
+        pal.setColor(QPalette.Window, QColor(theme.BG_PANEL))
+        pal.setColor(QPalette.Base, QColor(theme.BG_PANEL))
+        self.setPalette(pal)
         self.setStyleSheet(
             f"QWidget#synthBody {{ background: {theme.BG_PANEL}; }}"
-            f" QLabel {{ color: {theme.FG}; background: transparent; }}")
+            f"QWidget#synthBody QLabel {{ color: {theme.FG}; background: transparent; }}"
+        )
         grid = QGridLayout(self)
         grid.setContentsMargins(10, 8, 10, 8)
         grid.setHorizontalSpacing(10)
