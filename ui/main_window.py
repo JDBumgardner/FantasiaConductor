@@ -2258,7 +2258,8 @@ class MainWindow(QMainWindow):
             return
         self.piano.view.paste_notes(self._note_clipboard)
         self.statusBar().showMessage(
-            f"Pasted {len(self._note_clipboard)} note(s) on top of the original(s)")
+            f"Pasted {len(self._note_clipboard)} note(s) — move to keep both, "
+            f"or leave in place to replace")
 
     # ---- audio → MIDI transcription -------------------------------------
     def _transcribe_clip(self, clip) -> None:
