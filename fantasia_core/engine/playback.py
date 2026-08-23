@@ -73,7 +73,11 @@ def default_output_device():
 
 
 class PlaybackEngine:
-    def __init__(self, project, pool, sample_rate: int = 44100, block: int = 1024) -> None:  # noqa: ANN001
+    # 1024 frames is 23ms, and the callback does real work inside that window:
+    # MIDI and synth tracks are rendered per block, not pre-mixed. On a busy
+    # project that overruns the deadline and PortAudio fills the gap with
+    # silence, which is heard as popping and crackling. 4096 gives it room.
+    def __init__(self, project, pool, sample_rate: int = 44100, block: int = 4096) -> None:  # noqa: ANN001
         self.project = project
         self.pool = pool
         self.sr = sample_rate
@@ -83,6 +87,7 @@ class PlaybackEngine:
         self._playing = False
         self._stream = None
         self.output_device = None  # None = system default; else sounddevice index
+        self._underruns = 0
         self._fx_host = FxHost()  # persistent per-track FX state for smooth tails
         self.midi_renderer = None  # set by the app; audio callback only reads its cache
         self.synth_renderer = None
@@ -106,7 +111,19 @@ class PlaybackEngine:
         return int(self.project.duration * self.sr)
 
     # ---- audio callback --------------------------------------------------
+    @property
+    def underruns(self) -> int:
+        """Blocks PortAudio could not get in time since playback started.
+
+        Each one is a gap filled with silence — the popping you hear when the
+        callback misses its deadline. Counted rather than ignored so a busy
+        project is diagnosable instead of just sounding broken.
+        """
+        return self._underruns
+
     def _callback(self, outdata, frames, time_info, status) -> None:  # noqa: ANN001
+        if status and getattr(status, "output_underflow", False):
+            self._underruns += 1
         if not self._playing:
             outdata.fill(0.0)
             return
@@ -156,6 +173,7 @@ class PlaybackEngine:
             self._stream = sd.OutputStream(
                 samplerate=self.sr, channels=2, blocksize=self.block,
                 dtype="float32", device=device, callback=self._callback,
+                latency="high",   # buy the callback time; see block= above
             )
             self._stream.start()
             self.output_device = device  # remember what actually opened

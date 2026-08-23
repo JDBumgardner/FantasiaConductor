@@ -1883,7 +1883,12 @@ class MainWindow(QMainWindow):
     def _on_stop(self) -> None:
         self.engine.stop()
         self._play_timer.stop()
-        self.statusBar().showMessage("Stopped")
+        # Say so when the audio thread missed deadlines: those gaps are heard as
+        # popping, and silently swallowing them makes the project look at fault.
+        dropped = getattr(self.engine, "underruns", 0)
+        self.statusBar().showMessage(
+            f"Stopped — {dropped} audio dropout(s); mute a track or raise the "
+            f"buffer if that was audible" if dropped else "Stopped")
 
     def _on_tick(self) -> None:
         self.timeline.set_playhead(self.engine.playhead)
