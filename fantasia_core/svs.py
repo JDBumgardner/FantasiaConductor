@@ -75,104 +75,177 @@ class VoicebankInfo:
     note: str = ""
 
 
-def _read_yaml(path: pathlib.Path):
+def _read_yaml(path):
     import yaml
 
     with open(path) as fh:
         return yaml.safe_load(fh)
 
 
+def _root_config(bank: pathlib.Path) -> Optional[pathlib.Path]:
+    """The bank's dsconfig.yaml. Layout differs between banks: LUNAI keeps it in
+    configs/ with the models in files/, Peiton puts both at the top level."""
+    for cand in (bank / "dsconfig.yaml", bank / "configs" / "dsconfig.yaml"):
+        if cand.is_file():
+            return cand
+    hits = [p for p in bank.glob("*/dsconfig.yaml") if p.is_file()]
+    return hits[0] if hits else None
+
+
 def list_voicebanks() -> List[VoicebankInfo]:
     """Every installed voicebank, whether or not it can render yet."""
     out = []
     for d in sorted(banks_dir().iterdir()):
-        cfg = d / "configs" / "dsconfig.yaml"
-        if not cfg.is_dir() and cfg.exists():
-            try:
-                c = _read_yaml(cfg) or {}
-            except Exception:  # noqa: BLE001
-                continue
-            spk = [str(s).split("/")[-1] for s in (c.get("speakers") or [])] or ["default"]
-            voc = _vocoder_path(d)
-            name = d.name
-            char = d / "configs" / "character.yaml"
-            if char.exists():
+        if not d.is_dir():
+            continue
+        cfg = _root_config(d)
+        if cfg is None:
+            continue
+        try:
+            c = _read_yaml(cfg) or {}
+        except Exception:  # noqa: BLE001
+            continue
+        spk = [str(s).split("/")[-1] for s in (c.get("speakers") or [])] or ["default"]
+        name = d.name
+        for ch in (cfg.parent / "character.yaml", d / "character.yaml"):
+            if ch.exists():
                 try:
-                    name = (_read_yaml(char) or {}).get("name") or name
+                    name = (_read_yaml(ch) or {}).get("name") or name
+                    break
                 except Exception:  # noqa: BLE001
                     pass
-            out.append(VoicebankInfo(
-                d.name, str(name), str(d), spk, voc is not None,
-                "" if voc else "vocoder missing — see the bank's vocoder.yaml"))
+        voc = _vocoder_path(cfg.parent)
+        out.append(VoicebankInfo(d.name, str(name), str(d), spk, voc is not None,
+                                 "" if voc else "vocoder missing"))
     return out
 
 
-def _vocoder_path(root: pathlib.Path) -> Optional[pathlib.Path]:
-    """The bank's vocoder, which OpenUtau installs alongside rather than inside."""
-    try:
-        vc = _read_yaml(root / "configs" / "dsvocoder" / "vocoder.yaml") or {}
+def _vocoder_path(base: pathlib.Path) -> Optional[pathlib.Path]:
+    """The vocoder for a bank. Some ship it inside; LUNAI banks expect it
+    installed alongside, which is why a bank alone can yield a mel but no audio."""
+    for vy in sorted(base.glob("dsvocoder/*.yaml")) + sorted(base.glob("**/dsvocoder/*.yaml")):
+        try:
+            vc = _read_yaml(vy) or {}
+        except Exception:  # noqa: BLE001
+            continue
         rel = vc.get("model")
         if rel:
-            p = (root / "configs" / "dsvocoder" / rel).resolve()
+            p = (vy.parent / rel).resolve()
             if p.exists():
                 return p
-    except Exception:  # noqa: BLE001
-        pass
-    hits = sorted(root.glob("**/*hifigan*.onnx"))
+    hits = sorted(base.glob("**/*gan*.onnx")) + sorted(base.parent.glob("**/*gan*.onnx"))
     return hits[0] if hits else None
 
 
+class _Module:
+    """One stage of the chain: its models, its own phoneme table, its lang flag.
+
+    Each stage carries a separate phoneme map — Katyusha's variance stages use
+    phonemes-variance.json rather than the acoustic table — so token ids must be
+    looked up per stage, not once for the bank.
+    """
+
+    def __init__(self, cfg_path: pathlib.Path) -> None:
+        self.dir = cfg_path.parent
+        self.config = _read_yaml(cfg_path) or {}
+        self.use_lang = bool(self.config.get("use_lang_id", False))
+        self.phonemes = self._table("phonemes") or {}
+        self.languages = self._table("languages") or {}
+
+    def _table(self, key):
+        """Phoneme/language tables ship either as JSON name->id or as a plain
+        text list where the line number is the id (TIGER does the latter)."""
+        rel = self.config.get(key)
+        if not rel:
+            return None
+        p = (self.dir / rel).resolve()
+        if not p.exists():
+            return None
+        if p.suffix.lower() == ".json":
+            try:
+                return json.load(open(p))
+            except Exception:  # noqa: BLE001
+                return None
+        names = [ln.strip() for ln in open(p, encoding="utf-8") if ln.strip()]
+        return {n: i for i, n in enumerate(names)}
+
+    def model(self, key) -> Optional[pathlib.Path]:
+        rel = self.config.get(key)
+        if not rel:
+            return None
+        p = (self.dir / rel).resolve()
+        return p if p.exists() else None
+
+    def token(self, phoneme: str) -> int:
+        return int(self.phonemes.get(f"en/{phoneme}",
+                                     self.phonemes.get(phoneme,
+                                                       self.phonemes.get(REST, 2))))
+
+    def lang_ids(self, n: int) -> np.ndarray:
+        return np.array([[int(self.languages.get("en", 0))] * n], dtype=np.int64)
+
+
 class Voicebank:
-    """A loaded voicebank. Sessions are opened lazily and kept."""
+    """A loaded voicebank. Sessions open lazily and are kept."""
 
     def __init__(self, root: str) -> None:
         self.root = pathlib.Path(root)
-        self.config = _read_yaml(self.root / "configs" / "dsconfig.yaml") or {}
-        files = self.root / "files"
-        self.phonemes: Dict[str, int] = json.load(open(files / "phonemes.json"))
-        langs = files / "languages.json"
-        self.languages: Dict[str, int] = json.load(open(langs)) if langs.exists() else {}
-        self.lang_en = int(self.languages.get("en", 0))
+        cfg = _root_config(self.root)
+        if cfg is None:
+            raise RuntimeError(f"{self.root.name} has no dsconfig.yaml")
+        self.base = cfg.parent
+        self.acoustic = _Module(cfg)
+        self.config = self.acoustic.config
         self.sr = int(self.config.get("sample_rate", SR))
         self.hop = int(self.config.get("hop_size", HOP))
         self.max_depth = float(self.config.get("max_depth", 1.0))
         self.use_tension = bool(self.config.get("use_tension_embed", False))
+        self.speakers = [str(s).split("/")[-1] for s in (self.config.get("speakers") or [])]
+        self._spk_paths = {str(s).split("/")[-1]: str(s) for s in (self.config.get("speakers") or [])}
+        self._mods: Dict[str, Optional[_Module]] = {}
         self._sessions: Dict[str, object] = {}
         self._embeds: Dict[str, np.ndarray] = {}
-        self.speakers = [str(s).split("/")[-1] for s in (self.config.get("speakers") or [])]
 
-    # ---- resources ----------------------------------------------------
-    def session(self, name: str):
+    def module(self, kind: str) -> Optional[_Module]:
+        """kind is 'dur' | 'pitch' | 'variance'."""
+        if kind not in self._mods:
+            cand = self.base / f"ds{kind}" / "dsconfig.yaml"
+            self._mods[kind] = _Module(cand) if cand.exists() else None
+        return self._mods[kind]
+
+    def session(self, path) -> object:
         import onnxruntime as ort
 
-        if name not in self._sessions:
-            path = (_vocoder_path(self.root) if name == "vocoder"
-                    else self.root / "files" / f"{name}.onnx")
-            if path is None or not pathlib.Path(path).exists():
-                raise FileNotFoundError(f"{name}.onnx missing from {self.root.name}")
+        key = str(path)
+        if key not in self._sessions:
             opts = ort.SessionOptions()
             opts.log_severity_level = 3
-            self._sessions[name] = ort.InferenceSession(
-                str(path), opts, providers=["CPUExecutionProvider"])
-        return self._sessions[name]
+            self._sessions[key] = ort.InferenceSession(
+                key, opts, providers=["CPUExecutionProvider"])
+        return self._sessions[key]
+
+    def vocoder(self):
+        p = _vocoder_path(self.base)
+        if p is None:
+            raise FileNotFoundError(
+                f"{self.root.name} has no vocoder — some banks expect it installed "
+                f"alongside; see configs/dsvocoder/vocoder.yaml for the name")
+        return self.session(p)
 
     def embed(self, speaker: Optional[str] = None) -> np.ndarray:
         speaker = speaker or (self.speakers[0] if self.speakers else "")
         if speaker not in self._embeds:
-            p = self.root / "configs" / "embeds" / f"{speaker}.emb"
-            if not p.exists():
-                cands = sorted((self.root / "configs" / "embeds").glob("*.emb"))
-                if not cands:
+            rel = self._spk_paths.get(speaker, speaker)
+            cands = [self.base / f"{rel}.emb", self.base / "embeds" / f"{speaker}.emb",
+                     self.root / f"{rel}.emb"]
+            p = next((c for c in cands if c.exists()), None)
+            if p is None:
+                found = sorted(self.base.glob("**/*.emb"))
+                if not found:
                     raise FileNotFoundError("no speaker embeddings in this voicebank")
-                p = cands[0]
+                p = found[0]
             self._embeds[speaker] = np.fromfile(p, dtype="<f4")
         return self._embeds[speaker]
-
-    def token(self, phoneme: str) -> int:
-        """Phoneme name to id, preferring the language-tagged form."""
-        return int(self.phonemes.get(f"en/{phoneme}",
-                                     self.phonemes.get(phoneme,
-                                                       self.phonemes.get(REST, 2))))
 
 
 _BANKS: Dict[str, Voicebank] = {}
@@ -311,6 +384,30 @@ def _fit(raw: np.ndarray, div: Sequence[int], target: Sequence[int]) -> np.ndarr
     return np.array([out], dtype=np.int64)
 
 
+_ONNX_DTYPE = {"tensor(float)": np.float32, "tensor(double)": np.float64,
+               "tensor(int64)": np.int64, "tensor(int32)": np.int32,
+               "tensor(bool)": np.bool_}
+
+
+def _feed(session, args: Dict[str, object]) -> Dict[str, object]:
+    """Keep only the inputs a model declares, cast to the types it declares.
+
+    Voicebanks are exported by different DiffSinger versions and disagree on
+    both: Peiton's duration model takes no speaker embedding at all, TIGER wants
+    note_rest and a "speedup" divisor where newer banks take a step count, and
+    TIGER's depth is an int where everyone else's is a float. Reading the graph
+    is the only reliable way to know.
+    """
+    out = {}
+    for i in session.get_inputs():
+        if i.name not in args:
+            continue
+        v = args[i.name]
+        want = _ONNX_DTYPE.get(i.type)
+        out[i.name] = np.asarray(v, dtype=want) if want is not None else v
+    return out
+
+
 def sing_notes(notes: Sequence, lyrics: str, voicebank: Optional[str] = None,
                speaker: Optional[str] = None, sr: int = SR,
                steps: int = ACOUSTIC_STEPS, gender: float = 0.0,
@@ -322,63 +419,98 @@ def sing_notes(notes: Sequence, lyrics: str, voicebank: Optional[str] = None,
         return np.zeros((0,), dtype=np.float32)
 
     pl = plan(ordered, lyrics, vb.hop, vb.sr)
-    tokens = np.array([[vb.token(p) for p in pl.phones]], dtype=np.int64)
-    langs = np.array([[vb.lang_en] * len(pl.phones)], dtype=np.int64)
-    word_div = np.array([pl.word_div], dtype=np.int64)
-    word_dur = np.array([pl.word_dur], dtype=np.int64)
     emb = vb.embed(speaker)
-    spk = lambda n: np.tile(emb, (1, n, 1)).astype(np.float32)  # noqa: E731
+    n_ph = len(pl.phones)
 
+    def spk(n):
+        return np.tile(emb, (1, n, 1)).astype(np.float32)
+
+    def stage(mod):
+        """tokens + languages in this stage's own vocabulary."""
+        toks = np.array([[mod.token(x) for x in pl.phones]], dtype=np.int64)
+        return toks, (mod.lang_ids(n_ph) if mod.use_lang else None)
+
+    note_midi = np.array([pl.note_midi], dtype=np.float32)
+    note_dur = np.array([pl.note_dur], dtype=np.int64)
+    note_rest = np.array([[m <= 0 for m in pl.note_midi]], dtype=bool)
+
+    # --- 1. phoneme durations -----------------------------------------
+    dur_m = vb.module("dur")
+    if dur_m is None or not dur_m.model("dur"):
+        raise RuntimeError(f"{vb.root.name} has no duration model")
     if progress:
         progress("durations")
-    enc, masks = vb.session("linguistic-dur").run(None, {
-        "tokens": tokens, "languages": langs,
-        "word_div": word_div, "word_dur": word_dur})
-    raw = vb.session("dur").run(None, {
+    toks, langs = stage(dur_m)
+    ling = vb.session(dur_m.model("linguistic"))
+    enc, masks = ling.run(None, _feed(ling, {
+        "tokens": toks, "languages": langs,
+        "word_div": np.array([pl.word_div], dtype=np.int64),
+        "word_dur": np.array([pl.word_dur], dtype=np.int64)}))
+    ds = vb.session(dur_m.model("dur"))
+    raw = ds.run(None, _feed(ds, {
         "encoder_out": enc, "x_masks": masks,
         "ph_midi": np.array([pl.ph_midi], dtype=np.int64),
-        "spk_embed": spk(tokens.shape[1])})[0][0]
+        "spk_embed": spk(n_ph)}))[0][0]
     ph_dur = _fit(raw, pl.word_div, pl.word_dur)
     n = int(ph_dur.sum())
 
-    if progress:
-        progress("pitch")
-    enc_p, _ = vb.session("linguistic-pitch").run(None, {
-        "tokens": tokens, "languages": langs, "ph_dur": ph_dur})
-    base = np.concatenate([np.full(d, m if m > 0 else pl.note_midi[max(i - 1, 0)] or 60.0)
-                           for i, (d, m) in enumerate(zip(pl.note_dur, pl.note_midi))])
+    # --- 2. the f0 curve, conditioned on the written notes -------------
+    base = np.concatenate([
+        np.full(d, m if m > 0 else (pl.note_midi[max(i - 1, 0)] or 60.0))
+        for i, (d, m) in enumerate(zip(pl.note_dur, pl.note_midi))])
     base = np.resize(base, n)[None].astype(np.float32)
-    pitch = vb.session("pitch").run(None, {
-        "encoder_out": enc_p, "ph_dur": ph_dur,
-        "note_midi": np.array([pl.note_midi], dtype=np.float32),
-        "note_dur": np.array([pl.note_dur], dtype=np.int64),
-        "pitch": base, "expr": np.ones((1, n), np.float32),
-        "retake": np.ones((1, n), bool), "spk_embed": spk(n),
-        "steps": np.array(VARIANCE_STEPS, dtype=np.int64)})[0]
+    pitch_m = vb.module("pitch")
+    if pitch_m is not None and pitch_m.model("pitch"):
+        if progress:
+            progress("pitch")
+        toks_p, langs_p = stage(pitch_m)
+        lp = vb.session(pitch_m.model("linguistic"))
+        enc_p, _ = lp.run(None, _feed(lp, {
+            "tokens": toks_p, "languages": langs_p, "ph_dur": ph_dur}))
+        ps = vb.session(pitch_m.model("pitch"))
+        pitch = ps.run(None, _feed(ps, {
+            "encoder_out": enc_p, "ph_dur": ph_dur, "note_midi": note_midi,
+            "note_dur": note_dur, "note_rest": note_rest, "pitch": base,
+            "expr": np.ones((1, n), np.float32),
+            "retake": np.ones((1, n), bool), "spk_embed": spk(n),
+            "steps": np.array(VARIANCE_STEPS), "speedup": np.array(5)}))[0]
+    else:
+        pitch = base                      # no pitch model: sing the notes flat
     f0 = (440.0 * 2 ** ((pitch - 69) / 12)).astype(np.float32)
 
-    feed = {"tokens": tokens, "languages": langs, "durations": ph_dur, "f0": f0,
+    # --- 3. expression -------------------------------------------------
+    feed = {"tokens": None, "durations": ph_dur, "f0": f0,
             "gender": np.full((1, n), float(gender), np.float32),
-            "velocity": np.ones((1, n), np.float32),
-            "spk_embed": spk(n),
-            "depth": np.array(vb.max_depth, dtype=np.float32),
-            "steps": np.array(int(steps), dtype=np.int64)}
-    if vb.use_tension:
+            "velocity": np.ones((1, n), np.float32), "spk_embed": spk(n),
+            "depth": np.array(vb.max_depth), "steps": np.array(int(steps)),
+            "speedup": np.array(max(1, 1000 // max(int(steps), 1)))}
+    var_m = vb.module("variance")
+    if vb.use_tension and var_m is not None and var_m.model("variance"):
         if progress:
             progress("expression")
-        enc_v, _ = vb.session("linguistic-variance").run(None, {
-            "tokens": tokens, "languages": langs, "ph_dur": ph_dur})
-        feed["tension"] = vb.session("variance").run(None, {
+        toks_v, langs_v = stage(var_m)
+        lv = vb.session(var_m.model("linguistic"))
+        enc_v, _ = lv.run(None, _feed(lv, {
+            "tokens": toks_v, "languages": langs_v, "ph_dur": ph_dur}))
+        vs = vb.session(var_m.model("variance"))
+        feed["tension"] = vs.run(None, _feed(vs, {
             "encoder_out": enc_v, "ph_dur": ph_dur, "pitch": pitch,
             "tension": np.zeros((1, n), np.float32),
             "retake": np.ones((1, n, 1), bool), "spk_embed": spk(n),
-            "steps": np.array(VARIANCE_STEPS, dtype=np.int64)})[0]
+            "steps": np.array(VARIANCE_STEPS), "speedup": np.array(5)}))[0]
 
+    # --- 4. mel, then the vocoder --------------------------------------
     if progress:
         progress("voice")
-    mel = vb.session("acoustic").run(None, feed)[0]
-    audio = vb.session("vocoder").run(None, {"mel": mel, "f0": f0})[0][0]
-    audio = np.asarray(audio, dtype=np.float32)
+    toks_a, langs_a = stage(vb.acoustic)
+    feed["tokens"] = toks_a
+    feed["languages"] = langs_a
+    ac = vb.session(vb.acoustic.model("acoustic"))
+    mel = ac.run(None, _feed(ac, feed))[0]
+
+    voc = vb.vocoder()
+    audio = np.asarray(voc.run(None, _feed(voc, {"mel": mel, "f0": f0}))[0][0],
+                       dtype=np.float32)
 
     if sr != vb.sr and len(audio):
         import librosa

@@ -116,3 +116,59 @@ def test_unknown_slug_is_rejected(tmp_path, monkeypatch):
 def test_listing_an_empty_directory_is_not_an_error(tmp_path, monkeypatch):
     monkeypatch.setenv("FANTASIA_VOICEBANKS", str(tmp_path / "banks"))
     assert svs.list_voicebanks() == []
+
+
+# ---- format differences between banks -----------------------------------
+class _FakeInput:
+    def __init__(self, name, type_): self.name, self.type = name, type_
+
+
+class _FakeSession:
+    def __init__(self, spec): self._spec = [_FakeInput(n, t) for n, t in spec]
+    def get_inputs(self): return self._spec
+
+
+def test_feed_drops_inputs_a_model_does_not_declare():
+    """Peiton's duration model takes no speaker embedding; passing one is a
+    hard ONNX error rather than something ignored."""
+    sess = _FakeSession([("tokens", "tensor(int64)")])
+    out = svs._feed(sess, {"tokens": np.array([[1, 2]]), "spk_embed": np.zeros((1, 2, 8))})
+    assert set(out) == {"tokens"}
+
+
+def test_feed_casts_to_the_type_each_model_declares():
+    """TIGER declares depth as an int where the other banks use a float."""
+    sess = _FakeSession([("depth", "tensor(int64)"), ("f0", "tensor(float)")])
+    out = svs._feed(sess, {"depth": np.array(0.6), "f0": np.array([[440.0]], dtype=np.float64)})
+    assert out["depth"].dtype == np.int64
+    assert out["f0"].dtype == np.float32
+
+
+def test_feed_passes_bool_inputs_through_as_bool():
+    sess = _FakeSession([("note_rest", "tensor(bool)")])
+    out = svs._feed(sess, {"note_rest": np.array([[0, 1]])})
+    assert out["note_rest"].dtype == np.bool_
+
+
+def test_phoneme_table_reads_a_plain_text_list(tmp_path):
+    """TIGER ships phonemes.txt where the line number is the id, not JSON."""
+    d = tmp_path / "bank"
+    (d / "dsacoustic").mkdir(parents=True)
+    (d / "dsacoustic" / "phonemes.txt").write_text("<PAD>\nAP\nSP\naa\nae\n")
+    (d / "dsconfig.yaml").write_text("phonemes: dsacoustic/phonemes.txt\n")
+    mod = svs._Module(d / "dsconfig.yaml")
+    assert mod.phonemes["SP"] == 2
+    assert mod.phonemes["ae"] == 4
+
+
+def test_root_config_found_in_either_layout(tmp_path):
+    """LUNAI banks keep dsconfig in configs/; Peiton puts it at the top level."""
+    flat = tmp_path / "flat"
+    flat.mkdir()
+    (flat / "dsconfig.yaml").write_text("acoustic: a.onnx\n")
+    assert svs._root_config(flat) == flat / "dsconfig.yaml"
+
+    nested = tmp_path / "nested"
+    (nested / "configs").mkdir(parents=True)
+    (nested / "configs" / "dsconfig.yaml").write_text("acoustic: a.onnx\n")
+    assert svs._root_config(nested) == nested / "configs" / "dsconfig.yaml"
