@@ -253,28 +253,30 @@ def test_edges_from_durations_handles_a_single_word():
     assert sing._edges_from_durations(y, SR, [100]) == [0, len(y)]
 
 
-def test_sustain_holds_instead_of_slowing_everything_down():
-    """Stretching a syllable uniformly drags the formant transitions out with
-    the vowel, which is a slow-motion talker rather than a singer. Transitions
-    should run at natural rate and only the vowel should be extended."""
-    voiced = np.zeros(40, dtype=bool)
-    voiced[6:34] = True
-    stability = np.ones(40) * 5.0
-    stability[18:22] = 0.1                       # steadiest here
-    m = sing._sustain_map(voiced, 120, stability=stability)
+# ---- short notes --------------------------------------------------------
+def test_short_notes_clip_the_vowel_not_the_consonants():
+    """Resampling the whole syllable faster makes short notes mushy — the
+    consonants get sped up with the vowel and the word stops being articulated.
+    A singer clips the vowel instead."""
+    voiced = np.zeros(80, dtype=bool)
+    voiced[10:70] = True                       # 10 onset, 60 vowel, 10 coda
+    m = sing._compress_map(voiced, 30)
+    assert len(m) == 30
     steps = np.abs(np.diff(m))
-    assert len(m) == 120
-    # Most of the syllable still advances at its natural rate...
-    assert np.sum(np.abs(steps - 1.0) < 0.05) > 30
-    # ...and the added time is spent barely moving, near the steady point.
-    assert np.sum(steps < 0.3) > 30
-    assert 17 <= np.median(m[np.abs(np.diff(m, append=m[-1])) < 0.3]) <= 23
+    assert np.sum(np.abs(steps - 1.0) < 0.01) >= 18   # consonants at natural rate
+    assert np.median(steps[10:20]) > 3                # vowel is what gets cut
 
 
-def test_sustain_drift_is_slow_enough_not_to_buzz():
-    """Stepping back and forth frame by frame is ~60Hz of spectral flutter."""
+def test_compress_map_falls_back_when_consonants_do_not_fit():
     voiced = np.zeros(40, dtype=bool)
-    voiced[6:34] = True
-    m = sing._sustain_map(voiced, 200, stability=np.ones(40))
-    reversals = int((np.diff(np.sign(np.diff(m))) != 0).sum())
-    assert reversals < 12, f"dwell reverses {reversals} times — that is flutter"
+    voiced[18:22] = True                       # mostly consonant
+    m = sing._compress_map(voiced, 5)
+    assert len(m) == 5
+    assert np.all(np.diff(m) >= 0)
+
+
+def test_compress_map_is_a_noop_when_the_note_is_long_enough():
+    voiced = np.zeros(20, dtype=bool)
+    voiced[5:15] = True
+    m = sing._compress_map(voiced, 40)
+    assert len(m) == 40
