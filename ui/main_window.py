@@ -1174,6 +1174,12 @@ class _SingDialog(QDialog):
         self.text.setMinimumSize(360, 90)
         self.voice = QComboBox()
         _fill_singing_combo(self.voice)
+        self._no_voices = self.voice.count() == 0
+        if self._no_voices:
+            # An empty dropdown says nothing about why. Name the reason and the
+            # place to fix it, and do not offer an OK that cannot work.
+            self.voice.addItem("— no voicebanks installed —", None)
+            self.voice.setEnabled(False)
         form.addRow(f"Lyrics ({note_count} notes):", self.text)
         form.addRow("Voice:", self.voice)
         note = QLabel("Sung by a DiffSinger voicebank at the written pitch. "
@@ -1184,6 +1190,11 @@ class _SingDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        if getattr(self, "_no_voices", False):
+            buttons.button(QDialogButtonBox.Ok).setEnabled(False)
+            from fantasia_core import sing as _sing
+
+            note.setText(_sing.why_unavailable() or note.text())
         form.addRow(buttons)
 
     def result_values(self):
@@ -1360,11 +1371,12 @@ class _AgentWorker(QThread):
 
     def _sing_melody(self, args: dict):
         try:
+            from fantasia_core import sing as sing_mod
             from fantasia_core.sing import available, sing_to_file
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
         if not available():
-            return {"error": "singing unavailable — install the voice extra + pyworld"}
+            return {"error": sing_mod.why_unavailable() or "singing unavailable"}
         info = self._marshal("_prep_sing_melody",
                              {"notes": args.get("notes"), "start_beat": args.get("start_beat", 0)}) or {}
         if info.get("error"):
@@ -1489,11 +1501,12 @@ class _AgentWorker(QThread):
 
     def _sing(self, args: dict):
         try:
+            from fantasia_core import sing as sing_mod
             from fantasia_core.sing import available, sing_to_file
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
         if not available():
-            return {"error": "singing unavailable — install the voice extra + librosa"}
+            return {"error": sing_mod.why_unavailable() or "singing unavailable"}
         info = self._marshal("_prep_sing", {"clip_id": args.get("clip_id")}) or {}
         if info.get("error"):
             return {"error": info["error"]}
@@ -3014,9 +3027,9 @@ class MainWindow(QMainWindow):
     def _sing_clip(self, clip) -> None:
         from fantasia_core import sing
 
-        if not sing.available():
-            self.statusBar().showMessage(
-                "Singing needs the voice extra (pip install mlx-audio 'misaki[en]') + librosa")
+        blocked = sing.why_unavailable()
+        if blocked:
+            self.statusBar().showMessage(blocked, 12000)
             return
         if not clip.is_midi or not clip.notes:
             self.statusBar().showMessage("Sing needs a MIDI clip with notes (draw a melody first)")

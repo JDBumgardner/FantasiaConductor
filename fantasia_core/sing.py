@@ -23,12 +23,38 @@ import numpy as np
 
 def available() -> bool:
     """True when singing can be rendered — i.e. a voicebank is installed."""
+    return why_unavailable() is None
+
+
+def why_unavailable() -> Optional[str]:
+    """What is stopping singing, phrased as what to do about it, or None.
+
+    The two reasons need different answers and are easy to confuse: missing
+    Python packages is a pip problem, while a working install with no voicebank
+    is a download. Telling someone to pip install when they need a voicebank
+    sends them the wrong way entirely.
+    """
     try:
         from fantasia_core import svs
-
-        return svs.available() and any(b.ready for b in svs.list_voicebanks())
-    except Exception:  # noqa: BLE001
-        return False
+    except Exception as exc:  # noqa: BLE001
+        return f"singing unavailable: {exc}"
+    if not svs.available():
+        return ("singing needs onnxruntime and cmudict "
+                "(pip install onnxruntime cmudict)")
+    try:
+        banks = svs.list_voicebanks()
+    except Exception as exc:  # noqa: BLE001
+        return f"could not read the voicebanks folder: {exc}"
+    if not banks:
+        return ("no singing voicebanks installed — add one under "
+                "Agent \u25b8 Singing Voicebanks\u2026 (DiffSinger banks in "
+                "OpenUtau format; try the LUNAI project, Peiton or TIGER)")
+    if not any(b.ready for b in banks):
+        names = ", ".join(b.name for b in banks[:3])
+        return (f"the installed voicebank(s) have no vocoder and cannot make "
+                f"sound ({names}) — reimport under Agent \u25b8 Singing "
+                f"Voicebanks\u2026, which can borrow a matching one")
+    return None
 
 
 

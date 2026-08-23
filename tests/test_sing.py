@@ -40,3 +40,45 @@ def test_split_lyrics_still_pads_and_truncates():
 def test_word_groups_counts_syllables_per_word():
     toks = sing.split_lyrics_joined("fan-ta-si-a con-duc-tor sings", 8)
     assert sing.word_groups(toks) == [4, 3, 1]
+
+
+# ---- why singing is unavailable -----------------------------------------
+def test_no_voicebanks_points_at_the_importer(tmp_path, monkeypatch):
+    """A fresh install has the packages but no voices. Telling someone to pip
+    install then sends them the wrong way entirely."""
+    monkeypatch.setenv("FANTASIA_VOICEBANKS", str(tmp_path / "none"))
+    msg = sing.why_unavailable()
+    assert msg and "voicebank" in msg.lower()
+    assert "pip install" not in msg
+    assert not sing.available()
+
+
+def test_missing_packages_says_pip(monkeypatch):
+    from fantasia_core import svs
+
+    monkeypatch.setattr(svs, "available", lambda: False)
+    msg = sing.why_unavailable()
+    assert "pip install" in msg
+
+
+def test_a_bank_without_a_vocoder_is_called_out(tmp_path, monkeypatch):
+    """It loads fine and yields a spectrogram with no sound, so the reason has
+    to be stated rather than left as silence."""
+    from fantasia_core import svs
+
+    monkeypatch.setattr(svs, "available", lambda: True)
+    monkeypatch.setattr(svs, "list_voicebanks", lambda: [
+        svs.VoicebankInfo("x", "Silent Bank", "/tmp/x", ["a"], False, "")])
+    msg = sing.why_unavailable()
+    assert "vocoder" in msg.lower()
+    assert "Silent Bank" in msg
+
+
+def test_available_when_a_ready_bank_exists(monkeypatch):
+    from fantasia_core import svs
+
+    monkeypatch.setattr(svs, "available", lambda: True)
+    monkeypatch.setattr(svs, "list_voicebanks", lambda: [
+        svs.VoicebankInfo("x", "Good", "/tmp/x", ["a"], True, "")])
+    assert sing.why_unavailable() is None
+    assert sing.available()
