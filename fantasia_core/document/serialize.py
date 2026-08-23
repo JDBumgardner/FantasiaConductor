@@ -26,6 +26,7 @@ def clip_to_dict(clip: Clip) -> dict[str, Any]:
         "content_type": clip.content_type,
         "source_path": clip.source_path,
         "source_offset": clip.source_offset,
+        "source_duration": clip.source_duration,
         "notes": [
             {"pitch": n.pitch, "start": n.start, "duration": n.duration, "velocity": n.velocity}
             for n in clip.notes
@@ -67,6 +68,9 @@ def project_to_dict(project: Project) -> dict[str, Any]:
         "sample_rate": project.sample_rate,
         "tempo": project.tempo,
         "beats_per_bar": project.beats_per_bar,
+        "loop_enabled": bool(project.loop_enabled),
+        "loop_start": float(project.loop_start),
+        "loop_end": float(project.loop_end),
         "next_id": project._next_id,
         "tracks": [track_to_dict(t) for t in project.tracks],
     }
@@ -81,6 +85,7 @@ def clip_from_dict(data: dict[str, Any]) -> Clip:
         content_type=data.get("content_type", "audio"),
         source_path=data.get("source_path"),
         source_offset=float(data.get("source_offset", 0.0)),
+        source_duration=float(data.get("source_duration", 0.0)),
         notes=[
             Note(
                 pitch=int(nd["pitch"]),
@@ -130,6 +135,9 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         beats_per_bar=int(data.get("beats_per_bar", 4)),
     )
     project.tracks = [track_from_dict(t) for t in data.get("tracks", [])]
+    project.loop_enabled = bool(data.get("loop_enabled", False))
+    project.loop_start = float(data.get("loop_start", 0.0))
+    project.loop_end = float(data.get("loop_end", 8.0))
     project._next_id = int(data.get("next_id", 1))
     return project
 

@@ -6,9 +6,10 @@ trivially serializable/testable.
 
 Design notes
 ------------
-* **Time is measured in seconds** (float) on the timeline. Tempo/bars are kept
-  for the UI grid and snapping, but positions are audio-native seconds so a
-  clip's place on the timeline never depends on tempo interpretation.
+* **Time is measured in seconds** (float) on the timeline. Changing project
+  tempo rescales clip/note times (``old_bpm / new_bpm``) so the song speeds up
+  or slows down; audio is warped to the new clip length. Grid/snap use tempo
+  as well.
 * **IDs are stable strings** (``"t1"``, ``"c2"``) from a single monotonic
   counter on the project. Commands (M2) and the agent (M6) address tracks and
   clips by these ids, and they must survive save/load — so the counter is part
@@ -58,6 +59,9 @@ class Clip:
     content_type: str = "audio"
     source_path: Optional[str] = None  # audio file backing this clip (M3+)
     source_offset: float = 0.0  # seconds into the source where playback starts
+    source_duration: float = 0.0  # seconds of source to consume; 0 → equals duration
+    # After a tempo change, duration is scaled but source_duration stays so the
+    # mixer can warp the same source region into the new clip length.
     notes: List["Note"] = field(default_factory=list)  # for content_type == "midi"
     gain_db: float = 0.0
     fade_in: float = 0.0  # seconds
@@ -114,7 +118,16 @@ class Project:
     tempo: float = 120.0  # BPM
     beats_per_bar: int = 4
     tracks: list[Track] = field(default_factory=list)
+    loop_enabled: bool = False
+    loop_start: float = 0.0
+    loop_end: float = 8.0  # 4 bars at the default 120 BPM
     _next_id: int = 1
+
+    def loop_bounds(self) -> tuple[float, float]:
+        """``(start, end)`` seconds, guaranteed ``end > start``."""
+        start = max(0.0, float(self.loop_start))
+        end = max(start + 0.05, float(self.loop_end))
+        return start, end
 
     # ---- id generation ---------------------------------------------------
     def new_id(self, prefix: str) -> str:

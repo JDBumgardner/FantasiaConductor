@@ -177,22 +177,43 @@ class SetTrackSynthCommand(Command):
 
 
 class SetTempoCommand(Command):
-    """Set the project tempo (BPM). Undoable; consecutive changes (a slider drag
-    or repeated agent edits) coalesce into one undo entry."""
+    """Set the project tempo (BPM) and rescale the arrangement so the song
+    plays faster/slower. Undoable; consecutive changes (a spinner drag or
+    repeated agent edits) coalesce into one undo entry."""
 
     def __init__(self, bpm: float) -> None:
         self.bpm = float(bpm)
         self._old = _UNSET
+        self.last_factor = 1.0  # timeline scale applied by the last do/undo
         self.label = "Set tempo"
 
     def do(self, project) -> None:  # noqa: ANN001
+        from fantasia_core.document.tempo import scale_timeline
+
         if self._old is _UNSET:
             self._old = project.tempo
-        project.tempo = self.bpm
+        old = float(project.tempo)
+        new = self.bpm
+        if old > 0 and new > 0 and abs(old - new) > 1e-9:
+            self.last_factor = old / new
+            scale_timeline(project, self.last_factor)
+        else:
+            self.last_factor = 1.0
+        project.tempo = new
 
     def undo(self, project) -> None:  # noqa: ANN001
-        if self._old is not _UNSET:
-            project.tempo = self._old
+        from fantasia_core.document.tempo import scale_timeline
+
+        if self._old is _UNSET:
+            return
+        current = float(project.tempo)
+        target = float(self._old)
+        if current > 0 and target > 0 and abs(current - target) > 1e-9:
+            self.last_factor = current / target
+            scale_timeline(project, self.last_factor)
+        else:
+            self.last_factor = 1.0
+        project.tempo = target
 
     def merge_key(self):
         return ("set_tempo",)

@@ -16,6 +16,7 @@ from typing import Optional
 import numpy as np
 
 from fantasia_core.engine.fx import FxHost
+from fantasia_core.engine.metronome import make_click_bank, mix_metronome
 from fantasia_core.engine.mixer import render_block
 
 try:  # optional at import time
@@ -72,6 +73,48 @@ def default_output_device():
         return None
 
 
+def loop_render_plan(
+    cursor: int,
+    frames: int,
+    loop: bool,
+    loop_start: int,
+    loop_end: int,
+) -> tuple[list[tuple[int, int]], int]:
+    """Split one callback into ``(src_frame, n)`` pieces so a loop wrap is seamless.
+
+    Returns ``(pieces, new_cursor)``. When looping is off, a single piece.
+    """
+    if frames <= 0:
+        return [], cursor
+    if not loop or loop_end <= loop_start + 1:
+        return [(cursor, frames)], cursor + frames
+    lo, hi = int(loop_start), int(loop_end)
+    pieces: list[tuple[int, int]] = []
+    remaining = int(frames)
+    cur = int(cursor)
+    if cur >= hi:
+        length = hi - lo
+        cur = lo + ((cur - lo) % length) if length > 0 else lo
+    guard = 0
+    while remaining > 0 and guard < 16:
+        guard += 1
+        if cur >= hi:
+            cur = lo
+        room = hi - cur
+        if room <= 0:
+            cur = lo
+            room = hi - lo
+            if room <= 0:
+                break
+        n = min(remaining, room)
+        pieces.append((cur, n))
+        cur += n
+        remaining -= n
+        if cur >= hi:
+            cur = lo
+    return pieces, cur
+
+
 class PlaybackEngine:
     # 1024 frames is 23ms, and the callback does real work inside that window:
     # MIDI and synth tracks are rendered per block, not pre-mixed. On a busy
@@ -83,6 +126,8 @@ class PlaybackEngine:
         self.sr = sample_rate
         self.block = block
         self.loop = False
+        self.metronome_enabled = False
+        self._metro_clicks = make_click_bank(self.sr)
         self._cursor = 0  # frames
         self._playing = False
         self._stream = None
@@ -127,20 +172,38 @@ class PlaybackEngine:
         if not self._playing:
             outdata.fill(0.0)
             return
-        block = render_block(
-            self.project, self.pool, self._cursor, frames, self.sr,
-            fx_host=self._fx_host, midi_renderer=self.midi_renderer,
-            synth_renderer=self.synth_renderer,
+        loop_on = bool(self.loop or getattr(self.project, "loop_enabled", False))
+        lo_f = hi_f = 0
+        if loop_on:
+            start_s, end_s = self.project.loop_bounds()
+            lo_f, hi_f = int(start_s * self.sr), int(end_s * self.sr)
+        pieces, new_cursor = loop_render_plan(
+            self._cursor, frames, loop_on, lo_f, hi_f,
         )
-        np.clip(block, -1.0, 1.0, out=block)
-        outdata[:] = block
-        self._cursor += frames
+        written = 0
+        for src, n in pieces:
+            block = render_block(
+                self.project, self.pool, src, n, self.sr,
+                fx_host=self._fx_host, midi_renderer=self.midi_renderer,
+                synth_renderer=self.synth_renderer,
+                warp_compute=False,
+            )
+            if self.metronome_enabled:
+                mix_metronome(
+                    block, src, self.sr,
+                    self.project.tempo, self.project.beats_per_bar,
+                    self._metro_clicks,
+                )
+            np.clip(block, -1.0, 1.0, out=block)
+            outdata[written:written + n] = block
+            written += n
+        if written < frames:
+            outdata[written:].fill(0.0)
+        self._cursor = new_cursor
 
-        end = self._end_frame()
-        if self._cursor >= end:
-            if self.loop and end > 0:
-                self._cursor = 0
-            else:
+        if not loop_on:
+            end = self._end_frame()
+            if end > 0 and self._cursor >= end:
                 self._playing = False
 
     # ---- transport -------------------------------------------------------

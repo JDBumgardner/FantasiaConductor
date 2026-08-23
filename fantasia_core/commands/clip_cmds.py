@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fantasia_core.commands.base import _UNSET, Command
-from fantasia_core.document.model import Clip
+from fantasia_core.document.model import Clip, Note
 
 
 class AddClipCommand(Command):
@@ -137,22 +137,32 @@ class SplitClipCommand(Command):
         if self._new_clip is None:
             self._track_id = track.id
             self._index = track.clips.index(clip)
-            self._left_before = (clip.duration, clip.fade_out)
+            self._left_before = (clip.duration, clip.fade_out, clip.source_duration)
             left_dur = self.at - clip.start
+            span = float(getattr(clip, "source_duration", 0.0) or 0.0)
+            if span > 0 and clip.duration > 0:
+                left_src = left_dur * (span / clip.duration)
+            else:
+                left_src = left_dur
             self._new_clip = Clip(
                 id=project.new_id("c"),
                 name=clip.name,
                 start=self.at,
                 duration=clip.end - self.at,
+                content_type=clip.content_type,
                 source_path=clip.source_path,
-                source_offset=clip.source_offset + left_dur,
+                source_offset=clip.source_offset + left_src,
+                source_duration=(span - left_src) if span > 0 else 0.0,
                 gain_db=clip.gain_db,
                 fade_in=0.0,
                 fade_out=clip.fade_out,
                 reversed=clip.reversed,
+                pitch_semitones=clip.pitch_semitones,
             )
         clip.duration = self.at - clip.start
         clip.fade_out = 0.0
+        if float(getattr(clip, "source_duration", 0.0) or 0.0) > 0 and self._new_clip is not None:
+            clip.source_duration = float(self._left_before[2]) - float(self._new_clip.source_duration)
         track = project.track_by_id(self._track_id)
         if self._new_clip not in track.clips:
             track.clips.insert(self._index + 1, self._new_clip)
@@ -163,7 +173,7 @@ class SplitClipCommand(Command):
             track.clips.remove(self._new_clip)
         _, clip = project.find_clip(self.clip_id)
         if clip is not None and self._left_before is not _UNSET:
-            clip.duration, clip.fade_out = self._left_before
+            clip.duration, clip.fade_out, clip.source_duration = self._left_before
 
 
 class MakeMidiClipCommand(Command):
@@ -219,13 +229,18 @@ class SetClipNotesCommand(Command):
         if clip is None:
             return
         if self._before is _UNSET:
-            self._before = list(clip.notes)
+            self._before = (clip.content_type, list(clip.notes))
+        clip.content_type = "midi"
         clip.notes = list(self.notes)
 
     def undo(self, project) -> None:  # noqa: ANN001
         _, clip = project.find_clip(self.clip_id)
         if clip is not None and self._before is not _UNSET:
-            clip.notes = list(self._before)
+            if isinstance(self._before, tuple):
+                clip.content_type, notes = self._before
+                clip.notes = list(notes)
+            else:
+                clip.notes = list(self._before)
 
 
 class SetClipSourceCommand(Command):
@@ -260,6 +275,7 @@ class SetClipSourceCommand(Command):
                 clip.content_type,
                 clip.source_path,
                 clip.source_offset,
+                clip.source_duration,
                 clip.duration,
                 list(clip.notes),
             )
@@ -269,16 +285,82 @@ class SetClipSourceCommand(Command):
         clip.source_offset = self.source_offset
         if self.duration is not None:
             clip.duration = self.duration
+        clip.source_duration = float(clip.duration)
 
     def undo(self, project) -> None:  # noqa: ANN001
         _, clip = project.find_clip(self.clip_id)
         if clip is not None and self._before is not _UNSET:
-            ctype, src, off, dur, notes = self._before
+            ctype, src, off, src_dur, dur, notes = self._before
             clip.content_type = ctype
             clip.source_path = src
             clip.source_offset = off
+            clip.source_duration = src_dur
             clip.duration = dur
             clip.notes = list(notes)
+
+
+def _clip_copy_kwargs(clip: Clip) -> dict:
+    return {
+        "content_type": clip.content_type,
+        "source_path": clip.source_path,
+        "source_offset": clip.source_offset,
+        "source_duration": clip.source_duration,
+        "notes": [Note(n.pitch, n.start, n.duration, n.velocity) for n in clip.notes],
+        "gain_db": clip.gain_db,
+        "fade_in": clip.fade_in,
+        "fade_out": clip.fade_out,
+        "reversed": clip.reversed,
+        "pitch_semitones": clip.pitch_semitones,
+        "lock_tempo": clip.lock_tempo,
+        "orig_source_path": clip.orig_source_path,
+        "lock_base_dur": clip.lock_base_dur,
+    }
+
+
+class DuplicateClipsCommand(Command):
+    """Copy selected clips onto the same tracks, immediately after the selection."""
+
+    def __init__(self, clip_ids: list[str]) -> None:
+        self.clip_ids = list(clip_ids)
+        self._created: list[tuple[str, Clip]] = []
+        self.label = "Duplicate clips"
+
+    def do(self, project) -> None:  # noqa: ANN001
+        if self._created:
+            for tid, clip in self._created:
+                track = project.track_by_id(tid)
+                if track is not None and clip not in track.clips:
+                    track.clips.append(clip)
+            return
+        found: list[tuple[object, Clip]] = []
+        for cid in self.clip_ids:
+            track, clip = project.find_clip(cid)
+            if track is not None and clip is not None:
+                found.append((track, clip))
+        if not found:
+            return
+        starts = [c.start for _, c in found]
+        ends = [c.start + c.duration for _, c in found]
+        span = max(ends) - min(starts)
+        if span <= 0:
+            span = found[0][1].duration
+        for track, clip in found:
+            copy = project.add_clip(
+                track.id, clip.start + span, clip.duration, clip.name,
+                **_clip_copy_kwargs(clip),
+            )
+            if copy is not None:
+                self._created.append((track.id, copy))
+
+    def undo(self, project) -> None:  # noqa: ANN001
+        for tid, clip in self._created:
+            track = project.track_by_id(tid)
+            if track is not None and clip in track.clips:
+                track.clips.remove(clip)
+
+    @property
+    def created_ids(self) -> list[str]:
+        return [c.id for _, c in self._created]
 
 
 class SetClipGeometryCommand(Command):
@@ -296,11 +378,16 @@ class SetClipGeometryCommand(Command):
         if clip is None:
             return
         if self._before is _UNSET:
-            self._before = (clip.start, clip.duration)
+            self._before = (clip.start, clip.duration, clip.source_duration)
+        # First audio resize freezes the file-native span so changing duration
+        # time-stretches (pitch-preserving) instead of trimming the file.
+        if (clip.source_path and float(getattr(clip, "source_duration", 0.0) or 0.0) <= 0.0
+                and abs(self.duration - clip.duration) > 1e-9):
+            clip.source_duration = float(clip.duration)
         clip.start = self.start
         clip.duration = self.duration
 
     def undo(self, project) -> None:  # noqa: ANN001
         _, clip = project.find_clip(self.clip_id)
         if clip is not None and self._before is not _UNSET:
-            clip.start, clip.duration = self._before
+            clip.start, clip.duration, clip.source_duration = self._before

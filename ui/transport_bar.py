@@ -1,7 +1,7 @@
-"""Transport bar: play / stop / loop, tempo, and time readout.
+"""Transport bar: play / stop / loop / metronome, tempo, and time readout.
 
-M0: visual shell only. The buttons emit Qt signals so that the audio engine
-(M3) can connect to them later without changing this widget.
+Buttons emit Qt signals so the audio engine can connect without this widget
+knowing about playback internals.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ class TransportBar(QWidget):
     play_requested = Signal()
     stop_requested = Signal()
     loop_toggled = Signal(bool)
+    metronome_toggled = Signal(bool)
     tempo_changed = Signal(float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -48,10 +49,16 @@ class TransportBar(QWidget):
         self.stop_btn.clicked.connect(self.stop_requested.emit)
 
         self.loop_btn = QPushButton("↺")  # ↺
-        self.loop_btn.setToolTip("Loop")
+        self.loop_btn.setToolTip("Loop (Ctrl+L) — drag the brace in the arrangement ruler")
         self.loop_btn.setCheckable(True)
         self.loop_btn.setFixedWidth(40)
         self.loop_btn.toggled.connect(self.loop_toggled.emit)
+
+        self.metro_btn = QPushButton("♩")
+        self.metro_btn.setToolTip("Metronome")
+        self.metro_btn.setCheckable(True)
+        self.metro_btn.setFixedWidth(40)
+        self.metro_btn.toggled.connect(self.metronome_toggled.emit)
 
         self.time_label = QLabel("00:00.000")
         self.time_label.setObjectName("timeReadout")
@@ -70,11 +77,24 @@ class TransportBar(QWidget):
         layout.addWidget(self.play_btn)
         layout.addWidget(self.stop_btn)
         layout.addWidget(self.loop_btn)
+        layout.addWidget(self.metro_btn)
         layout.addSpacing(12)
         layout.addWidget(self.time_label)
         layout.addStretch(1)
         layout.addWidget(tempo_label)
         layout.addWidget(self.tempo_spin)
+
+    def set_loop(self, on: bool) -> None:
+        """Sync the button without emitting loop_toggled."""
+        blocked = self.loop_btn.blockSignals(True)
+        self.loop_btn.setChecked(bool(on))
+        self.loop_btn.blockSignals(blocked)
+
+    def set_metronome(self, on: bool) -> None:
+        """Sync the button without emitting metronome_toggled."""
+        blocked = self.metro_btn.blockSignals(True)
+        self.metro_btn.setChecked(bool(on))
+        self.metro_btn.blockSignals(blocked)
 
     def set_tempo(self, bpm: float) -> None:
         """Update the tempo display without emitting tempo_changed (for syncing

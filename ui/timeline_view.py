@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QGraphicsItem,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from fantasia_core.document.model import Clip, Project
 from ui import theme
+from ui.grid import GridSpec, grid_interval_seconds, seconds_per_beat, snap_time
 from ui.metrics import (
     CLIP_MARGIN,
     PPS_DEFAULT,
@@ -41,6 +42,8 @@ from ui.metrics import (
 )
 
 MIN_CLIP_SECONDS = 0.05
+LOOP_HANDLE_W = 7
+LOOP_BAR_H = 11
 
 
 def _lane_color(index: int) -> QColor:
@@ -273,8 +276,10 @@ class ClipItem(QGraphicsRectItem):
 
     def _paint_waveform(self, painter: QPainter, rect, pool) -> None:
         buckets = max(1, min(int(rect.width()), 2000))
+        from fantasia_core.document.tempo import source_span
+
         mins, maxs = pool.peaks(
-            self.clip.source_path, self.clip.source_offset, self.clip.duration, buckets
+            self.clip.source_path, self.clip.source_offset, source_span(self.clip), buckets
         )
         n = len(mins)
         if n == 0:
@@ -355,6 +360,11 @@ class TimelineView(QGraphicsView):
     delete_requested = Signal()  # Delete/Backspace while the timeline is focused
     copy_requested = Signal()  # Ctrl+C
     paste_requested = Signal()  # Ctrl+V
+    duplicate_requested = Signal()  # Ctrl+D
+    loop_toggle_requested = Signal()  # Ctrl+L
+    loop_region_changed = Signal(float, float)
+    loop_enabled_changed = Signal(bool)
+    grid_menu_requested = Signal(object)  # QPoint — empty-lane context menu
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         self._scene = QGraphicsScene()
@@ -376,10 +386,17 @@ class TimelineView(QGraphicsView):
         self.audio_pool = None  # set via set_audio_pool(); used to draw waveforms
         self.selected_track_id: Optional[str] = None
         self.pps = PPS_DEFAULT
-        self.snap_enabled = True
+        self.grid = GridSpec()
         self.playhead = 0.0
+        self.start_position = 0.0  # locator spacebar-play returns to
+        self.playback_active = False
 
         self._clip_items: dict[str, ClipItem] = {}
+        self._loop_drag: Optional[str] = None  # "start" | "end" | "move" | "toggle"
+        self._loop_drag_origin_x = 0.0
+        self._loop_drag_start = 0.0
+        self._loop_drag_end = 0.0
+        self._loop_press = QPoint()
         self._scene.selectionChanged.connect(self._on_selection_changed)
 
     # ---- project binding -------------------------------------------------
@@ -411,18 +428,26 @@ class TimelineView(QGraphicsView):
         return theme.BLUE
 
     # ---- grid / snapping -------------------------------------------------
-    def _grid_seconds(self) -> float:
+    @property
+    def snap_enabled(self) -> bool:
+        return self.grid.kind != "off"
+
+    def _grid_seconds(self) -> Optional[float]:
         if self._project is None:
-            return 0.5
-        return self._project.seconds_per_beat()
+            return seconds_per_beat(120.0)
+        return grid_interval_seconds(
+            self.grid, self._project.tempo, self._project.beats_per_bar, self.pps
+        )
 
     def snap(self, seconds: float) -> float:
-        if not self.snap_enabled:
-            return seconds
-        grid = self._grid_seconds()
-        if grid <= 0:
-            return seconds
-        return round(seconds / grid) * grid
+        return snap_time(seconds, self._grid_seconds())
+
+    def locate(self, seconds: float) -> None:
+        """Set the play-start locator (snapped). Moves the cursor when stopped."""
+        t = max(0.0, self.snap(seconds))
+        self.start_position = t
+        if not self.playback_active:
+            self.set_playhead(t)
 
     # ---- rebuild ---------------------------------------------------------
     def rebuild(self) -> None:
@@ -453,6 +478,12 @@ class TimelineView(QGraphicsView):
         item = self._clip_items.get(clip_id)
         if item is not None:
             item.refresh_geometry()
+
+    def refresh_geometries(self) -> None:
+        """Re-place every clip after a tempo rescale (no scene rebuild)."""
+        for item in self._clip_items.values():
+            item.refresh_geometry()
+        self._update_scene_rect()
 
     # ---- zoom ------------------------------------------------------------
     def set_pps(self, pps: float) -> None:
@@ -493,9 +524,47 @@ class TimelineView(QGraphicsView):
             self.clip_selected.emit("")
 
     def selected_clip_id(self) -> Optional[str]:
-        for item in self._scene.selectedItems():
-            if isinstance(item, ClipItem):
-                return item.clip.id
+        ids = self.selected_clip_ids()
+        return ids[0] if ids else None
+
+    def selected_clip_ids(self) -> list[str]:
+        return [item.clip.id for item in self._scene.selectedItems()
+                if isinstance(item, ClipItem)]
+
+    def select_clips(self, clip_ids) -> None:  # noqa: ANN001
+        wanted = set(clip_ids)
+        self._scene.clearSelection()
+        for cid, item in self._clip_items.items():
+            if cid in wanted:
+                item.setSelected(True)
+
+    def selection_time_span(self) -> Optional[tuple[float, float]]:
+        items = [i for i in self._scene.selectedItems() if isinstance(i, ClipItem)]
+        if not items:
+            return None
+        start = min(i.clip.start for i in items)
+        end = max(i.clip.start + i.clip.duration for i in items)
+        if end <= start:
+            return None
+        return start, end
+
+    def _loop_times(self) -> tuple[float, float]:
+        if self._project is None:
+            return 0.0, 8.0
+        return self._project.loop_bounds()
+
+    def _loop_hit(self, scene_x: float, scene_y: float, view_top: float) -> Optional[str]:
+        bar_top = view_top + RULER_H - LOOP_BAR_H - 1
+        if scene_y < bar_top or scene_y > view_top + RULER_H:
+            return None
+        start, end = self._loop_times()
+        x0, x1 = start * self.pps, end * self.pps
+        if abs(scene_x - x0) <= LOOP_HANDLE_W:
+            return "start"
+        if abs(scene_x - x1) <= LOOP_HANDLE_W:
+            return "end"
+        if x0 <= scene_x <= x1:
+            return "move"
         return None
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
@@ -515,24 +584,77 @@ class TimelineView(QGraphicsView):
                 return
         super().keyPressEvent(event)
 
-    # ---- mouse: ruler scrub ---------------------------------------------
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        item = self.itemAt(event.pos())
+        if isinstance(item, ClipItem):
+            super().contextMenuEvent(event)
+            return
+        self.grid_menu_requested.emit(event.globalPos())
+        event.accept()
+
+    # ---- mouse: ruler / empty-lane locate --------------------------------
     def mousePressEvent(self, event) -> None:  # noqa: N802
         scene_pos = self.mapToScene(event.position().toPoint())
         view_top = self.mapToScene(0, 0).y()
-        if view_top <= scene_pos.y() <= view_top + RULER_H:
-            self.set_playhead(self.snap(max(0.0, scene_pos.x() / self.pps)))
+        if event.button() == Qt.LeftButton and view_top <= scene_pos.y() <= view_top + RULER_H:
+            hit = self._loop_hit(scene_pos.x(), scene_pos.y(), view_top)
+            if hit is not None:
+                start, end = self._loop_times()
+                self._loop_drag = hit
+                self._loop_drag_origin_x = scene_pos.x()
+                self._loop_drag_start = start
+                self._loop_drag_end = end
+                self._loop_press = event.position().toPoint()
+                event.accept()
+                return
+            self.locate(max(0.0, scene_pos.x() / self.pps))
             event.accept()
             return
 
-        # Clicking an empty lane selects that track (clicking a clip selects it
-        # via the scene's own selection handling).
         item = self.itemAt(event.position().toPoint())
-        if not isinstance(item, ClipItem) and self._project is not None:
-            row = int((scene_pos.y() - RULER_H) // TRACK_H)
-            if 0 <= row < len(self._project.tracks):
-                self.track_selected.emit(self._project.tracks[row].id)
+        if event.button() == Qt.LeftButton and not isinstance(item, ClipItem):
+            # Empty arrangement click sets the play-start locator (snapped).
+            self.locate(max(0.0, scene_pos.x() / self.pps))
+            if self._project is not None:
+                row = int((scene_pos.y() - RULER_H) // TRACK_H)
+                if 0 <= row < len(self._project.tracks):
+                    self.track_selected.emit(self._project.tracks[row].id)
 
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self._loop_drag in ("start", "end", "move"):
+            scene_x = self.mapToScene(event.position().toPoint()).x()
+            dt = (scene_x - self._loop_drag_origin_x) / self.pps
+            start, end = self._loop_drag_start, self._loop_drag_end
+            if self._loop_drag == "start":
+                start = max(0.0, self.snap(self._loop_drag_start + dt))
+                start = min(start, end - MIN_CLIP_SECONDS)
+            elif self._loop_drag == "end":
+                end = max(start + MIN_CLIP_SECONDS, self.snap(self._loop_drag_end + dt))
+            else:
+                length = end - start
+                start = max(0.0, self.snap(self._loop_drag_start + dt))
+                end = start + length
+            if self._project is not None:
+                self._project.loop_start = start
+                self._project.loop_end = end
+            self.loop_region_changed.emit(start, end)
+            self.viewport().update()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._loop_drag is not None:
+            moved = (event.position().toPoint() - self._loop_press).manhattanLength() > 4
+            mode = self._loop_drag
+            self._loop_drag = None
+            if not moved and mode in ("move", "start", "end") and self._project is not None:
+                self.loop_enabled_changed.emit(not self._project.loop_enabled)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     # ---- background: lanes + grid ---------------------------------------
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
@@ -550,20 +672,56 @@ class TimelineView(QGraphicsView):
                 color = _lane_color(i)
             painter.fillRect(QRectF(rect.left(), y0, rect.width(), TRACK_H), color)
 
-        # Vertical beat/bar grid.
+        start, end = self._loop_times()
+        lx0, lx1 = start * self.pps, end * self.pps
+        lane_tint = theme.LOOP_LANE_ON if self._project.loop_enabled else theme.LOOP_LANE_OFF
+        painter.fillRect(
+            QRectF(lx0, RULER_H, max(1.0, lx1 - lx0), n * TRACK_H + TRACK_H),
+            lane_tint,
+        )
+
+        # Vertical grid: lines at the snap interval, weighted bar > beat > subdiv.
+        # Off still draws faint bar lines so the arrangement isn't a blank field.
         spb = self._project.seconds_per_beat()
         bpb = max(self._project.beats_per_bar, 1)
-        beat_px = spb * self.pps
-        if beat_px <= 0:
-            return
-        first_beat = max(int(rect.left() // beat_px), 0)
-        last_beat = int(rect.right() // beat_px) + 1
+        bar_sec = spb * bpb
+        interval = self._grid_seconds()
         beat_pen = QPen(QColor(*theme.GRID_BEAT), 1)
         bar_pen = QPen(QColor(*theme.GRID_BAR), 1)
-        for b in range(first_beat, last_beat + 1):
-            x = b * beat_px
-            painter.setPen(bar_pen if b % bpb == 0 else beat_pen)
-            painter.drawLine(int(x), int(rect.top()), int(x), int(rect.bottom()))
+        subdiv_pen = QPen(QColor(*theme.GRID_SUBDIV), 1)
+        y0, y1 = int(rect.top()), int(rect.bottom())
+
+        def _on_period(t: float, period: float) -> bool:
+            if period <= 0:
+                return False
+            q = t / period
+            return abs(q - round(q)) < 1e-4
+
+        def _draw_step(step_sec: float, classify: bool) -> None:
+            step_px = step_sec * self.pps
+            if step_px < 6.0:
+                return
+            first = max(int(rect.left() // step_px), 0)
+            last = int(rect.right() // step_px) + 1
+            for i in range(first, last + 1):
+                t = i * step_sec
+                if classify and _on_period(t, bar_sec):
+                    painter.setPen(bar_pen)
+                elif classify and _on_period(t, spb):
+                    painter.setPen(beat_pen)
+                elif classify:
+                    painter.setPen(subdiv_pen)
+                else:
+                    painter.setPen(bar_pen)
+                painter.drawLine(int(i * step_px), y0, int(i * step_px), y1)
+
+        if interval is None:
+            _draw_step(bar_sec, classify=False)
+        else:
+            _draw_step(interval, classify=True)
+            # Triplet (and other) intervals may miss bar lines — keep bars visible.
+            if bar_sec > 0 and not _on_period(interval, bar_sec) and not _on_period(bar_sec, interval):
+                _draw_step(bar_sec, classify=False)
 
     # ---- foreground: ruler pinned to viewport top -----------------------
     def drawForeground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
@@ -592,6 +750,22 @@ class TimelineView(QGraphicsView):
                 x = bar * bar_px
                 painter.drawLine(int(x), int(view_top), int(x), int(view_top + RULER_H))
                 painter.drawText(int(x) + 4, int(view_top + 14), str(bar + 1))
+
+        start, end = self._loop_times()
+        x0, x1 = start * self.pps, end * self.pps
+        bar_top = view_top + RULER_H - LOOP_BAR_H - 1
+        on = bool(self._project.loop_enabled)
+        fill = QColor(theme.LOOP_ON if on else theme.LOOP_OFF)
+        painter.fillRect(QRectF(x0, bar_top, max(2.0, x1 - x0), LOOP_BAR_H), fill)
+        handle = QColor(theme.CYAN if on else theme.FG_DIM)
+        handle.setAlpha(230 if on else 90)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(handle)
+        painter.drawRect(QRectF(x0 - 2, bar_top, 4, LOOP_BAR_H))
+        painter.drawRect(QRectF(x1 - 2, bar_top, 4, LOOP_BAR_H))
+        painter.setPen(QColor(theme.FG_BRIGHT if on else theme.FG_DIM))
+        painter.setFont(QFont("", 7, QFont.Bold if on else QFont.Normal))
+        painter.drawText(int(x0) + 6, int(bar_top + 9), "LOOP" if on else "loop")
 
         # Playhead (full height + ruler marker).
         px = self.playhead * self.pps
