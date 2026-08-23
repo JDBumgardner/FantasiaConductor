@@ -270,8 +270,39 @@ def _take(arr: np.ndarray, mapping: np.ndarray) -> np.ndarray:
     return arr[i]
 
 
+def syllable_bounds_from_words(y: np.ndarray, sr: int, groups, word_edges,
+                               frame: int = 512, hop: int = 128) -> List[int]:
+    """Syllable offsets when the word offsets are already known exactly.
+
+    Guessing where one word ends and the next begins was the dominant error:
+    on "let me sing a song for you to-day now" the guessed split handed "let"
+    87ms and "sing" 258ms of source, so identical half-note values came out
+    stretched 5.7x and 1.9x — audibly, one dragging and the next clipped.
+    Speaking each word separately removes that guess entirely; only the split
+    *inside* a multi-syllable word is still inferred, where the syllables really
+    are about even and both sides are the same word anyway.
+    """
+    import librosa
+
+    env = np.abs(librosa.util.frame(y, frame_length=frame, hop_length=hop)).max(axis=0)
+    env = env / (float(env.max()) or 1.0)
+    to_f = lambda smp: min(len(env) - 1, max(0, int(smp / hop)))  # noqa: E731
+
+    bounds = [0]
+    for wi, g in enumerate(groups):
+        lo_s, hi_s = word_edges[wi], word_edges[wi + 1]
+        if g > 1:
+            for f in _split_evenly(env, to_f(lo_s), to_f(hi_s), g):
+                bounds.append(int(f * hop + frame / 2))
+        bounds.append(hi_s)
+    for i in range(1, len(bounds)):
+        if bounds[i] <= bounds[i - 1]:
+            bounds[i] = min(len(y), bounds[i - 1] + 1)
+    return bounds
+
+
 def _render_phrase(y: np.ndarray, sr: int, notes: Sequence, prev_hz: float = 0.0,
-                   groups=None) -> List[Tuple[float, np.ndarray]]:
+                   groups=None, word_edges=None) -> List[Tuple[float, np.ndarray]]:
     """Warp one spoken phrase across ``notes``; returns ``(start, audio)`` per note.
 
     The whole phrase goes through a single WORLD resynthesis, so the vocal tract
@@ -292,7 +323,9 @@ def _render_phrase(y: np.ndarray, sr: int, notes: Sequence, prev_hz: float = 0.0
                        for i in range(len(f0))])
     energy /= (float(energy.max()) or 1.0)
     voiced_all = f0 > 0
-    bounds = syllable_bounds(y, sr, groups or len(notes))
+    bounds = (syllable_bounds_from_words(y, sr, groups, word_edges)
+              if word_edges is not None
+              else syllable_bounds(y, sr, groups or len(notes)))
     fb = [min(len(f0), max(0, int(b / sr * fps))) for b in bounds]
     fb[-1] = len(f0)
 
@@ -340,6 +373,32 @@ def _render_phrase(y: np.ndarray, sr: int, notes: Sequence, prev_hz: float = 0.0
         hi = int(len(out) * acc / total)
         pieces.append((note.start, out[lo:hi].astype(np.float32) * (note.velocity / 127.0)))
     return pieces
+
+
+def _chunk_words(tokens: List[Tuple[str, bool]]) -> List[str]:
+    """Rebuild the whole words in a chunk: [(fan,F),(ta,T)] -> ["fanta"]."""
+    words: List[str] = []
+    for tok, cont in tokens:
+        if cont and words:
+            words[-1] += tok
+        else:
+            words.append(tok)
+    return words
+
+
+def _speak_words(speak, words: List[str], speed: float):
+    """Speak each word on its own; returns the joined buffer and the exact
+    sample offset of every word boundary in it."""
+    parts, edges = [], [0]
+    for w in words:
+        y = speak(w, speed)
+        if y is None or len(y) == 0:
+            return None, None
+        parts.append(y)
+        edges.append(edges[-1] + len(y))
+    if not parts:
+        return None, None
+    return np.concatenate(parts), edges
 
 
 def _phrase_chunks(notes: Sequence, tokens: List[str]):
@@ -434,15 +493,15 @@ def sing_notes(notes: Sequence, lyrics: str, voice: str = "af_heart",
     for chunk_notes, chunk_tokens in _phrase_chunks(ordered, tokens):
         pieces = []
         if not per_syllable:
-            text = phrase_text(chunk_tokens)
             groups = word_groups(chunk_tokens)
+            words = _chunk_words(chunk_tokens)
             for speed in PHRASE_SPEEDS:
-                spoken = _speak(text, speed)
+                spoken, edges = _speak_words(_speak, words, speed)
                 if spoken is None:
                     continue
                 try:
                     pieces = _render_phrase(spoken, sr, chunk_notes, prev_hz,
-                                            groups=groups)
+                                            groups=groups, word_edges=edges)
                 except Exception:  # noqa: BLE001 — fall back to per-syllable below
                     pieces = []
                 if pieces:

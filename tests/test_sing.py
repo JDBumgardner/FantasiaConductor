@@ -168,3 +168,37 @@ def test_render_phrase_rejects_a_segment_with_no_vowel():
     notes = [type("N", (), {"start": 0.0, "duration": 0.5, "pitch": 60,
                             "velocity": 100})()]
     assert sing._render_phrase(y, sr, notes, 0.0, groups=[1]) == []
+
+
+# ---- per-word synthesis (exact boundaries) ------------------------------
+def test_chunk_words_rebuilds_whole_words():
+    toks = sing.split_lyrics_joined("fan-ta-si-a con-duc-tor sings", 8)
+    assert sing._chunk_words(toks) == ["fantasia", "conductor", "sings"]
+
+
+def test_speak_words_reports_exact_joins():
+    """Guessing word boundaries handed 'let' 87ms and 'sing' 258ms of source, so
+    two identical note values stretched 5.7x and 1.9x — one dragged, the next
+    clipped. Speaking each word separately makes the joins exact."""
+    lens = {"let": 4410, "me": 8820, "sing": 2205}
+    buf, edges = sing._speak_words(
+        lambda w, spd: np.ones(lens[w], dtype=np.float32), list(lens), 1.0)
+    assert edges == [0, 4410, 13230, 15435]
+    assert len(buf) == 15435
+
+
+def test_speak_words_gives_up_if_a_word_fails():
+    buf, edges = sing._speak_words(lambda w, spd: None, ["a"], 1.0)
+    assert buf is None and edges is None
+
+
+def test_bounds_from_words_uses_the_known_edges():
+    """Single-syllable words need no guessing at all; only inside a
+    multi-syllable word is a split still inferred."""
+    y = _speech(1.5, lead=0.0, trail=0.0)
+    edges = [0, 22050, 44100, 66150]                 # three words, 0.5s each
+    b = sing.syllable_bounds_from_words(y, SR, [1, 2, 1], edges)
+    assert b[0] == 0
+    assert 22050 in b and 66150 in b                 # word joins preserved exactly
+    assert len(b) == 5                               # 4 syllables -> 5 edges
+    assert b[1] == 22050                             # first word is one syllable
