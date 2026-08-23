@@ -26,6 +26,13 @@ def test_scale_timeline_midi_and_clips():
     assert clip.notes[1].start == 0.5
 
 
+def test_scale_timeline_scales_loop_brace():
+    p = Project(tempo=120.0, loop_start=2.0, loop_end=6.0)
+    scale_timeline(p, 0.5)
+    assert p.loop_start == 1.0
+    assert p.loop_end == 3.0
+
+
 def test_scale_preserves_audio_source_span():
     p = Project(tempo=120.0)
     t = p.add_track("A")

@@ -76,3 +76,12 @@ def test_file_round_trip(tmp_path):
     assert restored.tempo == 128.0
     assert len(restored.tracks) == 2
     assert restored.tracks[0].clips[1].name == "Kick loop 2"
+
+
+def test_loop_region_round_trip():
+    p = Project(name="L", loop_enabled=True, loop_start=1.5, loop_end=5.0)
+    restored = project_from_dict(project_to_dict(p))
+    assert restored.loop_enabled is True
+    assert restored.loop_start == 1.5
+    assert restored.loop_end == 5.0
+    assert restored.loop_bounds() == (1.5, 5.0)

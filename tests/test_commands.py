@@ -6,6 +6,7 @@ from fantasia_core.commands import (
     AddClipCommand,
     AddTrackCommand,
     CommandBus,
+    DuplicateClipsCommand,
     RemoveClipCommand,
     RemoveTrackCommand,
     SetClipAttrCommand,
@@ -214,3 +215,23 @@ def test_set_project_clears_history():
     bus.set_project(Project(name="fresh"))
     assert not bus.can_undo and not bus.can_redo
     assert bus.project.tracks == []
+
+
+def test_duplicate_clips_places_after_selection_span():
+    bus = _bus()
+    t1 = bus.dispatch(AddTrackCommand("A")).created_track
+    t2 = bus.dispatch(AddTrackCommand("B")).created_track
+    a = bus.dispatch(AddClipCommand(t1.id, 0.0, 2.0, "a", content_type="midi")).created_clip
+    b = bus.dispatch(AddClipCommand(t2.id, 1.0, 2.0, "b", source_path="/x.wav")).created_clip
+    cmd = bus.dispatch(DuplicateClipsCommand([a.id, b.id]))
+    assert len(cmd.created_ids) == 2
+    copies = [bus.project.find_clip(cid)[1] for cid in cmd.created_ids]
+    # Selection spans 0..3, so copies start 3 seconds later on the same tracks.
+    assert copies[0].start == 3.0 and copies[0].duration == 2.0
+    assert copies[1].start == 4.0 and copies[1].duration == 2.0
+    assert copies[0].content_type == "midi"
+    assert copies[1].source_path == "/x.wav"
+    bus.undo()
+    assert all(bus.project.find_clip(cid)[1] is None for cid in cmd.created_ids)
+    bus.redo()
+    assert all(bus.project.find_clip(cid)[1] is not None for cid in cmd.created_ids)

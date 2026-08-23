@@ -118,7 +118,16 @@ class Project:
     tempo: float = 120.0  # BPM
     beats_per_bar: int = 4
     tracks: list[Track] = field(default_factory=list)
+    loop_enabled: bool = False
+    loop_start: float = 0.0
+    loop_end: float = 8.0  # 4 bars at the default 120 BPM
     _next_id: int = 1
+
+    def loop_bounds(self) -> tuple[float, float]:
+        """``(start, end)`` seconds, guaranteed ``end > start``."""
+        start = max(0.0, float(self.loop_start))
+        end = max(start + 0.05, float(self.loop_end))
+        return start, end
 
     # ---- id generation ---------------------------------------------------
     def new_id(self, prefix: str) -> str:

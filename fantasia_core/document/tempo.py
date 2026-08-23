@@ -36,3 +36,6 @@ def scale_timeline(project, factor: float) -> None:  # noqa: ANN001
             for note in clip.notes:
                 note.start *= factor
                 note.duration *= factor
+    project.loop_start = max(0.0, float(getattr(project, "loop_start", 0.0)) * factor)
+    project.loop_end = max(project.loop_start + 0.05,
+                           float(getattr(project, "loop_end", 8.0)) * factor)

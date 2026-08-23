@@ -44,9 +44,17 @@ PLAYHEAD = MAGENTA
 
 LANE_EVEN = QColor(0x18, 0x1b, 0x36)
 LANE_ODD = QColor(0x13, 0x15, 0x2c)
+# In-scale piano-roll rows (muted neon green — highlight only, not a fold).
+SCALE_LANE = QColor(0x4f, 0xf2, 0xa6, 38)
+SCALE_KEY = QColor(0x4f, 0xf2, 0xa6, 52)
 RULER_BG = QColor(0x14, 0x16, 0x2a)
 RULER_LINE = QColor(0x38, 0x3d, 0x6b)
 RULER_TEXT = QColor(0x8b, 0x92, 0xc8)
+# Arrangement loop brace — vivid when on, still visible when off.
+LOOP_ON = QColor(0x25, 0xe6, 0xd5, 160)
+LOOP_OFF = QColor(0x25, 0xe6, 0xd5, 42)
+LOOP_LANE_ON = QColor(0x25, 0xe6, 0xd5, 24)
+LOOP_LANE_OFF = QColor(0x25, 0xe6, 0xd5, 10)
 
 # grid line colours as RGBA tuples (bright lavender, high enough alpha to pop)
 GRID_SUBDIV = (220, 216, 255, 55)

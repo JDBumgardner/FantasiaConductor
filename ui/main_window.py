@@ -44,6 +44,7 @@ from fantasia_core.commands import (
     AddClipCommand,
     AddTrackCommand,
     CommandBus,
+    DuplicateClipsCommand,
     MakeMidiClipCommand,
     RemoveClipCommand,
     RemoveTrackCommand,
@@ -1365,14 +1366,20 @@ class MainWindow(QMainWindow):
         self.act_add_clip = QAction("Add &Clip", self, shortcut="Ctrl+K")
         self.act_split = QAction("Split at &Playhead", self, shortcut="Ctrl+E")
         self.act_delete = QAction("&Delete", self, shortcut=QKeySequence.Delete)
+        self.act_duplicate = QAction("D&uplicate Clips", self, shortcut="Ctrl+D")
+        self.act_duplicate.setToolTip("Duplicate selected clips right after the selection")
         edit_menu.addActions(
-            [self.act_add_track, self.act_add_clip, self.act_split, self.act_delete]
+            [self.act_add_track, self.act_add_clip, self.act_split,
+             self.act_duplicate, self.act_delete]
         )
 
         transport_menu = menubar.addMenu("&Transport")
         self.act_play = QAction("Play/Pause", self, shortcut=Qt.Key_Space)
         self.act_stop = QAction("Stop", self)
         transport_menu.addActions([self.act_play, self.act_stop])
+        self.act_loop = QAction("&Loop", self, shortcut="Ctrl+L", checkable=True)
+        self.act_loop.setToolTip("Toggle arrangement loop — with clips selected, set the loop to them")
+        transport_menu.addAction(self.act_loop)
         self.act_metronome = QAction("&Metronome", self, checkable=True)
         self.act_metronome.setChecked(False)
         transport_menu.addAction(self.act_metronome)
@@ -1453,6 +1460,8 @@ class MainWindow(QMainWindow):
         self.act_add_track.triggered.connect(self._on_add_track)
         self.act_add_clip.triggered.connect(self._on_add_clip)
         self.act_delete.triggered.connect(self._on_delete)
+        self.act_duplicate.triggered.connect(self._on_duplicate_clips)
+        self.act_loop.triggered.connect(self._on_loop_hotkey)
         self.act_play.triggered.connect(self._toggle_play)
         self.act_stop.triggered.connect(self._on_stop)
         self.act_metronome.toggled.connect(self._on_metronome_toggled)
@@ -1490,10 +1499,15 @@ class MainWindow(QMainWindow):
         self.timeline.delete_requested.connect(self._on_delete)
         self.timeline.copy_requested.connect(self._on_copy_clip)
         self.timeline.paste_requested.connect(self._on_paste_clip)
+        self.timeline.duplicate_requested.connect(self._on_duplicate_clips)
+        self.timeline.loop_toggle_requested.connect(self._on_loop_hotkey)
+        self.timeline.loop_enabled_changed.connect(self._set_loop_enabled)
+        self.timeline.loop_region_changed.connect(self._on_loop_region_drag)
         self.piano.notes_changed.connect(self._on_notes_changed)
         self.piano.copy_requested.connect(self._on_pr_copy)
         self.piano.cut_requested.connect(self._on_pr_cut)
         self.piano.paste_requested.connect(self._on_pr_paste)
+        self.piano.need_clip.connect(self._on_pr_need_clip)
         self.piano.view.preview.connect(self._preview_pitch)
         self.piano.view.split_requested.connect(self._on_pr_split)
         self.piano.view.status.connect(self.statusBar().showMessage)
@@ -1621,8 +1635,59 @@ class MainWindow(QMainWindow):
             self._return_to_start()
             self.statusBar().showMessage("Stopped")
 
-    def _on_loop_toggled(self, on: bool) -> None:
+    def _set_loop_enabled(self, on: bool, announce: bool = True) -> None:
+        on = bool(on)
+        self.project.loop_enabled = on
         self.engine.loop = on
+        self.transport.set_loop(on)
+        blocked = self.act_loop.blockSignals(True)
+        self.act_loop.setChecked(on)
+        self.act_loop.blockSignals(blocked)
+        self.timeline.viewport().update()
+        if announce:
+            self.statusBar().showMessage("Loop on" if on else "Loop off")
+
+    def _on_loop_toggled(self, on: bool) -> None:
+        self._set_loop_enabled(on)
+
+    def _on_loop_region_drag(self, start: float, end: float) -> None:
+        self.project.loop_start = max(0.0, float(start))
+        self.project.loop_end = max(self.project.loop_start + 0.05, float(end))
+        self._set_dirty(True)
+
+    def _on_loop_hotkey(self) -> None:
+        span = self.timeline.selection_time_span()
+        if span is not None:
+            start, end = span
+            already = (
+                self.project.loop_enabled
+                and abs(self.project.loop_start - start) < 1e-3
+                and abs(self.project.loop_end - end) < 1e-3
+            )
+            if already:
+                self._set_loop_enabled(False)
+                return
+            self.project.loop_start = start
+            self.project.loop_end = end
+            self._set_loop_enabled(True)
+            self.timeline.viewport().update()
+            self.statusBar().showMessage(
+                f"Loop set to selection  {start:.2f}s – {end:.2f}s")
+            return
+        self._set_loop_enabled(not self.project.loop_enabled)
+
+    def _on_duplicate_clips(self) -> None:
+        ids = self.timeline.selected_clip_ids()
+        if not ids:
+            self.statusBar().showMessage("Select clip(s) in the arrangement to duplicate")
+            return
+        cmd = self.bus.dispatch(DuplicateClipsCommand(ids))
+        self.pool.preload(self.project)
+        self._warm()
+        self.timeline.rebuild()
+        self.timeline.select_clips(cmd.created_ids)
+        n = len(cmd.created_ids)
+        self.statusBar().showMessage(f"Duplicated {n} clip(s)")
 
     def _on_metronome_toggled(self, on: bool) -> None:
         self.engine.metronome_enabled = on
@@ -1927,9 +1992,10 @@ class MainWindow(QMainWindow):
         self.timeline.rebuild()
 
     def _on_delete(self) -> None:
-        clip_id = self.timeline.selected_clip_id()
-        if clip_id is not None:
-            self.bus.dispatch(RemoveClipCommand(clip_id))
+        clip_ids = self.timeline.selected_clip_ids()
+        if clip_ids:
+            for clip_id in clip_ids:
+                self.bus.dispatch(RemoveClipCommand(clip_id))
             self.timeline.rebuild()
             return
         if self.selected_track_id is not None and self.project.tracks:
@@ -2034,8 +2100,18 @@ class MainWindow(QMainWindow):
     # ---- MIDI / piano roll (MID-3) --------------------------------------
     def _open_piano_roll(self, clip_id: str) -> None:
         track, clip = self.project.find_clip(clip_id)
+        if clip is None:
+            return
+        if not clip.is_midi:
+            if clip.source_path:
+                self.statusBar().showMessage(
+                    "Audio clip — Transcribe or Write MIDI to edit notes")
+                return
+            self.bus.dispatch(MakeMidiClipCommand(clip_id, []))
+            track, clip = self.project.find_clip(clip_id)
+            self.timeline.rebuild()
         if clip is None or not clip.is_midi:
-            return  # only MIDI clips have a piano roll
+            return
         self._editing_clip_id = clip_id
         bar_len = self.project.beats_per_bar * self.project.seconds_per_beat()
         clip_bar = int(round(clip.start / bar_len)) + 1 if bar_len > 0 else 1
@@ -2062,6 +2138,63 @@ class MainWindow(QMainWindow):
             self.piano.view.set_waveform(buf, self.project.sample_rate)
         except Exception:  # noqa: BLE001
             self.piano.view.set_waveform(None, self.project.sample_rate)
+    def _on_pr_need_clip(self) -> None:
+        """Piano roll was used with no clip bound — create or convert one."""
+        clip = self._ensure_midi_clip()
+        if clip is None:
+            self.statusBar().showMessage("Select a track, then add a note")
+            return
+        track, clip = self.project.find_clip(clip.id)
+        if track is None or clip is None:
+            return
+        self._editing_clip_id = clip.id
+        self.piano.edit_clip(
+            clip, self.project.seconds_per_beat(), self.project.beats_per_bar,
+            drum_mode=getattr(track, "is_drum", False),
+        )
+        self.editor.show_piano_roll()
+
+    def _ensure_midi_clip(self):
+        """Return a MIDI clip to edit, creating or converting one if needed."""
+        if self._editing_clip_id is not None:
+            _, clip = self.project.find_clip(self._editing_clip_id)
+            if clip is not None and clip.is_midi:
+                return clip
+        cid = self.timeline.selected_clip_id()
+        if cid:
+            _, clip = self.project.find_clip(cid)
+            if clip is not None and clip.is_midi:
+                return clip
+            if clip is not None and not clip.source_path:
+                self.bus.dispatch(MakeMidiClipCommand(clip.id, []))
+                self.timeline.rebuild()
+                return clip
+        tid = self.selected_track_id
+        if tid is None:
+            if not self.project.tracks:
+                cmd = self.bus.dispatch(AddTrackCommand())
+                tid = cmd.created_track.id
+                self.selected_track_id = tid
+                self._rebuild_all()
+            else:
+                tid = self.project.tracks[0].id
+                self.selected_track_id = tid
+        track = self.project.track_by_id(tid)
+        if track is None:
+            return None
+        playhead = float(self.timeline.playhead)
+        for clip in track.clips:
+            if clip.start <= playhead < clip.end and (clip.is_midi or not clip.source_path):
+                if not clip.is_midi:
+                    self.bus.dispatch(MakeMidiClipCommand(clip.id, []))
+                    self.timeline.rebuild()
+                return clip
+        start = max(0.0, playhead)
+        duration = self.project.seconds_per_beat() * self.project.beats_per_bar * 4
+        cmd = self.bus.dispatch(AddClipCommand(
+            tid, start, duration, name="MIDI", content_type="midi"))
+        self.timeline.rebuild()
+        return cmd.created_clip
 
     def _on_notes_changed(self, clip_id: str, notes: list) -> None:
         self.bus.dispatch(SetClipNotesCommand(clip_id, notes))
@@ -2188,9 +2321,10 @@ class MainWindow(QMainWindow):
         _, clip = self.project.find_clip(self._editing_clip_id)
         if clip is None:
             return
-        anchor = max(0.0, min(self.timeline.playhead - clip.start, clip.duration))
-        self.piano.view.paste_notes(anchor, self._note_clipboard)
-        self.statusBar().showMessage(f"Pasted {len(self._note_clipboard)} note(s)")
+        self.piano.view.paste_notes(self._note_clipboard)
+        self.statusBar().showMessage(
+            f"Pasted {len(self._note_clipboard)} note(s) — move to keep both, "
+            f"or leave in place to replace")
 
     # ---- audio → MIDI transcription -------------------------------------
     def _transcribe_clip(self, clip) -> None:
@@ -2864,6 +2998,7 @@ class MainWindow(QMainWindow):
             self._warm()  # render MIDI off the audio thread
             self.timeline.rebuild()
             self.statusBar().showMessage(msg)
+            self._open_piano_roll(clip_id)
         elif action == "transcribe":
             self._transcribe_clip(clip)
         elif action == "hum":
@@ -3262,6 +3397,7 @@ class MainWindow(QMainWindow):
         self._warm(project)
         self._rebuild_all()
         self._sync_tempo_display()  # show the loaded project's tempo
+        self._set_loop_enabled(bool(project.loop_enabled), announce=False)
         self._conform_locked_clips()  # conform tempo-locked clips to the loaded tempo
         self._project_label = os.path.basename(path) if path else (project.name or "Untitled")
         self._set_dirty(False)
