@@ -737,11 +737,11 @@ class _TTSDialog(QDialog):
 
 
 def _fill_singing_combo(combo) -> None:
-    """Voices for SINGING, best engine first.
+    """Voices for SINGING — voicebanks only.
 
-    A DiffSinger voicebank sings at the written pitch; the Kokoro/clone entries
-    fall back to pushing spoken audio there with a vocoder, which is what makes
-    held notes sound synthetic. Voicebanks are listed first for that reason.
+    The speech voices are deliberately absent: singing goes through a DiffSinger
+    voicebank now, and offering a TTS voice here would imply a choice that no
+    longer exists. They remain in the Text-to-Speech picker, where they belong.
     """
     from fantasia_core import svs
 
@@ -751,10 +751,7 @@ def _fill_singing_combo(combo) -> None:
         banks = []
     for b in banks:
         for spk in (b.speakers or ["default"]):
-            combo.addItem(f"🎵 {b.name} · {spk}", ("svs", b.slug, spk))
-    if banks:
-        combo.insertSeparator(combo.count())
-    _fill_voice_combo(combo)
+            combo.addItem(f"{b.name} · {spk}", ("svs", b.slug, spk))
 
 
 def _singing_choice(combo):
@@ -1058,8 +1055,8 @@ class _SingDialog(QDialog):
         _fill_singing_combo(self.voice)
         form.addRow(f"Lyrics ({note_count} notes):", self.text)
         form.addRow("Voice:", self.voice)
-        note = QLabel("Vocoder-style singing — each syllable is pitched to its note. "
-                      "Extra notes get a hummed 'la'.")
+        note = QLabel("Sung by a DiffSinger voicebank at the written pitch. "
+                      "One syllable per note; extra notes get a hummed 'la'.")
         note.setWordWrap(True)
         note.setStyleSheet("color:#8a8f96; font-size:11px;")
         form.addRow(note)
