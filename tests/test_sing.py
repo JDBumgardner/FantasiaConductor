@@ -202,3 +202,26 @@ def test_bounds_from_words_uses_the_known_edges():
     assert 22050 in b and 66150 in b                 # word joins preserved exactly
     assert len(b) == 5                               # 4 syllables -> 5 edges
     assert b[1] == 22050                             # first word is one syllable
+
+
+def test_chunking_never_splits_a_word():
+    """A break every PHRASE_MAX notes regardless cut "to-day" in half, and the
+    two syllables were then spoken as separate words."""
+    toks = sing.split_lyrics_joined("let me sing a song for you to-day now", 10)
+    chunks = list(sing._phrase_chunks(list(range(10)), toks))
+    assert all(not ct[0][1] for _cn, ct in chunks), "a chunk starts mid-word"
+    assert sing._chunk_words(chunks[-1][1])[0] == "today"
+    assert sum(len(cn) for cn, _ in chunks) == 10       # nothing dropped
+
+
+def test_chunking_still_bounds_phrase_length():
+    toks = sing.split_lyrics_joined(" ".join(["la"] * 20), 20)
+    chunks = list(sing._phrase_chunks(list(range(20)), toks))
+    assert all(len(cn) <= sing.PHRASE_MAX for cn, _ in chunks)
+
+
+def test_a_word_longer_than_the_chunk_limit_still_progresses():
+    """A 10-syllable word cannot fit in an 8-note chunk; it must not loop."""
+    toks = [("syl", i > 0) for i in range(10)]
+    chunks = list(sing._phrase_chunks(list(range(10)), toks))
+    assert sum(len(cn) for cn, _ in chunks) == 10

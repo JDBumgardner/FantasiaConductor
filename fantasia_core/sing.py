@@ -401,10 +401,25 @@ def _speak_words(speak, words: List[str], speed: float):
     return np.concatenate(parts), edges
 
 
-def _phrase_chunks(notes: Sequence, tokens: List[str]):
-    """Group (note, token) pairs into singable phrases of at most PHRASE_MAX."""
-    for i in range(0, len(notes), PHRASE_MAX):
-        yield list(notes[i:i + PHRASE_MAX]), tokens[i:i + PHRASE_MAX]
+def _phrase_chunks(notes: Sequence, tokens: List[Tuple[str, bool]]):
+    """Group (note, token) pairs into singable phrases of at most PHRASE_MAX.
+
+    Breaks land only where a word starts. Cutting every PHRASE_MAX notes
+    regardless split "to-day" down the middle, and the halves were then spoken
+    as two separate words — losing both the pronunciation and the coarticulation
+    that keeping the word whole is the entire point of.
+    """
+    start, n = 0, len(notes)
+    while start < n:
+        end = min(start + PHRASE_MAX, n)
+        if end < n:
+            back = end
+            while back > start + 1 and tokens[back][1]:   # [1] = continues a word
+                back -= 1
+            if back > start:
+                end = back
+        yield list(notes[start:end]), tokens[start:end]
+        start = end
 
 
 def _render_note(y: np.ndarray, sr: int, target_hz: float, target_len: int,
