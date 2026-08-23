@@ -198,6 +198,8 @@ class AgentTools:
                  "ref_voice": {"type": "string", "description": "Reference-voice slug from list_reference_voices; switches to voice cloning"},
                  "clip_id": {"type": "string"}, "track_id": {"type": "string"}, "start": {"type": "number"}},
                  "required": ["text"]}},
+            {"name": "list_voicebanks", "description": "List installed DiffSinger singing voicebanks. These are REAL singing synthesis — the voice sings at the written pitch instead of speech being pitch-shifted — so they sound far better than the fallback engine, especially on held notes. Each has a 'slug' to pass as 'voicebank' to sing/sing_melody, and 'speakers' (e.g. standard/strong/delicate/lullaby) to pass as 'speaker'. Call this before singing so you can offer the user a voice.",
+             "input_schema": {"type": "object", "properties": {}}},
             {"name": "list_reference_voices", "description": "List the reference voices available for cloning. Each has a 'slug' to pass as 'ref_voice' to speak/sing/sing_melody, which switches those tools to the cloning engine and reproduces that timbre. Call this before offering the user a choice of voice.",
              "input_schema": {"type": "object", "properties": {}}},
             {"name": "convert_voice", "description": "Recast an existing vocal clip in a different voice, keeping the performance and the melody exactly as sung. This is the fix when a sung vocal sounds synthetic or vocoder-y: pick a 'ref_voice' slug from list_reference_voices and the clip is re-rendered with that voice's texture. Slow — roughly 10x the clip length — so use it on a finished vocal, not while iterating. Set fit_range only if you WANT the melody transposed into the target's comfortable range.",
@@ -224,12 +226,16 @@ class AgentTools:
                  "lyrics": {"type": "string", "description": "one syllable per note; hyphen-split words"},
                  "start_beat": {"type": "number", "description": "where the vocal begins, in beats from the song start (0 = bar 1). A bar = beats_per_bar beats."},
                  "voice": {"type": "string"},
-                 "ref_voice": {"type": "string", "description": "Reference-voice slug to clone (Chatterbox); slower but far more natural"}},
+                 "ref_voice": {"type": "string", "description": "Reference-voice slug to clone (Chatterbox); slower but far more natural"},
+                 "voicebank": {"type": "string", "description": "DiffSinger voicebank slug from list_voicebanks (default: the first installed)"},
+                 "speaker": {"type": "string", "description": "Voice variant within the voicebank, e.g. standard/strong/delicate/lullaby"}},
                  "required": ["notes", "lyrics"]}},
             {"name": "sing", "description": "Sing a melody: turn a MIDI clip's notes into a sung vocal using lyrics (one syllable per note; split words with hyphens, e.g. 'fan-ta-si-a'). Vocoder-style singing placed on a new vocal track. Draw/write the melody first, then sing it. Pass 'ref_voice' to sing in a cloned voice (slower).",
              "input_schema": {"type": "object", "properties": {
                  "clip_id": {"type": "string"}, "lyrics": {"type": "string"}, "voice": {"type": "string"},
-                 "ref_voice": {"type": "string", "description": "Reference-voice slug to clone (Chatterbox); slower but far more natural"}},
+                 "ref_voice": {"type": "string", "description": "Reference-voice slug to clone (Chatterbox); slower but far more natural"},
+                 "voicebank": {"type": "string", "description": "DiffSinger voicebank slug from list_voicebanks (default: the first installed)"},
+                 "speaker": {"type": "string", "description": "Voice variant within the voicebank, e.g. standard/strong/delicate/lullaby"}},
                  "required": ["clip_id", "lyrics"]}},
             {"name": "split_clip", "description": "Split a clip at an absolute timeline position (seconds).",
              "input_schema": {"type": "object", "properties": {
@@ -443,6 +449,14 @@ class AgentTools:
             return {"error": "generate_audio must be run off the UI thread"}
         if name == "separate_stems":
             return {"error": "separate_stems must be run off the UI thread"}
+        if name == "list_voicebanks":
+            from fantasia_core import svs
+
+            if not svs.available():
+                return {"error": "singing synthesis unavailable — pip install onnxruntime cmudict"}
+            return {"voicebanks": [
+                {"slug": b.slug, "name": b.name, "speakers": b.speakers,
+                 "ready": b.ready, "note": b.note} for b in svs.list_voicebanks()]}
         if name == "list_reference_voices":
             # Pure catalog read — no audio work, so it can answer on this thread.
             from fantasia_core import voices as voice_cat

@@ -12,7 +12,7 @@ Input: a melody (list of Note) + lyrics (one token per note). Headless (no Qt).
 from __future__ import annotations
 
 import math
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -521,7 +521,9 @@ def _render_note(y: np.ndarray, sr: int, target_hz: float, target_len: int,
 
 def sing_notes(notes: Sequence, lyrics: str, voice: str = "af_heart",
                sr: int = 44100, ref_voice=None, backend=None,
-               per_syllable: bool = False) -> np.ndarray:
+               per_syllable: bool = False, engine: Optional[str] = None,
+               voicebank: Optional[str] = None,
+               speaker: Optional[str] = None) -> np.ndarray:
     """Render a melody + lyrics to a mono float32 buffer at ``sr``.
 
     Each phrase (up to :data:`PHRASE_MAX` notes) is spoken as a single utterance
@@ -541,6 +543,21 @@ def sing_notes(notes: Sequence, lyrics: str, voice: str = "af_heart",
     ordered = sorted(notes, key=lambda n: n.start)
     if not ordered:
         return np.zeros((0,), dtype=np.float32)
+
+    # Real singing synthesis when a voicebank is installed: it sings AT the
+    # note's pitch instead of pushing spoken audio there, which is what the
+    # vocoder path below can never sound natural doing on a held note.
+    if engine != "world":
+        try:
+            from fantasia_core import svs
+
+            if svs.available() and any(b.ready for b in svs.list_voicebanks()):
+                return svs.sing_notes(ordered, lyrics, voicebank=voicebank,
+                                      speaker=speaker, sr=sr)
+        except Exception:  # noqa: BLE001 — fall through to the vocoder path
+            if engine == "diffsinger":
+                raise
+
     tokens = split_lyrics_joined(lyrics, len(ordered))
     total = int(math.ceil(max(n.start + n.duration for n in ordered) * sr)) + sr // 5
     out = np.zeros(total, dtype=np.float32)
@@ -619,13 +636,16 @@ def sing_notes(notes: Sequence, lyrics: str, voice: str = "af_heart",
 
 def sing_to_file(notes: Sequence, lyrics: str, path: str,
                  voice: str = "af_heart", sr: int = 44100,
-                 ref_voice=None, backend=None, per_syllable: bool = False) -> float:
+                 ref_voice=None, backend=None, per_syllable: bool = False,
+                 engine: Optional[str] = None, voicebank: Optional[str] = None,
+                 speaker: Optional[str] = None) -> float:
     import os
 
     import soundfile as sf
 
     audio = sing_notes(notes, lyrics, voice=voice, sr=sr, ref_voice=ref_voice,
-                       backend=backend, per_syllable=per_syllable)
+                       backend=backend, per_syllable=per_syllable, engine=engine,
+                       voicebank=voicebank, speaker=speaker)
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)

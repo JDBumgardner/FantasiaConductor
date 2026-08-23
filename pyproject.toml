@@ -60,6 +60,15 @@ voice = [
     "misaki[en]>=0.9",
     "pyworld>=0.3",  # WORLD vocoder: formant-preserving singing + vocal FX
 ]
+# Singing voice synthesis — DiffSinger voicebanks in OpenUtau format, run
+# through ONNX. Real singing rather than pitch-shifted speech, and about 2.5x
+# real time on CPU. Install a voicebank under .fantasia_cache/voicebanks/;
+# cmudict supplies the English word->phoneme step the banks leave to the host.
+svs = [
+    "onnxruntime>=1.17",
+    "cmudict>=1.0",
+    "PyYAML>=6.0",
+]
 # Voice conversion — recast a vocal in another voice (Seed-VC, zero-shot, no
 # training). CPU only: it picks MPS by default and MPS dies on a float64 op in
 # the pitch extractor. ~10x slower than real time. Classic RVC is not an option

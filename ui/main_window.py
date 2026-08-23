@@ -736,6 +736,36 @@ class _TTSDialog(QDialog):
         return (self.text.toPlainText().strip(), voice, float(self.speed.value()), ref)
 
 
+def _fill_singing_combo(combo) -> None:
+    """Voices for SINGING, best engine first.
+
+    A DiffSinger voicebank sings at the written pitch; the Kokoro/clone entries
+    fall back to pushing spoken audio there with a vocoder, which is what makes
+    held notes sound synthetic. Voicebanks are listed first for that reason.
+    """
+    from fantasia_core import svs
+
+    try:
+        banks = [b for b in svs.list_voicebanks() if b.ready] if svs.available() else []
+    except Exception:  # noqa: BLE001
+        banks = []
+    for b in banks:
+        for spk in (b.speakers or ["default"]):
+            combo.addItem(f"🎵 {b.name} · {spk}", ("svs", b.slug, spk))
+    if banks:
+        combo.insertSeparator(combo.count())
+    _fill_voice_combo(combo)
+
+
+def _singing_choice(combo):
+    """``(kokoro_voice, ref_voice, voicebank, speaker)`` from the singing combo."""
+    data = combo.currentData()
+    if isinstance(data, tuple) and data and data[0] == "svs":
+        return "af_heart", None, data[1], data[2]
+    voice, ref = _voice_choice(combo)
+    return voice, ref, None, None
+
+
 def _fill_voice_combo(combo) -> None:
     """Populate a voice picker with both engines.
 
@@ -981,7 +1011,7 @@ class _SingWorker(QThread):
     failed = Signal(str, str)
 
     def __init__(self, clip_id: str, notes: list, lyrics: str, voice: str, path: str,
-                 search=None, ref_voice=None) -> None:
+                 search=None, ref_voice=None, voicebank=None, speaker=None) -> None:
         super().__init__()
         self._clip_id = clip_id
         self._notes = notes
@@ -990,13 +1020,16 @@ class _SingWorker(QThread):
         self._path = path
         self._search = search
         self._ref = ref_voice
+        self._bank = voicebank
+        self._spk = speaker
 
     def run(self) -> None:
         try:
             from fantasia_core.sing import sing_to_file
 
             dur = sing_to_file(self._notes, self._lyrics, self._path,
-                               voice=self._voice, sr=44100, ref_voice=self._ref)
+                               voice=self._voice, sr=44100, ref_voice=self._ref,
+                               voicebank=self._bank, speaker=self._spk)
             if self._search is not None:
                 try:
                     self._search.ingest_tagged([{
@@ -1022,7 +1055,7 @@ class _SingDialog(QDialog):
                                      "fan-ta-si-a con-duc-tor")
         self.text.setMinimumSize(360, 90)
         self.voice = QComboBox()
-        _fill_voice_combo(self.voice)
+        _fill_singing_combo(self.voice)
         form.addRow(f"Lyrics ({note_count} notes):", self.text)
         form.addRow("Voice:", self.voice)
         note = QLabel("Vocoder-style singing — each syllable is pitched to its note. "
@@ -1036,8 +1069,8 @@ class _SingDialog(QDialog):
         form.addRow(buttons)
 
     def result_values(self):
-        voice, ref = _voice_choice(self.voice)
-        return self.text.toPlainText().strip(), voice, ref
+        voice, ref, bank, spk = _singing_choice(self.voice)
+        return self.text.toPlainText().strip(), voice, ref, bank, spk
 
 
 class _AutotuneDialog(QDialog):
@@ -1225,7 +1258,9 @@ class _AgentWorker(QThread):
             path = str(cache / f"sing_{uuid.uuid4().hex[:8]}.wav")
             dur = sing_to_file(info["notes"], str(args["lyrics"]), path,
                                voice=args.get("voice", "af_heart"), sr=44100,
-                               ref_voice=args.get("ref_voice"))
+                               ref_voice=args.get("ref_voice"),
+                               voicebank=args.get("voicebank"),
+                               speaker=args.get("speaker"))
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
         if self._search is not None:
@@ -1336,7 +1371,9 @@ class _AgentWorker(QThread):
             path = str(cache / f"sing_{uuid.uuid4().hex[:8]}.wav")
             dur = sing_to_file(info["notes"], str(args["lyrics"]), path,
                                voice=args.get("voice", "af_heart"), sr=44100,
-                               ref_voice=args.get("ref_voice"))
+                               ref_voice=args.get("ref_voice"),
+                               voicebank=args.get("voicebank"),
+                               speaker=args.get("speaker"))
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
         if self._search is not None:
@@ -2556,7 +2593,7 @@ class MainWindow(QMainWindow):
         dlg = _SingDialog(self, note_count=len(clip.notes))
         if dlg.exec() != QDialog.Accepted:
             return
-        lyrics, voice, ref_voice = dlg.result_values()
+        lyrics, voice, ref_voice, voicebank, speaker = dlg.result_values()
         if not lyrics:
             return
         notes = [Note(n.pitch, n.start, n.duration, n.velocity) for n in clip.notes]
@@ -2567,7 +2604,8 @@ class MainWindow(QMainWindow):
             "Singing in the cloned voice… (expect a few seconds per syllable)"
             if ref_voice else "Singing the melody on the GPU… (a few seconds per note)")
         worker = _SingWorker(clip.id, notes, lyrics, voice, path,
-                             search=self.search_service, ref_voice=ref_voice)
+                             search=self.search_service, ref_voice=ref_voice,
+                             voicebank=voicebank, speaker=speaker)
         worker.done.connect(self._on_sung)
         worker.failed.connect(self._on_generate_failed)
         worker.finished.connect(lambda w=worker: self._drop_worker(w))
