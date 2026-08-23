@@ -799,6 +799,123 @@ def _voice_choice(combo):
     return vid, None
 
 
+class _ImportVoicebankWorker(QThread):
+    """Unpacks and copies a voicebank off the UI thread — they are ~400MB."""
+
+    done = Signal(str, str, bool, str)   # (slug, name, ready, note)
+    failed = Signal(str)
+    progress = Signal(str)
+
+    def __init__(self, path: str) -> None:
+        super().__init__()
+        self._path = path
+
+    def run(self) -> None:
+        try:
+            from fantasia_core import svs
+
+            info = svs.import_voicebank(self._path,
+                                        progress=lambda s: self.progress.emit(s))
+            self.done.emit(info.slug, info.name, info.ready, info.note)
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+
+
+class _VoicebankDialog(QDialog):
+    """Install and manage the singing voicebanks."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Singing Voicebanks")
+        self.resize(560, 420)
+        lay = QVBoxLayout(self)
+        blurb = QLabel(
+            "DiffSinger voicebanks sing at the written pitch. Import a bank as a "
+            "folder or a .zip — nested packs are unwrapped automatically, and a "
+            "bank shipped without its vocoder borrows a matching one if it can.")
+        blurb.setWordWrap(True)
+        blurb.setStyleSheet("color:#8a8f96; font-size:11px;")
+        lay.addWidget(blurb)
+
+        self.list = QListWidget()
+        lay.addWidget(self.list, 1)
+        row = QHBoxLayout()
+        self.btn_add = QPushButton("Import Voicebank…")
+        self.btn_del = QPushButton("Remove")
+        row.addWidget(self.btn_add)
+        row.addWidget(self.btn_del)
+        row.addStretch(1)
+        lay.addLayout(row)
+        self.status = QLabel("")
+        self.status.setWordWrap(True)
+        self.status.setStyleSheet("color:#8a8f96; font-size:11px;")
+        lay.addWidget(self.status)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        lay.addWidget(buttons)
+
+        self.btn_add.clicked.connect(self._add)
+        self.btn_del.clicked.connect(self._remove)
+        self._worker = None
+        self._refresh()
+
+    def _refresh(self) -> None:
+        from fantasia_core import svs
+
+        self.list.clear()
+        try:
+            banks = svs.list_voicebanks()
+        except Exception:  # noqa: BLE001
+            banks = []
+        for b in banks:
+            mark = "" if b.ready else "  ⚠ no vocoder"
+            item = QListWidgetItem(f"{b.name}   ·  {len(b.speakers)} voice(s){mark}")
+            item.setData(Qt.UserRole, b.slug)
+            self.list.addItem(item)
+        n = len(banks)
+        self.status.setText(f"{n} voicebank{'' if n == 1 else 's'} installed"
+                            if n else "No voicebanks yet — import one to sing.")
+
+    def _add(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose a voicebank archive", "", "Voicebank (*.zip);;All files (*)")
+        if not path:
+            path = QFileDialog.getExistingDirectory(self, "…or choose a voicebank folder")
+        if not path or self._worker is not None:
+            return
+        self.btn_add.setEnabled(False)
+        self._worker = _ImportVoicebankWorker(path)
+        self._worker.progress.connect(lambda s: self.status.setText(f"Importing — {s}…"))
+        self._worker.done.connect(self._added)
+        self._worker.failed.connect(self._add_failed)
+        self._worker.start()
+
+    def _added(self, slug: str, name: str, ready: bool, note: str) -> None:
+        self._worker = None
+        self.btn_add.setEnabled(True)
+        self._refresh()
+        self.status.setText(f"Installed {name}" + (f" — {note}" if note else ""))
+
+    def _add_failed(self, msg: str) -> None:
+        self._worker = None
+        self.btn_add.setEnabled(True)
+        self.status.setText(f"Import failed: {msg}")
+
+    def _remove(self) -> None:
+        item = self.list.currentItem()
+        if item is None:
+            return
+        slug = item.data(Qt.UserRole)
+        if QMessageBox.question(self, "Remove voicebank",
+                                f"Delete the installed copy of “{item.text()}”?"
+                                ) != QMessageBox.Yes:
+            return
+        from fantasia_core import svs
+
+        svs.remove_voicebank(slug)
+        self._refresh()
+
+
 class _SeedVoicesWorker(QThread):
     """Renders the built-in reference clips (nine Kokoro voices) off the UI thread."""
 
@@ -1209,6 +1326,8 @@ class _AgentWorker(QThread):
             return self._vocalfx(args)  # WORLD vocal fx stays on this worker thread
         if name == "convert_voice":
             return self._convert_voice(args)  # neural VC, minutes long — worker only
+        if name == "import_voicebank":
+            return self._import_voicebank(args)  # copies ~400MB — worker only
         if name in ("stretch_clip", "stretch_clip_to_bars"):
             return self._stretch(name, args)
         return self._marshal(name, args)
@@ -1316,6 +1435,22 @@ class _AgentWorker(QThread):
         return dict(self._marshal("_apply_vocalfx_result", {
             "clip_id": args.get("clip_id"), "effect": eff, "path": path,
             "duration": dur, "base": info.get("base"), "start": info.get("start", 0.0)}) or {})
+
+    def _import_voicebank(self, args: dict):
+        try:
+            from fantasia_core import svs
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        if not svs.available():
+            return {"error": "singing synthesis unavailable — pip install onnxruntime cmudict"}
+        self.note.emit("📦 Installing voicebank…")
+        try:
+            info = svs.import_voicebank(str(args["path"]), slug=args.get("slug"),
+                                        progress=lambda s: self.note.emit(f"📦 {s}…"))
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        return {"ok": True, "slug": info.slug, "name": info.name,
+                "speakers": info.speakers, "ready": info.ready, "note": info.note}
 
     def _convert_voice(self, args: dict):
         try:
@@ -1724,6 +1859,10 @@ class MainWindow(QMainWindow):
         self.act_set_key = QAction("Set API &Key…", self)
         self.act_set_key.triggered.connect(self._on_set_api_key)
         agent_menu.addAction(self.act_set_key)
+        self.act_voicebanks = QAction("Singing Voice&banks…", self)
+        self.act_voicebanks.setToolTip("Install DiffSinger voicebanks for singing")
+        self.act_voicebanks.triggered.connect(self._on_voicebanks)
+        agent_menu.addAction(self.act_voicebanks)
         self.act_voices = QAction("Reference &Voices…", self)
         self.act_voices.setToolTip("Manage the voices available for cloning")
         self.act_voices.triggered.connect(self._on_voice_catalog)
@@ -2260,6 +2399,10 @@ class MainWindow(QMainWindow):
         self.agent.model = model_id
         self.statusBar().showMessage(f"Agent model → {label}")
         self.agent_panel.append("system", f"Model set to {model_id}.")
+
+    def _on_voicebanks(self) -> None:
+        _VoicebankDialog(self).exec()
+        self.statusBar().showMessage("Voicebanks updated", 3000)
 
     def _on_voice_catalog(self) -> None:
         _VoiceCatalogDialog(self).exec()

@@ -7,6 +7,9 @@ where the mistakes live.
 
 from __future__ import annotations
 
+import pathlib
+import re
+
 import numpy as np
 import pytest
 
@@ -242,3 +245,170 @@ def test_unknown_syllable_does_not_crash_the_plan():
     p = svs.plan([N(60, 0.0, 0.5), N(62, 0.5, 0.5)], "zqx-vbn")
     assert len(p.note_midi) == 2
     assert sum(p.word_div) == len(p.phones)
+
+
+# ---- installing voicebanks ----------------------------------------------
+def _fake_bank(root: pathlib.Path, *, nested_configs=False, vocoder=True,
+               name=None, char_txt=False):
+    """A minimal bank on disk, in either of the layouts seen in the wild."""
+    base = root / "configs" if nested_configs else root
+    (base / "dsdur").mkdir(parents=True, exist_ok=True)
+    (root / ("files" if nested_configs else ".")).mkdir(parents=True, exist_ok=True)
+    (base / "dsconfig.yaml").write_text("acoustic: acoustic.onnx\nsample_rate: 44100\n"
+                                        "hop_size: 512\nnum_mel_bins: 128\n")
+    (base / "dsdur" / "dsconfig.yaml").write_text("dur: dur.onnx\nlinguistic: l.onnx\n")
+    if name:
+        (base / "character.yaml").write_text(f"name: {name}\n")
+    if char_txt:
+        (base / "character.txt").write_bytes("name=Shifted ★ DS\n".encode("shift_jis"))
+    if vocoder:
+        (base / "dsvocoder").mkdir(exist_ok=True)
+        (base / "dsvocoder" / "v.onnx").write_bytes(b"x")
+        (base / "dsvocoder" / "vocoder.yaml").write_text("name: v\nmodel: v.onnx\n"
+                                                        "sample_rate: 44100\nhop_size: 512\n"
+                                                        "num_mel_bins: 128\n")
+    return root
+
+
+@pytest.fixture()
+def banks(tmp_path, monkeypatch):
+    monkeypatch.setenv("FANTASIA_VOICEBANKS", str(tmp_path / "installed"))
+    return tmp_path
+
+
+def test_import_from_a_folder(banks):
+    _fake_bank(banks / "src" / "MyVoice", name="My Voice")
+    info = svs.import_voicebank(str(banks / "src" / "MyVoice"))
+    assert info.name == "My Voice"
+    assert info.ready
+    assert (svs.banks_dir() / info.slug / "dsconfig.yaml").exists()
+
+
+def test_import_copies_rather_than_links(banks):
+    """Linking to the download folder means the bank dies when it is cleared."""
+    src = _fake_bank(banks / "src" / "Copied", name="Copied")
+    info = svs.import_voicebank(str(src))
+    import shutil
+    shutil.rmtree(src)
+    assert svs.load(info.slug).acoustic.config.get("acoustic")
+
+
+def test_import_handles_the_configs_subfolder_layout(banks):
+    _fake_bank(banks / "src" / "Nested", nested_configs=True, name="Nested")
+    info = svs.import_voicebank(str(banks / "src" / "Nested"))
+    assert info.ready and info.name == "Nested"
+
+
+def test_import_follows_a_nested_zip(banks):
+    """TIGER ships as a pack zip whose payload is another zip one folder down."""
+    import zipfile
+    src = _fake_bank(banks / "src" / "Inner", name="Inner Voice")
+    inner = banks / "inner.zip"
+    with zipfile.ZipFile(inner, "w") as z:
+        for f in src.rglob("*"):
+            if f.is_file():
+                z.write(f, f.relative_to(src.parent))
+    pack = banks / "pack.zip"
+    with zipfile.ZipFile(pack, "w") as z:
+        z.write(inner, "Voice Library/inner.zip")
+    info = svs.import_voicebank(str(pack))
+    assert info.name == "Inner Voice"
+    assert info.ready
+
+
+def test_import_names_the_voice_not_the_scratch_folder(banks):
+    """A nested pack unpacks into a temp directory whose name means nothing."""
+    import zipfile
+    src = _fake_bank(banks / "src" / "Packed", name="Real Name")
+    z1 = banks / "a.zip"
+    with zipfile.ZipFile(z1, "w") as z:
+        for f in src.rglob("*"):
+            if f.is_file():
+                z.write(f, f.relative_to(src.parent))
+    info = svs.import_voicebank(str(z1))
+    assert not re.fullmatch(r"x\d+", info.slug)
+    assert info.slug == "realname"
+
+
+def test_import_reads_the_older_character_txt(banks):
+    """Some banks carry the name only in character.txt, sometimes shift_jis."""
+    _fake_bank(banks / "src" / "Old", char_txt=True)
+    info = svs.import_voicebank(str(banks / "src" / "Old"))
+    assert "Shifted" in info.name
+
+
+def test_a_bank_with_no_vocoder_borrows_a_matching_one(banks):
+    """Banks routinely ship without one, because OpenUtau installs vocoders
+    separately. Without it a bank yields a spectrogram and no sound."""
+    _fake_bank(banks / "src" / "Donor", name="Donor")
+    svs.import_voicebank(str(banks / "src" / "Donor"))
+    _fake_bank(banks / "src" / "Needy", vocoder=False, name="Needy")
+    info = svs.import_voicebank(str(banks / "src" / "Needy"))
+    assert info.ready
+    assert "another bank" in info.note
+
+
+def test_no_vocoder_and_nothing_to_borrow_says_so(banks):
+    _fake_bank(banks / "src" / "Alone", vocoder=False, name="Alone")
+    info = svs.import_voicebank(str(banks / "src" / "Alone"))
+    assert not info.ready
+    assert "no vocoder" in info.note.lower()
+
+
+def test_borrowing_is_refused_when_the_mel_format_differs(banks):
+    donor = _fake_bank(banks / "src" / "D2", name="D2")
+    (donor / "dsconfig.yaml").write_text("acoustic: a.onnx\nsample_rate: 44100\n"
+                                         "hop_size: 512\nnum_mel_bins: 128\n")
+    svs.import_voicebank(str(donor))
+    odd = _fake_bank(banks / "src" / "Odd", vocoder=False, name="Odd")
+    (odd / "dsconfig.yaml").write_text("acoustic: a.onnx\nsample_rate: 48000\n"
+                                       "hop_size: 256\nnum_mel_bins: 80\n")
+    info = svs.import_voicebank(str(odd))
+    assert not info.ready
+
+
+def test_a_folder_with_no_voicebank_is_rejected(banks):
+    (banks / "empty").mkdir()
+    with pytest.raises(ValueError, match="no DiffSinger voicebank"):
+        svs.import_voicebank(str(banks / "empty"))
+
+
+def test_a_vocoder_only_pack_is_rejected(banks):
+    d = banks / "vocpack"
+    (d / "dsvocoder").mkdir(parents=True)
+    (d / "dsconfig.yaml").write_text("vocoder: dsvocoder\n")
+    with pytest.raises(ValueError, match="acoustic"):
+        svs.import_voicebank(str(d))
+
+
+def test_missing_source_is_reported_clearly(banks):
+    with pytest.raises(FileNotFoundError):
+        svs.import_voicebank(str(banks / "nope.zip"))
+
+
+def test_archive_cannot_write_outside_the_banks_directory(banks):
+    """Archives come from the web; a member named ../../x must not escape."""
+    import zipfile
+
+    bad = banks / "evil.zip"
+    with zipfile.ZipFile(bad, "w") as z:
+        z.writestr("../../escaped.txt", "x")
+    with pytest.raises((ValueError, FileNotFoundError)):
+        svs.import_voicebank(str(bad))
+    assert not (banks.parent / "escaped.txt").exists()
+
+
+def test_reimport_replaces_the_previous_copy(banks):
+    _fake_bank(banks / "src" / "Twice", name="Twice")
+    a = svs.import_voicebank(str(banks / "src" / "Twice"))
+    b = svs.import_voicebank(str(banks / "src" / "Twice"))
+    assert a.slug == b.slug
+    assert len([x for x in svs.list_voicebanks() if x.slug == a.slug]) == 1
+
+
+def test_remove_voicebank(banks):
+    _fake_bank(banks / "src" / "Gone", name="Gone")
+    info = svs.import_voicebank(str(banks / "src" / "Gone"))
+    assert svs.remove_voicebank(info.slug)
+    assert info.slug not in [b.slug for b in svs.list_voicebanks()]
+    assert not svs.remove_voicebank(info.slug)

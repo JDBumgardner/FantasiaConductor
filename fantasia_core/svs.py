@@ -35,6 +35,7 @@ import dataclasses
 import json
 import os
 import pathlib
+import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -98,6 +99,32 @@ def _root_config(bank: pathlib.Path) -> Optional[pathlib.Path]:
     return hits[0] if hits else None
 
 
+def _bank_name(cfg_dir: pathlib.Path, fallback: str) -> str:
+    """The voice's own name. character.yaml carries it for some banks, the older
+    character.txt (key=value, sometimes shift_jis) for others."""
+    y = cfg_dir / "character.yaml"
+    if y.exists():
+        try:
+            n = (_read_yaml(y) or {}).get("name")
+            if n:
+                return str(n)
+        except Exception:  # noqa: BLE001
+            pass
+    t = cfg_dir / "character.txt"
+    if t.exists():
+        for enc in ("utf-8-sig", "shift_jis", "latin-1"):
+            try:
+                for line in t.read_text(encoding=enc).splitlines():
+                    if line.lower().startswith("name="):
+                        n = line.split("=", 1)[1].strip()
+                        if n:
+                            return n
+                break
+            except Exception:  # noqa: BLE001
+                continue
+    return fallback
+
+
 def list_voicebanks() -> List[VoicebankInfo]:
     """Every installed voicebank, whether or not it can render yet."""
     out = []
@@ -112,14 +139,7 @@ def list_voicebanks() -> List[VoicebankInfo]:
         except Exception:  # noqa: BLE001
             continue
         spk = [str(s).split("/")[-1] for s in (c.get("speakers") or [])] or ["default"]
-        name = d.name
-        for ch in (cfg.parent / "character.yaml", d / "character.yaml"):
-            if ch.exists():
-                try:
-                    name = (_read_yaml(ch) or {}).get("name") or name
-                    break
-                except Exception:  # noqa: BLE001
-                    pass
+        name = _bank_name(cfg.parent, d.name)
         voc = _vocoder_path(cfg.parent)
         out.append(VoicebankInfo(d.name, str(name), str(d), spk, voc is not None,
                                  "" if voc else "vocoder missing"))
@@ -578,3 +598,200 @@ def sing_to_file(notes: Sequence, lyrics: str, path: str, voicebank: Optional[st
         os.makedirs(parent, exist_ok=True)
     sf.write(path, audio, sr, subtype="PCM_16")
     return len(audio) / sr
+
+
+# --- installing voicebanks ----------------------------------------------
+# Every bank downloaded for this project needed a different unpacking step, so
+# the importer handles all of them rather than assuming one layout:
+#   * configs/ + files/ + a sibling vocoder folder   (LUNAI banks)
+#   * dsconfig.yaml and the models flat at the top   (Peiton)
+#   * a pack zip containing the real bank zip inside (TIGER)
+#   * a vocoder folder present but empty             (Katyusha as shipped)
+_SUBMODULE_DIRS = {"dsdur", "dspitch", "dsvariance", "dsvocoder", "dsacoustic"}
+
+
+def _safe_extract(zf, dest: pathlib.Path) -> None:
+    """Extract a zip, refusing members that escape the destination.
+
+    Archives come from the web; a member named ``../../x`` would otherwise write
+    outside the voicebank directory.
+    """
+    import zipfile
+
+    dest = dest.resolve()
+    for m in zf.infolist():
+        target = (dest / m.filename).resolve()
+        if not str(target).startswith(str(dest)):
+            raise ValueError(f"unsafe path in archive: {m.filename}")
+    zf.extractall(dest)
+
+
+def _unpack(src: pathlib.Path, work: pathlib.Path, depth: int = 0) -> pathlib.Path:
+    """Return a directory holding the archive's contents, following nested zips.
+
+    TIGER ships as a pack zip whose payload is another zip one folder down, so a
+    single extract leaves you looking at a folder with no dsconfig.yaml in it.
+    """
+    import zipfile
+
+    if src.is_dir():
+        return src
+    out = work / f"x{depth}"
+    out.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(src) as zf:
+        _safe_extract(zf, out)
+    if depth < 2 and _find_bank_roots(out) == []:
+        inner = sorted(out.glob("**/*.zip"))
+        if inner:
+            return _unpack(inner[0], work, depth + 1)
+    return out
+
+
+def _find_bank_roots(tree: pathlib.Path) -> List[pathlib.Path]:
+    """Bank roots under ``tree`` — a dsconfig.yaml that is not a sub-module's."""
+    roots = []
+    for cfg in sorted(tree.glob("**/dsconfig.yaml")):
+        if cfg.parent.name in _SUBMODULE_DIRS:
+            continue
+        root = cfg.parent.parent if cfg.parent.name == "configs" else cfg.parent
+        if root not in roots:
+            roots.append(root)
+    return roots
+
+
+def mel_params(base: pathlib.Path) -> dict:
+    """The mel format a bank's vocoder must match, from its config or vocoder.yaml."""
+    out = {}
+    for cand in [base / "dsconfig.yaml"] + sorted(base.glob("dsvocoder/*.yaml")):
+        if not cand.exists():
+            continue
+        try:
+            c = _read_yaml(cand) or {}
+        except Exception:  # noqa: BLE001
+            continue
+        for k in ("sample_rate", "hop_size", "num_mel_bins", "mel_fmin", "mel_fmax"):
+            if c.get(k) is not None:
+                out.setdefault(k, c[k])
+    return out
+
+
+def find_compatible_vocoder(base: pathlib.Path) -> Optional[pathlib.Path]:
+    """A vocoder from an already-installed bank whose mel format matches.
+
+    Banks routinely ship without one because OpenUtau installs vocoders
+    separately, and a bank with no vocoder can produce a mel but no sound. Every
+    bank tried here used the same 44.1kHz/512/128 format, so borrowing works —
+    but only when the numbers actually agree, hence the check.
+    """
+    want = mel_params(base)
+    if not want:
+        return None
+    for other in list_voicebanks():
+        o_base = _root_config(pathlib.Path(other.path))
+        if o_base is None:
+            continue
+        o_base = o_base.parent
+        if o_base == base:
+            continue
+        voc = _vocoder_path(o_base)
+        if voc is None:
+            continue
+        got = mel_params(o_base)
+        if all(got.get(k) == v for k, v in want.items() if k in got):
+            return voc
+    return None
+
+
+def import_voicebank(src: str, slug: Optional[str] = None,
+                     borrow_vocoder: bool = True, progress=None) -> VoicebankInfo:
+    """Install a DiffSinger voicebank from a folder or (possibly nested) zip.
+
+    Copies rather than links, so the bank keeps working after the download is
+    cleared. Returns the installed bank; ``note`` explains anything the user
+    still has to deal with.
+    """
+    import shutil
+    import tempfile
+
+    source = pathlib.Path(src).expanduser()
+    if not source.exists():
+        raise FileNotFoundError(f"no such file or folder: {source}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work = pathlib.Path(tmp)
+        if progress:
+            progress("unpacking")
+        tree = _unpack(source, work)
+        roots = _find_bank_roots(tree)
+        if not roots:
+            raise ValueError(
+                f"no DiffSinger voicebank in {source.name} — expected a "
+                f"dsconfig.yaml alongside the models")
+        root = roots[0]
+
+        cfg = _root_config(root)
+        conf = _read_yaml(cfg) or {}
+        if not conf.get("acoustic"):
+            raise ValueError(f"{source.name} has no acoustic model; is it a vocoder pack?")
+
+        name = _bank_name(cfg.parent, root.name)
+        # Name it after the voice, not the folder it happened to unpack into:
+        # a nested pack extracts to a scratch directory whose name means nothing.
+        if not slug:
+            for cand in (name, root.name, source.stem):
+                cand = re.sub(r"[^a-z0-9]", "", str(cand).lower())
+                cand = re.sub(r"(v\d+|pack|ds)$", "", cand) or cand
+                if cand and not re.fullmatch(r"x\d+", cand):
+                    slug = cand
+                    break
+            slug = slug or "voicebank"
+
+        dest = banks_dir() / slug
+        if dest.exists() or dest.is_symlink():
+            if dest.is_symlink():
+                dest.unlink()
+            else:
+                shutil.rmtree(dest)
+        if progress:
+            progress("copying")
+        shutil.copytree(root, dest, symlinks=False)
+
+    note = ""
+    base = _root_config(dest).parent
+    if _vocoder_path(base) is None:
+        borrowed = find_compatible_vocoder(base) if borrow_vocoder else None
+        if borrowed is not None:
+            if progress:
+                progress("borrowing a vocoder")
+            tgt = base / "dsvocoder" / borrowed.name
+            tgt.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(borrowed, tgt)
+            vy = tgt.parent / "vocoder.yaml"
+            if not vy.exists():
+                vy.write_text(f"name: {borrowed.stem}\nmodel: {borrowed.name}\n")
+            note = f"used {borrowed.name} from another bank — no vocoder was included"
+        else:
+            note = ("no vocoder: this bank can produce a spectrogram but no audio. "
+                    "Install the vocoder its configs/dsvocoder/vocoder.yaml names.")
+
+    if progress:
+        progress("done")
+    hit = next((b for b in list_voicebanks() if b.slug == slug), None)
+    if hit is None:
+        raise RuntimeError(f"{slug} did not install cleanly")
+    hit.note = note or hit.note
+    return hit
+
+
+def remove_voicebank(slug: str) -> bool:
+    """Uninstall a voicebank. Only touches the copy under the banks directory."""
+    import shutil
+
+    d = banks_dir() / slug
+    if d.is_symlink():
+        d.unlink()
+        return True
+    if d.is_dir():
+        shutil.rmtree(d)
+        return True
+    return False

@@ -198,6 +198,10 @@ class AgentTools:
                  "ref_voice": {"type": "string", "description": "Reference-voice slug from list_reference_voices; switches to voice cloning"},
                  "clip_id": {"type": "string"}, "track_id": {"type": "string"}, "start": {"type": "number"}},
                  "required": ["text"]}},
+            {"name": "import_voicebank", "description": "Install a DiffSinger singing voicebank from a folder or .zip on disk. Handles the layouts banks ship in, unwraps a pack whose payload is another zip, and borrows a compatible vocoder from an installed bank if the new one did not include its own. Returns the installed bank; 'note' says if anything still needs attention.",
+             "input_schema": {"type": "object", "required": ["path"], "properties": {
+                 "path": {"type": "string", "description": "folder or .zip to install"},
+                 "slug": {"type": "string", "description": "optional short id; defaults to the voice's name"}}}},
             {"name": "list_voicebanks", "description": "List installed DiffSinger singing voicebanks. These are REAL singing synthesis — the voice sings at the written pitch instead of speech being pitch-shifted — so they sound far better than the fallback engine, especially on held notes. Each has a 'slug' to pass as 'voicebank' to sing/sing_melody, and 'speakers' (e.g. standard/strong/delicate/lullaby) to pass as 'speaker'. Call this before singing so you can offer the user a voice.",
              "input_schema": {"type": "object", "properties": {}}},
             {"name": "list_reference_voices", "description": "List the reference voices available for cloning. Each has a 'slug' to pass as 'ref_voice' to speak/sing/sing_melody, which switches those tools to the cloning engine and reproduces that timbre. Call this before offering the user a choice of voice.",
@@ -451,6 +455,8 @@ class AgentTools:
             return {"error": "generate_audio must be run off the UI thread"}
         if name == "separate_stems":
             return {"error": "separate_stems must be run off the UI thread"}
+        if name == "import_voicebank":
+            return {"error": "import_voicebank must be run off the UI thread"}
         if name == "list_voicebanks":
             from fantasia_core import svs
 
