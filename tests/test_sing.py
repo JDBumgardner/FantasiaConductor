@@ -251,3 +251,30 @@ def test_edges_from_durations_are_strictly_increasing():
 def test_edges_from_durations_handles_a_single_word():
     y = _speech(0.5)
     assert sing._edges_from_durations(y, SR, [100]) == [0, len(y)]
+
+
+def test_sustain_holds_instead_of_slowing_everything_down():
+    """Stretching a syllable uniformly drags the formant transitions out with
+    the vowel, which is a slow-motion talker rather than a singer. Transitions
+    should run at natural rate and only the vowel should be extended."""
+    voiced = np.zeros(40, dtype=bool)
+    voiced[6:34] = True
+    stability = np.ones(40) * 5.0
+    stability[18:22] = 0.1                       # steadiest here
+    m = sing._sustain_map(voiced, 120, stability=stability)
+    steps = np.abs(np.diff(m))
+    assert len(m) == 120
+    # Most of the syllable still advances at its natural rate...
+    assert np.sum(np.abs(steps - 1.0) < 0.05) > 30
+    # ...and the added time is spent barely moving, near the steady point.
+    assert np.sum(steps < 0.3) > 30
+    assert 17 <= np.median(m[np.abs(np.diff(m, append=m[-1])) < 0.3]) <= 23
+
+
+def test_sustain_drift_is_slow_enough_not_to_buzz():
+    """Stepping back and forth frame by frame is ~60Hz of spectral flutter."""
+    voiced = np.zeros(40, dtype=bool)
+    voiced[6:34] = True
+    m = sing._sustain_map(voiced, 200, stability=np.ones(40))
+    reversals = int((np.diff(np.sign(np.diff(m))) != 0).sum())
+    assert reversals < 12, f"dwell reverses {reversals} times — that is flutter"

@@ -12,7 +12,7 @@ Input: a melody (list of Note) + lyrics (one token per note). Headless (no Qt).
 from __future__ import annotations
 
 import math
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -107,6 +107,9 @@ PHRASE_MAX = 8
 # phrase rather than fixed — the fastest one whose segmentation gives every note
 # a vowel wins, leaving simple phrases smooth and only paying for dense ones.
 PHRASE_SPEEDS = (1.0, 0.7, 0.5)
+# How fast a sustained vowel drifts around its steady spectrum, in Hz. Slow on
+# purpose: a per-frame wobble is ~60Hz of spectral flutter and sounds buzzy.
+_SUSTAIN_DRIFT_HZ = 3.5
 
 
 def word_groups(tokens: List[Tuple[str, bool]]) -> List[int]:
@@ -206,38 +209,53 @@ def syllable_bounds(y: np.ndarray, sr: int, groups, frame: int = 512,
     return bounds
 
 
-def _sustain_map(voiced: np.ndarray, tframes: int) -> np.ndarray:
-    """Frame indices for stretching a syllable to ``tframes``, holding the vowel.
+def _sustain_map(voiced: np.ndarray, tframes: int,
+                 stability: Optional[np.ndarray] = None) -> np.ndarray:
+    """Frame indices for singing a syllable over ``tframes``.
 
-    Uniform stretching is what a vocoder does, not what a singer does. Held
-    "sings" spoken in 150ms became a full second of sibilant hiss, because the
-    unvoiced "s" was stretched by the same factor as everything else. A singer
-    keeps the consonants roughly their natural length and sustains the vowel.
+    Slowing the whole syllable down is what makes this sound like stretched
+    speech rather than singing — at 2-5x, every formant transition and diphthong
+    glide is dragged out with the vowel, which is a slow-motion talker.
 
-    Consonant frames are therefore allowed to grow only a little, and whatever
-    time is left over goes to the voiced run.
+    A singer does not slow anything down. Consonants, onsets and glides all run
+    at their normal speed; what a long note adds is time spent parked on the
+    vowel's steady state. So every frame here is traversed at its natural rate
+    and the extra duration is inserted as a dwell at the steadiest point of the
+    vowel, oscillating over a few frames so the sustain breathes instead of
+    freezing on one spectrum.
     """
     n = len(voiced)
     if n == 0:
         return np.zeros(tframes, dtype=np.float64)
-    if not voiced.any() or tframes <= n:
-        return np.linspace(0, n - 1, tframes)          # nothing to sustain
+    if tframes <= n or not voiced.any():
+        return np.linspace(0, n - 1, tframes)          # compressing: plain resample
 
     idx = np.nonzero(voiced)[0]
-    v0, v1 = int(idx[0]), int(idx[-1]) + 1             # the vowel run
-    head, tail = v0, n - v1
-    # Consonants may stretch up to 1.5x; the vowel absorbs the rest.
-    grow = min(1.5, tframes / n)
-    h_out = int(round(head * grow))
-    t_out = int(round(tail * grow))
-    v_out = max(1, tframes - h_out - t_out)
-    parts = []
-    if h_out:
-        parts.append(np.linspace(0, v0, h_out, endpoint=False))
-    parts.append(np.linspace(v0, v1 - 1, v_out))
-    if t_out:
-        parts.append(np.linspace(v1, n - 1, t_out))
-    out = np.concatenate(parts)
+    v0, v1 = int(idx[0]), int(idx[-1]) + 1
+    if v1 - v0 < 2:
+        return np.linspace(0, n - 1, tframes)
+
+    # Steadiest frame in the vowel: least spectral movement in a small window.
+    if stability is not None and len(stability) == n:
+        core = stability[v0:v1]
+        w = max(1, min(len(core) // 3, 5))
+        smooth = np.convolve(core, np.ones(w) / w, mode="same")
+        hold = v0 + int(np.argmin(smooth))
+    else:
+        hold = (v0 + v1) // 2
+
+    extra = tframes - n
+    # Drift slowly around the sustain point so the held vowel breathes. This has
+    # to be slow: stepping back and forth frame by frame is a ~60Hz flutter of
+    # the spectral envelope, which is buzz rather than sustain.
+    amp = min(1.5, max(0.0, (v1 - 1 - v0) / 4.0))
+    fps = 1000.0 / 5.0                                  # WORLD frame period
+    cycles = max(1.0, extra / fps * _SUSTAIN_DRIFT_HZ)
+    phase = np.linspace(0.0, 2 * np.pi * cycles, extra, endpoint=False)
+    dwell = np.clip(hold + amp * np.sin(phase), v0, v1 - 1)
+
+    out = np.concatenate([np.arange(0, hold, dtype=np.float64), dwell,
+                          np.arange(hold, n, dtype=np.float64)])
     if len(out) != tframes:                            # rounding guard
         out = np.interp(np.linspace(0, len(out) - 1, tframes),
                         np.arange(len(out)), out)
@@ -323,6 +341,10 @@ def _render_phrase(y: np.ndarray, sr: int, notes: Sequence, prev_hz: float = 0.0
                        for i in range(len(f0))])
     energy /= (float(energy.max()) or 1.0)
     voiced_all = f0 > 0
+    # Spectral movement per frame: low means the vocal tract is holding still,
+    # which is where a sustained note should sit.
+    logsp = np.log(np.maximum(sp, 1e-10))
+    flux = np.concatenate([[0.0], np.mean(np.abs(np.diff(logsp, axis=0)), axis=1)])
     bounds = (syllable_bounds_from_words(y, sr, groups, word_edges)
               if word_edges is not None
               else syllable_bounds(y, sr, groups or len(notes)))
@@ -337,7 +359,7 @@ def _render_phrase(y: np.ndarray, sr: int, notes: Sequence, prev_hz: float = 0.0
         hi = max(lo + 2, hi)
         tframes = max(2, int(round(note.duration * fps)))
         seg_voiced = f0[lo:hi] > 0
-        m = _sustain_map(seg_voiced, tframes)
+        m = _sustain_map(seg_voiced, tframes, stability=flux[lo:hi])
         sp_parts.append(_take(sp[lo:hi], m))
         ap_parts.append(_take(ap[lo:hi], m))
         vuv_parts.append(_take(seg_voiced.astype(np.float64), m) > 0.5)
