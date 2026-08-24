@@ -22,7 +22,7 @@ import time
 from typing import Dict, List, Optional, Set, Tuple
 
 from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QPainter, QPen, QShortcut
+from PySide6.QtGui import QBrush, QColor, QKeySequence, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -111,8 +111,8 @@ class NoteItem(QGraphicsRectItem):
         painter.drawRoundedRect(r, 2, 2)
         # Label the note so you can read the pitch straight off the block.
         if not self._view.drum_mode and r.width() >= 26 and r.height() >= 9:
-            painter.setPen(QPen(QColor(theme.FG_BRIGHT)))
-            painter.setFont(QFont("", 7))
+            painter.setPen(QPen(theme.NOTE_LABEL))
+            painter.setFont(theme.ui_font(7, bold=True))
             painter.drawText(r.adjusted(3, 0, -2, 0), Qt.AlignVCenter | Qt.AlignLeft,
                              self._view.pitch_label(self.note.pitch))
 
@@ -473,7 +473,7 @@ class PianoRollView(QGraphicsView):
                 painter.setPen(theme.RULER_LINE if downbeat else QColor(*theme.GRID_BEAT))
                 painter.drawLine(int(x), int(view_top + (4 if downbeat else 12)),
                                  int(x), int(view_top + PR_RULER_H))
-                painter.setFont(QFont("", 8 if downbeat else 7))
+                painter.setFont(theme.ui_font(8 if downbeat else 7))
                 painter.setPen(QColor(theme.CYAN if downbeat else theme.FG_DIM))
                 painter.drawText(int(x) + 3, int(view_top + 11),
                                  f"{bar}" if downbeat else f"{bar}.{beat}")
@@ -481,7 +481,7 @@ class PianoRollView(QGraphicsView):
         painter.fillRect(QRectF(view_left, view_top, KEY_W, PR_RULER_H),
                          QColor(theme.BG_PANEL))
         painter.setPen(QColor(theme.FG_DIM))
-        painter.setFont(QFont("", 7))
+        painter.setFont(theme.ui_font(7))
         painter.drawText(int(view_left) + 6, int(view_top + 14), "bar.beat")
 
 
@@ -1254,7 +1254,7 @@ class PianoRollView(QGraphicsView):
         painter.fillRect(QRectF(view_left, rect.top(), KEY_W, rect.height()), QColor(theme.BG_PANEL))
         self._paint_zoom_strip(painter, view_left, rect)
         label_x = int(view_left) + ZOOM_STRIP_W + 4
-        painter.setFont(QFont("", 8))
+        painter.setFont(theme.ui_font(8))
         if self.drum_mode:
             labels = getattr(self, "_drum_labels", {p: n for p, n in DRUM_LANES})
             for i, p in enumerate(self._lane_pitch):
@@ -1265,7 +1265,7 @@ class PianoRollView(QGraphicsView):
                 painter.setPen(QColor(theme.FG))
                 painter.drawText(label_x, int(y + rh - 6), labels.get(p, str(p)))
         else:
-            painter.setFont(QFont("", 7))
+            painter.setFont(theme.ui_font(7))
             pcs = self._scale_pcs()
             if self._laned():
                 pitches = self._lane_pitch
@@ -1309,7 +1309,7 @@ class PianoRollView(QGraphicsView):
         painter.drawLine(int(view_left + ZOOM_STRIP_W), int(rect.top()),
                          int(view_left + ZOOM_STRIP_W), int(rect.bottom()))
         painter.setPen(QColor(theme.FG_DIM))
-        painter.setFont(QFont("", 8, QFont.Bold))
+        painter.setFont(theme.ui_font(8, bold=True))
         cx = int(view_left + ZOOM_STRIP_W / 2 - 3)
         mid = int(self.mapToScene(0, self.viewport().height() // 2).y())
         painter.drawText(cx, mid - 8, "+")
@@ -1317,7 +1317,7 @@ class PianoRollView(QGraphicsView):
         painter.drawText(cx, mid + 16, "−")
         bottom = int(self.mapToScene(0, self.viewport().height() - 6).y())
         painter.setPen(QColor(theme.GREEN if self.velocity_visible else theme.FG_DIM))
-        painter.setFont(QFont("", 7, QFont.Bold))
+        painter.setFont(theme.ui_font(7, bold=True))
         painter.drawText(int(view_left) + 2, bottom, "Vel")
 
 

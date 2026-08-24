@@ -15,7 +15,7 @@ from typing import List, Optional
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
 from ui import theme
@@ -86,7 +86,7 @@ class EqCurveView(QWidget):
         p.fillRect(self.rect(), QColor(theme.TIMELINE_BG))
 
         # dB grid
-        p.setFont(QFont("", 9))
+        p.setFont(theme.ui_font(9))
         for db in (-24, -12, 0, 12, 24):
             y = self._y(db, rect)
             p.setPen(QPen(QColor(*(theme.GRID_BAR if db == 0 else theme.GRID_BEAT)), 1))
@@ -102,12 +102,12 @@ class EqCurveView(QWidget):
             p.drawLine(int(x), int(rect.top()), int(x), int(rect.bottom()))
             if label:
                 p.setPen(QColor(theme.FG_DIM))
-                p.setFont(QFont("", 9))
+                p.setFont(theme.ui_font(9))
                 p.drawText(int(x) + 3, int(rect.bottom()) + 13, label)
 
         if self._curve is None:
             p.setPen(QColor(theme.FG_DIM))
-            p.setFont(QFont("", 9))
+            p.setFont(theme.ui_font(9))
             p.drawText(rect, Qt.AlignCenter,
                        "No EQ on this track — add one from the track's FX menu")
             return
@@ -135,7 +135,7 @@ class EqCurveView(QWidget):
         p.drawPath(path)
 
         # Band markers, numbered in chain order like a real EQ.
-        p.setFont(QFont("", 8))
+        p.setFont(theme.ui_font(8))
         for i, b in enumerate(self._bands, start=1):
             prm = b.get("params", {})
             f = prm.get("freq", prm.get("cutoff", 1000.0))
@@ -152,5 +152,5 @@ class EqCurveView(QWidget):
             p.drawText(QRectF(x - 7, y - 7, 14, 14), Qt.AlignCenter, str(i))
 
         p.setPen(QColor(theme.FG_DIM))
-        p.setFont(QFont("", 8))
+        p.setFont(theme.ui_font(8))
         p.drawText(int(rect.left()) + 4, int(rect.top()) + 11, self._title)

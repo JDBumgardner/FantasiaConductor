@@ -8,7 +8,28 @@ electric-purple accents that glow against the dark.
 
 from __future__ import annotations
 
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
+
+# UI typeface — Linux first so Fedora/WSL don't fall back to a serif.
+FONT_FAMILIES = (
+    "Noto Sans",
+    "DejaVu Sans",
+    "Liberation Sans",
+    "SF Pro Text",
+    "Helvetica Neue",
+    "sans-serif",
+)
+FONT_CSS = ", ".join(f'"{n}"' if " " in n else n for n in FONT_FAMILIES)
+
+
+def ui_font(point_size: int = 9, bold: bool = False) -> QFont:
+    """Sans-serif used on painted surfaces (piano roll, timeline, EQ)."""
+    font = QFont()
+    font.setFamilies(list(FONT_FAMILIES[:-1]))
+    font.setStyleHint(QFont.SansSerif)
+    font.setPointSize(point_size)
+    font.setBold(bold)
+    return font
 
 # ---- surfaces (deep night) ----------------------------------------------
 BG_DEEP = "#0b0c16"      # window base
@@ -37,6 +58,9 @@ RED = "#ff4d6d"
 
 ACCENT = MAGENTA         # primary interactive accent
 ACCENT_DIM = "#b3216b"
+# Active mute/solo (and other checked buttons): dusty pink so dark M/S stays readable.
+BUTTON_CHECKED = "#edb4ce"
+BUTTON_CHECKED_FG = "#1a1014"
 
 # ---- painted surfaces ----------------------------------------------------
 TIMELINE_BG = "#0c0d1c"
@@ -68,6 +92,8 @@ MIDI_PREVIEW = QColor(0x25, 0xe6, 0xd5, 0xcc)  # cyan, glowy
 NOTE_FILL = QColor(0xff, 0x2e, 0x97)     # neon magenta
 NOTE_BORDER = QColor(0xff, 0x9a, 0xd0)
 NOTE_SELECTED = QColor(0xff, 0xff, 0xff)
+# Dark olive-gray — color-wheel complement of purple, readable on magenta notes.
+NOTE_LABEL = QColor(0x1e, 0x1c, 0x12)
 
 # ---- track colour cycle (neon) ------------------------------------------
 TRACK_CYCLE = [MAGENTA, CYAN, PURPLE, BLUE, GREEN, ORANGE, PINK, YELLOW]

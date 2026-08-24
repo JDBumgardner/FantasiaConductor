@@ -31,6 +31,27 @@ from ui import theme
 from ui.gm_instruments import DRUM_KITS, GM_FAMILIES, gm_name
 from ui.metrics import RULER_H, TRACK_H
 
+# Widget-local sheet: a parent QWidget background (the header / scroll
+# content) otherwise swallows QPushButton:checked fills from the window sheet.
+# Qt only paints a button background when the same sheet also sets a border.
+_MS_BUTTON_STYLE = (
+    f"QPushButton {{"
+    f"  background-color: {theme.BG_ELEVATED}; color: {theme.FG};"
+    f"  border: 1px solid {theme.BORDER}; border-radius: 4px;"
+    f"  padding: 2px 0px; font-weight: 700;"
+    f"}}"
+    f"QPushButton:hover {{"
+    f"  background-color: {theme.BG_HOVER}; border-color: {theme.PURPLE};"
+    f"}}"
+    f"QPushButton:checked,"
+    f"QPushButton:checked:hover,"
+    f"QPushButton:checked:pressed {{"
+    f"  background-color: {theme.BUTTON_CHECKED};"
+    f"  color: {theme.BUTTON_CHECKED_FG};"
+    f"  border: 1px solid {theme.PINK};"
+    f"}}"
+)
+
 
 class TrackHeader(QWidget):
     """Header for a single track."""
@@ -85,15 +106,19 @@ class TrackHeader(QWidget):
         self.fx_badge.setText("  ".join(parts))
 
         self.mute_btn = QPushButton("M")
+        self.mute_btn.setObjectName("trackMuteBtn")
         self.mute_btn.setCheckable(True)
+        self.mute_btn.setFixedSize(24, 22)
+        self.mute_btn.setStyleSheet(_MS_BUTTON_STYLE)
         self.mute_btn.setChecked(track.mute)
-        self.mute_btn.setFixedWidth(24)
         self.mute_btn.setToolTip("Mute")
 
         self.solo_btn = QPushButton("S")
+        self.solo_btn.setObjectName("trackSoloBtn")
         self.solo_btn.setCheckable(True)
+        self.solo_btn.setFixedSize(24, 22)
+        self.solo_btn.setStyleSheet(_MS_BUTTON_STYLE)
         self.solo_btn.setChecked(track.solo)
-        self.solo_btn.setFixedWidth(24)
         self.solo_btn.setToolTip("Solo")
 
         self.vol = QSlider(Qt.Horizontal)
@@ -145,6 +170,15 @@ class TrackHeader(QWidget):
         self.setProperty("selected", selected)
         self.style().unpolish(self)
         self.style().polish(self)
+
+    def sync_mute_solo(self, track: Track) -> None:
+        """Match M/S buttons to the model without emitting toggle commands."""
+        self.mute_btn.blockSignals(True)
+        self.mute_btn.setChecked(bool(track.mute))
+        self.mute_btn.blockSignals(False)
+        self.solo_btn.blockSignals(True)
+        self.solo_btn.setChecked(bool(track.solo))
+        self.solo_btn.blockSignals(False)
 
     def _install_selection_filter(self) -> None:
         # Catch presses on the header *and* its child controls, so any click
@@ -265,7 +299,11 @@ class TrackHeaderPanel(QScrollArea):
         self.setStyleSheet(f"QScrollArea {{ background:{theme.BG_DEEP}; border:none; }}")
 
         self._content = QWidget()
-        self._content.setStyleSheet(f"background:{theme.BG_DEEP};")
+        self._content.setObjectName("trackHeaderList")
+        # Selector-scoped so this fill does not leak onto M/S buttons.
+        self._content.setStyleSheet(
+            f"QWidget#trackHeaderList {{ background:{theme.BG_DEEP}; }}"
+        )
         self._layout = QVBoxLayout(self._content)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
@@ -310,3 +348,9 @@ class TrackHeaderPanel(QScrollArea):
     def set_selected(self, track_id: Optional[str]) -> None:
         for tid, header in self._headers.items():
             header.set_selected(tid == track_id)
+
+    def sync_mute_solo(self, project) -> None:  # noqa: ANN001
+        for track in project.tracks:
+            header = self._headers.get(track.id)
+            if header is not None:
+                header.sync_mute_solo(track)
