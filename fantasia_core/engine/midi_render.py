@@ -13,6 +13,7 @@ from __future__ import annotations
 import glob
 import os
 import pathlib
+import sys
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -30,6 +31,84 @@ _SF_GLOBS = [
     "/usr/share/sounds/sf2/*.sf2",       # Debian/Ubuntu (fluid-soundfont-*)
     "/usr/share/soundfonts/*.sf2",       # Arch / Fedora-style layout
 ]
+
+# pyfluidsynth imports via ctypes.util.find_library (ldconfig / dyld only).
+# Also search Homebrew, Debian, Fedora, and a user-local extract so MIDI
+# works without a system package on the PATH.
+_FLUID_LIB_GLOBS = [
+    os.environ.get("FANTASIA_FLUIDSYNTH_LIB") or "",
+    str(pathlib.Path.home() / ".local/lib/fantasia-deps/**/libfluidsynth.so*"),
+    str(pathlib.Path.home() / ".local/lib/fantasia-deps/**/libfluidsynth*.dylib"),
+    "/usr/lib64/libfluidsynth.so*",
+    "/usr/lib/x86_64-linux-gnu/libfluidsynth.so*",
+    "/usr/lib/libfluidsynth.so*",
+    "/opt/homebrew/opt/fluid-synth/lib/libfluidsynth*.dylib",
+    "/usr/local/opt/fluid-synth/lib/libfluidsynth*.dylib",
+    "/opt/homebrew/lib/libfluidsynth*.dylib",
+    "/usr/local/lib/libfluidsynth*.dylib",
+]
+
+
+def _native_elf(path: str) -> bool:
+    """True if ``path`` is a dylib or an ELF matching this Python's bitness."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(5)
+    except OSError:
+        return False
+    if head[:4] != b"\x7fELF":
+        return True  # Mach-O / anything find_library already resolved
+    want = 2 if sys.maxsize > 2**32 else 1
+    return head[4] == want
+
+
+def _find_fluidsynth_lib() -> Optional[str]:
+    """Return a loadable libfluidsynth path, or None."""
+    import ctypes.util
+
+    for name in ("fluidsynth", "libfluidsynth", "fluidsynth-3", "libfluidsynth-3"):
+        hit = ctypes.util.find_library(name)
+        if hit and (not os.path.isfile(hit) or _native_elf(hit)):
+            return hit
+    found: list[str] = []
+    for pattern in _FLUID_LIB_GLOBS:
+        if not pattern:
+            continue
+        if os.path.isfile(pattern):
+            found.append(pattern)
+            continue
+        found.extend(glob.glob(pattern, recursive=True))
+    files = [p for p in found if os.path.isfile(p) and _native_elf(p)]
+    # Prefer lib64 / x86_64, then the short soname symlink.
+    files.sort(key=lambda p: (
+        "lib64" not in p and "x86_64" not in p,
+        len(pathlib.Path(p).name),
+        p,
+    ))
+    return files[0] if files else None
+
+
+def _prepare_fluidsynth_search() -> None:
+    """Point pyfluidsynth at a known libfluidsynth if the loader cache misses."""
+    import ctypes.util
+
+    hit = _find_fluidsynth_lib()
+    if not hit or ctypes.util.find_library("fluidsynth"):
+        return
+    orig = ctypes.util.find_library
+
+    def find_library(name: str):  # noqa: ANN202
+        found = orig(name)
+        if found:
+            return found
+        if name and "fluid" in name.lower():
+            return hit
+        return None
+
+    ctypes.util.find_library = find_library  # type: ignore[method-assign]
+
+
+_prepare_fluidsynth_search()
 
 
 def default_soundfont() -> Optional[str]:
@@ -57,6 +136,7 @@ class MidiRenderer:
         if not self.soundfont or not os.path.isfile(self.soundfont):
             return False
         try:
+            _prepare_fluidsynth_search()
             import fluidsynth  # noqa: F401
         except Exception:  # noqa: BLE001
             return False

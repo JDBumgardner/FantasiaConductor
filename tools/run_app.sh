@@ -16,11 +16,22 @@ fi
 # ---- Linux / WSL audio environment --------------------------------------
 if [[ "$(uname -s)" == "Linux" ]]; then
   DEPS="${FANTASIA_LOCAL_DEPS:-$HOME/.local/lib/fantasia-deps/root}"
-  if [[ -d "$DEPS/usr/lib/x86_64-linux-gnu" ]]; then
-    export LD_LIBRARY_PATH="$DEPS/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-    if [[ -d "$DEPS/usr/lib/x86_64-linux-gnu/alsa-lib" ]]; then
-      export ALSA_PLUGIN_DIR="${ALSA_PLUGIN_DIR:-$DEPS/usr/lib/x86_64-linux-gnu/alsa-lib}"
+  # Debian/WSL extract uses …/root/usr/lib/x86_64-linux-gnu; a Fedora RPM
+  # extract may live at …/fantasia-deps/usr/lib64 (no "root" prefix).
+  if [[ ! -d "$DEPS/usr/lib/x86_64-linux-gnu" && ! -d "$DEPS/usr/lib64" ]]; then
+    if [[ -d "$HOME/.local/lib/fantasia-deps/usr/lib64" ]]; then
+      DEPS="$HOME/.local/lib/fantasia-deps"
     fi
+  fi
+  for libdir in usr/lib/x86_64-linux-gnu usr/lib64 usr/lib; do
+    if [[ -d "$DEPS/$libdir" ]]; then
+      export LD_LIBRARY_PATH="$DEPS/$libdir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    fi
+  done
+  if [[ -d "$DEPS/usr/lib/x86_64-linux-gnu/alsa-lib" ]]; then
+    export ALSA_PLUGIN_DIR="${ALSA_PLUGIN_DIR:-$DEPS/usr/lib/x86_64-linux-gnu/alsa-lib}"
+  fi
+  if [[ -d "$DEPS/usr/bin" ]]; then
     export PATH="$DEPS/usr/bin${PATH:+:$PATH}"
   fi
 
