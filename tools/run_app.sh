@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
-# Launch Fantasia Conductor with the repo venv.
+# The supported way to launch Fantasia Conductor (Fedora, Ubuntu/WSL, macOS).
 #
-# On Linux/WSL, wires up PortAudio + ALSA→Pulse when system packages aren't
-# installed yet (optional user-local tree under ~/.local/lib/fantasia-deps).
-# On macOS this is a thin wrapper around ``.venv/bin/python app.py``.
+# Do not use bare ``uv run python app.py`` as your daily launcher: ``uv run``
+# syncs only core extras and used to strip pyfluidsynth, and it never sets
+# Linux library paths (FluidSynth / PortAudio / Pulse).
+#
+# On Linux/WSL this also wires PortAudio + ALSA→Pulse and a user-local
+# FluidSynth extract under ~/.local/lib/fantasia-deps. On macOS it is a thin
+# wrapper around the venv.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 if [[ ! -x .venv/bin/python ]]; then
-  echo "No .venv yet. Create one first (see README Quick start)." >&2
-  exit 1
+  if command -v uv >/dev/null 2>&1; then
+    uv sync
+  else
+    echo "No .venv yet. Create one first (see README Quick start)." >&2
+    exit 1
+  fi
 fi
 
 # ---- Linux / WSL audio environment --------------------------------------

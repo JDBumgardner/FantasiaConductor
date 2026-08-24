@@ -27,29 +27,26 @@ Gets the app running — UI, document model, audio engine, editing.
 # One-time toolchain — pick your OS:
 
 # macOS / Homebrew:
-brew install python@3.12 portaudio
+brew install python@3.12 portaudio fluid-synth
 
 # Linux / WSL (Debian/Ubuntu):
 sudo apt install python3.12 python3.12-venv portaudio19-dev \
-  libxcb-cursor0 libasound2-plugins pulseaudio-utils
-# Optional but recommended for MIDI + nicer fonts:
-sudo apt install libfluidsynth-dev fluid-soundfont-gm
+  libxcb-cursor0 libasound2-plugins pulseaudio-utils \
+  libfluidsynth-dev fluid-soundfont-gm
+# Fedora:
+#   sudo dnf install python3-devel portaudio-devel fluidsynth-libs
 # On WSL with WSLg audio, point ALSA at Pulse once:
 #   printf 'pcm.!default { type pulse }\nctl.!default { type pulse }\n' > ~/.asoundrc
-# Prefer the launcher on Linux/WSL (sets library paths + Pulse env):
-#   ./tools/run_app.sh
 # If the app says "No audio output device available" on WSL, Pulse is often
 # wedged — from **Windows** PowerShell run `wsl --shutdown`, reopen WSL, then
 # `./tools/run_app.sh`. Diagnose with `./tools/check_audio.sh`.
 
-# Environment:
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+# Environment (uv keeps the lockfile + venv in sync):
+uv sync
 
-# Run:
-python app.py
-# or: tools/run_app.sh
+# Always launch through the wrapper — Fedora/WSL library paths + Pulse.
+# Bare `uv run python app.py` skips those paths.
+./tools/run_app.sh
 ```
 
 ## Full setup

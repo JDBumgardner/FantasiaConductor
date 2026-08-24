@@ -116,6 +116,18 @@ class EditorDock(QWidget):
         if len(sizes) == 2 and sizes[1] > 80:
             self._saved_sizes = sizes
 
+    def is_open(self) -> bool:
+        return self.isVisible()
+
+    def collapse(self) -> None:
+        """Hide the editor and give the arrangement the full splitter."""
+        if self._split is not None and self.isVisible():
+            sizes = self._split.sizes()
+            if len(sizes) == 2 and sizes[1] > 80:
+                self._saved_sizes = sizes
+        self.setMinimumHeight(0)
+        self.hide()
+
     def _reveal(self) -> None:
         self.setMinimumHeight(140)
         self.show()

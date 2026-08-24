@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 
-# Core deps — enough for M0–M4 (UI, document model, audio engine, editing).
+# Core deps — UI, document, audio, MIDI playback, MCP bridge.
+# Keep pyfluidsynth/mcp here (not extras-only): `uv run` syncs core deps and
+# will uninstall extras, which silently kills soundfont MIDI.
 dependencies = [
     "PySide6>=6.6",
     "numpy>=1.26",
@@ -20,6 +22,9 @@ dependencies = [
     "librosa>=0.10",
     # Pin modern numba: librosa allows older releases that don't build on 3.12+.
     "numba>=0.60; python_version>='3.12'",
+    "pyfluidsynth>=1.3",
+    "mcp>=1.0,<2",  # 2.0 removed the list_tools/call_tool decorator API
+    "mido>=1.3",
 ]
 
 [project.optional-dependencies]

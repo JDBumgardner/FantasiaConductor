@@ -76,9 +76,6 @@ class VelocityLane(QWidget):
             painter.setPen(QPen(col, 1))
             painter.drawLine(0, int(y), w, int(y))
         items = list(self._items())
-        if not items:
-            painter.end()
-            return
         unselected = [i for i in items if not i.isSelected()]
         selected = [i for i in items if i.isSelected()]
         for item in unselected + selected:
@@ -97,6 +94,11 @@ class VelocityLane(QWidget):
             r = self._HANDLE + (0.6 if item.isSelected() else 0.0)
             painter.setBrush(color)
             painter.drawEllipse(QPointF(x0, y), r, r)
+        ph = getattr(self._view, "playhead", None)
+        if ph is not None:
+            px = self._x_for_time(ph)
+            painter.setPen(QPen(QColor(theme.PLAYHEAD), 2))
+            painter.drawLine(int(px), 0, int(px), h)
         painter.end()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802

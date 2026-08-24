@@ -11,13 +11,14 @@ from __future__ import annotations
 import math
 import os
 import pathlib
+import sys
 import threading
 import uuid
 from typing import Optional
 
 import numpy as np
 
-from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
@@ -1269,6 +1270,15 @@ class MainWindow(QMainWindow):
         self._rebuild_all()
         self._refresh_history_actions()
         self.statusBar().showMessage("Ready — M3 (audio). File ▸ Load Demo Arrangement to test.")
+        if not self.midi.available():
+            print(
+                "WARNING: soundfont MIDI is offline "
+                f"(sf={self.midi.soundfont!r}). Lead/drums/bass tracks will be silent. "
+                "Quit and relaunch with ./tools/run_app.sh (not bare `uv run`).",
+                file=sys.stderr,
+            )
+            self.statusBar().showMessage(
+                "Soundfont MIDI offline — relaunch with ./tools/run_app.sh")
 
         self._restore_last_project()
 
@@ -1418,6 +1428,12 @@ class MainWindow(QMainWindow):
         self.act_zoom_in = QAction("Zoom &In", self, shortcut=QKeySequence.ZoomIn)
         self.act_zoom_out = QAction("Zoom &Out", self, shortcut=QKeySequence.ZoomOut)
         view_menu.addActions([self.act_zoom_in, self.act_zoom_out])
+        self.act_toggle_editor = QAction("Toggle &Editor", self)
+        self.act_toggle_editor.setShortcut(QKeySequence("Shift+Tab"))
+        self.act_toggle_editor.setShortcutContext(Qt.WindowShortcut)
+        self.act_toggle_editor.setToolTip(
+            "Show or hide the editor (Piano Roll / Synth / EQ)")
+        view_menu.addAction(self.act_toggle_editor)
         self._build_grid_actions()
         self.menu_grid = view_menu.addMenu("&Grid")
         self._fill_grid_menu(self.menu_grid)
@@ -1467,6 +1483,7 @@ class MainWindow(QMainWindow):
         self.act_metronome.toggled.connect(self._on_metronome_toggled)
         self.act_zoom_in.triggered.connect(self.timeline.zoom_in)
         self.act_zoom_out.triggered.connect(self.timeline.zoom_out)
+        self.act_toggle_editor.triggered.connect(self._toggle_editor)
 
         self.transport.play_requested.connect(self._toggle_play)
         self.transport.stop_requested.connect(self._on_stop)
@@ -1516,6 +1533,7 @@ class MainWindow(QMainWindow):
         self.timeline.import_into_clip_requested.connect(self._on_import_into_clip)
         self.timeline.clip_action_requested.connect(self._on_clip_action)
         self.timeline.playhead_moved.connect(self.transport.set_time)
+        self.timeline.playhead_moved.connect(self._sync_piano_playhead)
 
         self.timeline.verticalScrollBar().valueChanged.connect(self._sync_from_timeline)
         self.header_panel.verticalScrollBar().valueChanged.connect(self._sync_from_headers)
@@ -1634,6 +1652,44 @@ class MainWindow(QMainWindow):
             self._play_timer.stop()
             self._return_to_start()
             self.statusBar().showMessage("Stopped")
+
+    def _sync_piano_playhead(self, seconds: float) -> None:
+        """Keep the piano-roll cursor on the same song time as the arrangement."""
+        clip_id = self._editing_clip_id
+        if clip_id is None:
+            self.piano.set_playhead(None)
+            return
+        _, clip = self.project.find_clip(clip_id)
+        if clip is None:
+            self.piano.set_playhead(None)
+            return
+        self.piano.set_playhead(
+            seconds - clip.start,
+            follow=bool(self.timeline.playback_active),
+        )
+
+    def _toggle_editor(self) -> None:
+        if self.editor.is_open():
+            self.editor.collapse()
+            return
+        clip_id = self._editing_clip_id or self.timeline.selected_clip_id()
+        if clip_id:
+            _, clip = self.project.find_clip(clip_id)
+            if clip is not None and clip.is_midi:
+                self._open_piano_roll(clip_id)
+                return
+        self.editor.show_piano_roll()
+        self._sync_piano_playhead(self.timeline.playhead)
+
+    def event(self, event) -> bool:
+        # Shift+Tab is Backtab — take it from focus traversal so the editor toggles.
+        if event.type() == QEvent.Type.ShortcutOverride:
+            key = event.key()
+            shift = bool(event.modifiers() & Qt.ShiftModifier)
+            if key == Qt.Key_Backtab or (key == Qt.Key_Tab and shift):
+                event.accept()
+                return True
+        return super().event(event)
 
     def _set_loop_enabled(self, on: bool, announce: bool = True) -> None:
         on = bool(on)
@@ -2121,6 +2177,7 @@ class MainWindow(QMainWindow):
         )
         self._update_piano_waveform(clip_id)
         self.editor.show_piano_roll()
+        self._sync_piano_playhead(self.timeline.playhead)
         self.statusBar().showMessage(f"Editing notes in {clip.name}")
 
     def _update_piano_waveform(self, clip_id: str) -> None:
@@ -2153,6 +2210,7 @@ class MainWindow(QMainWindow):
             drum_mode=getattr(track, "is_drum", False),
         )
         self.editor.show_piano_roll()
+        self._sync_piano_playhead(self.timeline.playhead)
 
     def _ensure_midi_clip(self):
         """Return a MIDI clip to edit, creating or converting one if needed."""
