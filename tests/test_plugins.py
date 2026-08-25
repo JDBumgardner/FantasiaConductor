@@ -164,3 +164,18 @@ def test_loading_an_unknown_plugin_lists_what_is_installed(monkeypatch):
     monkeypatch.setattr(plugins, "scan", lambda refresh=False: [])
     with pytest.raises(FileNotFoundError, match="none found"):
         plugins.load("Vital")
+
+
+def test_a_huge_step_count_is_not_a_choice():
+    """Plugins are loose with this flag — Vital marks all 903 of its parameters
+    discrete, 557 of them with 2**31-1 steps, which plainly means continuous."""
+    p = _Plugin({"a": _Param("Cutoff", discrete=True, steps=2147483647),
+                 "b": _Param("Mode", discrete=True, steps=6)})
+    kinds = {r["name"]: r.get("type") for r in plugins.describe(p)}
+    assert kinds["Cutoff"] is None          # continuous
+    assert kinds["Mode"] == "choice"
+
+
+def test_choice_threshold_is_a_count_a_human_could_pick_from():
+    p = _Plugin({"a": _Param("X", discrete=True, steps=plugins._MAX_CHOICE_STEPS + 1)})
+    assert plugins.describe(p)[0].get("type") is None

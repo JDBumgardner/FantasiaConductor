@@ -75,6 +75,9 @@ def search_paths() -> List[pathlib.Path]:
     return out
 
 
+# Above this, a "discrete" parameter is continuous in everything but the flag.
+_MAX_CHOICE_STEPS = 256
+
 _SCAN: Optional[List[PluginInfo]] = None
 
 
@@ -155,8 +158,14 @@ def describe(plugin, query: str = "", limit: int = 40) -> List[dict]:
         if getattr(p, "is_boolean", False):
             row["type"] = "switch"
         elif getattr(p, "is_discrete", False):
-            row["type"] = "choice"
-            row["steps"] = int(getattr(p, "num_steps", 0) or 0)
+            # Plugins are loose with this flag: Vital marks all 903 of its
+            # parameters discrete, 557 of them with 2**31-1 steps, which plainly
+            # means continuous. Only call it a choice when the count is one a
+            # human could actually pick from.
+            steps = int(getattr(p, "num_steps", 0) or 0)
+            if 0 < steps <= _MAX_CHOICE_STEPS:
+                row["type"] = "choice"
+                row["steps"] = steps
         out.append(row)
         if len(out) >= limit:
             break
