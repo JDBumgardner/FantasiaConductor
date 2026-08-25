@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import os
 import pathlib
+import sys
 import threading
 import uuid
 from typing import Optional
@@ -20,6 +21,8 @@ import numpy as np
 from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -41,6 +44,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSplitter,
+    QTextEdit,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -104,7 +108,7 @@ _DEMO_TRACKS = [
 ]
 
 _STYLESHEET = f"""
-* {{ font-family: "SF Pro Text", "Helvetica Neue", sans-serif; }}
+* {{ font-family: {theme.FONT_CSS}; }}
 QMainWindow, QWidget#central {{ background: {theme.BG_DEEP}; }}
 QToolBar {{ background: {theme.BG_PANEL}; border: none; border-bottom: 1px solid {theme.BORDER_SOFT}; spacing: 3px; padding: 3px; }}
 QToolBar QToolButton {{ color: {theme.FG}; padding: 4px 8px; border-radius: 4px; }}
@@ -122,8 +126,11 @@ QLabel {{ color: {theme.FG}; }}
 QPushButton {{ background: {theme.BG_ELEVATED}; color: {theme.FG}; border: 1px solid {theme.BORDER};
     border-radius: 4px; padding: 3px 6px; }}
 QPushButton:hover {{ background: {theme.BG_HOVER}; border-color: {theme.PURPLE}; }}
-QPushButton:checked {{ background: {theme.ACCENT}; color: #12030c; border-color: {theme.PINK};
-    font-weight: 700; }}
+QPushButton:checked {{ background: {theme.BUTTON_CHECKED}; color: {theme.BUTTON_CHECKED_FG};
+    border-color: {theme.PINK}; font-weight: 700; }}
+QPushButton#trackMuteBtn:checked, QPushButton#trackSoloBtn:checked {{
+    background: {theme.BUTTON_CHECKED}; color: {theme.BUTTON_CHECKED_FG};
+    border-color: {theme.PINK}; font-weight: 700; }}
 
 QStatusBar {{ background: {theme.BG_PANEL}; color: {theme.FG_DIM}; }}
 QStatusBar QLabel {{ color: {theme.CYAN}; }}
@@ -1739,6 +1746,15 @@ class MainWindow(QMainWindow):
         self._rebuild_all()
         self._refresh_history_actions()
         self.statusBar().showMessage("Ready — M3 (audio). File ▸ Load Demo Arrangement to test.")
+        if not self.midi.available():
+            print(
+                "WARNING: soundfont MIDI is offline "
+                f"(sf={self.midi.soundfont!r}). Lead/drums/bass tracks will be silent. "
+                "Quit and relaunch with ./tools/run_app.sh (not bare `uv run`).",
+                file=sys.stderr,
+            )
+            self.statusBar().showMessage(
+                "Soundfont MIDI offline — relaunch with ./tools/run_app.sh")
 
         self._restore_last_project()
 
@@ -1896,6 +1912,12 @@ class MainWindow(QMainWindow):
         self.act_zoom_in = QAction("Zoom &In", self, shortcut=QKeySequence.ZoomIn)
         self.act_zoom_out = QAction("Zoom &Out", self, shortcut=QKeySequence.ZoomOut)
         view_menu.addActions([self.act_zoom_in, self.act_zoom_out])
+        self.act_toggle_editor = QAction("Toggle &Editor", self)
+        self.act_toggle_editor.setShortcut(QKeySequence("Shift+E"))
+        self.act_toggle_editor.setShortcutContext(Qt.ApplicationShortcut)
+        self.act_toggle_editor.setToolTip(
+            "Show or hide the detail view (Piano Roll / Synth / EQ)")
+        view_menu.addAction(self.act_toggle_editor)
         self._build_grid_actions()
         self.menu_grid = view_menu.addMenu("&Grid")
         self._fill_grid_menu(self.menu_grid)
@@ -1945,6 +1967,7 @@ class MainWindow(QMainWindow):
         self.act_metronome.toggled.connect(self._on_metronome_toggled)
         self.act_zoom_in.triggered.connect(self.timeline.zoom_in)
         self.act_zoom_out.triggered.connect(self.timeline.zoom_out)
+        self.act_toggle_editor.triggered.connect(self._toggle_editor)
 
         self.transport.play_requested.connect(self._toggle_play)
         self.transport.stop_requested.connect(self._on_stop)
@@ -1952,6 +1975,8 @@ class MainWindow(QMainWindow):
         self.transport.metronome_toggled.connect(self._on_metronome_toggled)
         self.transport.tempo_changed.connect(self._on_tempo_changed)
         self.timeline.grid_menu_requested.connect(self._on_grid_menu)
+        self.timeline.solo_requested.connect(lambda: self._toggle_selected_tracks("solo"))
+        self.timeline.mute_requested.connect(lambda: self._toggle_selected_tracks("mute"))
 
         self.header_panel.header_clicked.connect(self._on_track_selected)
         self.header_panel.renamed.connect(
@@ -1994,6 +2019,7 @@ class MainWindow(QMainWindow):
         self.timeline.import_into_clip_requested.connect(self._on_import_into_clip)
         self.timeline.clip_action_requested.connect(self._on_clip_action)
         self.timeline.playhead_moved.connect(self.transport.set_time)
+        self.timeline.playhead_moved.connect(self._sync_piano_playhead)
 
         self.timeline.verticalScrollBar().valueChanged.connect(self._sync_from_timeline)
         self.header_panel.verticalScrollBar().valueChanged.connect(self._sync_from_headers)
@@ -2017,6 +2043,8 @@ class MainWindow(QMainWindow):
                 self.timeline.refresh_geometries()
                 self.timeline.viewport().update()
                 self._tempo_conform_timer.start()
+            elif isinstance(cmd, SetTrackAttrCommand) and cmd.attr in ("mute", "solo"):
+                self.header_panel.sync_mute_solo(self.project)
 
     # ---- unsaved-changes tracking ---------------------------------------
     def _set_dirty(self, dirty: bool) -> None:
@@ -2081,7 +2109,10 @@ class MainWindow(QMainWindow):
             self._on_play()
 
     def _on_play(self) -> None:
-        self.engine.set_playhead_seconds(self.timeline.start_position)
+        start = self._playback_start_seconds()
+        self.timeline.start_position = start
+        self.timeline.set_playhead(start)
+        self.engine.set_playhead_seconds(start)
         if self.engine.play():
             self.timeline.playback_active = True
             self._play_timer.start()
@@ -2117,6 +2148,94 @@ class MainWindow(QMainWindow):
             self._play_timer.stop()
             self._return_to_start()
             self.statusBar().showMessage("Stopped")
+
+    def _sync_piano_playhead(self, seconds: float) -> None:
+        """Keep the piano-roll cursor on the same song time as the arrangement."""
+        clip_id = self._editing_clip_id
+        if clip_id is None:
+            self.piano.set_playhead(None)
+            return
+        _, clip = self.project.find_clip(clip_id)
+        if clip is None:
+            self.piano.set_playhead(None)
+            return
+        self.piano.set_playhead(
+            seconds - clip.start,
+            follow=bool(self.timeline.playback_active),
+        )
+
+    def _toggle_editor(self) -> None:
+        # Let real text fields keep Shift+E as a typed character. Combos and
+        # spinboxes are not typing — they used to steal this shortcut.
+        if isinstance(QApplication.focusWidget(), (QLineEdit, QPlainTextEdit, QTextEdit)):
+            return
+        if self.editor.is_open():
+            self.editor.collapse()
+        else:
+            clip_id = self._editing_clip_id or self.timeline.selected_clip_id()
+            if clip_id:
+                _, clip = self.project.find_clip(clip_id)
+                if clip is not None and clip.is_midi:
+                    self._open_piano_roll(clip_id, reveal=True)
+                else:
+                    self.editor.show_piano_roll()
+                    self._sync_piano_playhead(self.timeline.playhead)
+            else:
+                self.editor.show_piano_roll()
+                self._sync_piano_playhead(self.timeline.playhead)
+        # Arrangement keeps focus so the next Shift+E is not lost to a combo.
+        self.timeline.setFocus(Qt.OtherFocusReason)
+
+    def _playback_start_seconds(self) -> float:
+        """Play from the selected MIDI clip's start; otherwise the locator."""
+        starts: list[float] = []
+        for clip_id in self.timeline.selected_clip_ids():
+            _, clip = self.project.find_clip(clip_id)
+            if clip is not None and clip.is_midi:
+                starts.append(float(clip.start))
+        if starts:
+            return min(starts)
+        return float(self.timeline.start_position)
+
+    def _target_track_ids(self) -> list[str]:
+        ids: list[str] = []
+        if self.selected_track_id:
+            ids.append(self.selected_track_id)
+        for clip_id in self.timeline.selected_clip_ids():
+            track, _ = self.project.find_clip(clip_id)
+            if track is not None and track.id not in ids:
+                ids.append(track.id)
+        return ids
+
+    def _toggle_selected_tracks(self, attr: str) -> None:
+        tracks = [self.project.track_by_id(tid) for tid in self._target_track_ids()]
+        tracks = [t for t in tracks if t is not None]
+        if not tracks:
+            return
+        turn_on = not all(bool(getattr(t, attr)) for t in tracks)
+        for track in tracks:
+            if bool(getattr(track, attr)) != turn_on:
+                self._dispatch_attr(track.id, attr, turn_on)
+
+    def _focus_is_text(self) -> bool:
+        widget = QApplication.focusWidget()
+        return isinstance(
+            widget, (QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QAbstractSpinBox)
+        )
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if not self._focus_is_text():
+            mods = event.modifiers()
+            if not (mods & Qt.ControlModifier):
+                if event.key() == Qt.Key_S:
+                    self._toggle_selected_tracks("solo")
+                    event.accept()
+                    return
+                if event.key() == Qt.Key_0:
+                    self._toggle_selected_tracks("mute")
+                    event.accept()
+                    return
+        super().keyPressEvent(event)
 
     def _set_loop_enabled(self, on: bool, announce: bool = True) -> None:
         on = bool(on)
@@ -2560,6 +2679,8 @@ class MainWindow(QMainWindow):
         self.bus.dispatch(
             SetTrackAttrCommand(track_id, attr, value, mergeable=attr in _CONTINUOUS_ATTRS)
         )
+        if attr in ("mute", "solo"):
+            self.header_panel.sync_mute_solo(self.project)
         if attr == "name" and track_id == self.selected_track_id:
             self._update_target_label()
 
@@ -2589,7 +2710,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Imported {os.path.basename(path)} into clip")
 
     # ---- MIDI / piano roll (MID-3) --------------------------------------
-    def _open_piano_roll(self, clip_id: str) -> None:
+    def _open_piano_roll(self, clip_id: str, reveal: bool = True) -> None:
         track, clip = self.project.find_clip(clip_id)
         if clip is None:
             return
@@ -2611,7 +2732,11 @@ class MainWindow(QMainWindow):
             drum_mode=getattr(track, "is_drum", False), clip_bar=clip_bar,
         )
         self._update_piano_waveform(clip_id)
-        self.editor.show_piano_roll()
+        if reveal:
+            self.editor.show_piano_roll()
+        else:
+            self.editor.switch_to_piano_mode()
+        self._sync_piano_playhead(self.timeline.playhead)
         self.statusBar().showMessage(f"Editing notes in {clip.name}")
 
     def _update_piano_waveform(self, clip_id: str) -> None:
@@ -2644,6 +2769,7 @@ class MainWindow(QMainWindow):
             drum_mode=getattr(track, "is_drum", False),
         )
         self.editor.show_piano_roll()
+        self._sync_piano_playhead(self.timeline.playhead)
 
     def _ensure_midi_clip(self):
         """Return a MIDI clip to edit, creating or converting one if needed."""
@@ -3778,18 +3904,27 @@ class MainWindow(QMainWindow):
     # ---- selection -------------------------------------------------------
     def _on_track_selected(self, track_id: str) -> None:
         self._set_selected_track(track_id)
+        if not self._focus_is_text():
+            self.timeline.setFocus(Qt.OtherFocusReason)
 
     def _on_clip_selected(self, clip_id: str) -> None:
-        if clip_id:
-            track, _ = self.project.find_clip(clip_id)
-            if track is not None:
-                self._set_selected_track(track.id)
+        if not clip_id:
+            return
+        follow_piano = self.editor.is_piano_open()
+        track, clip = self.project.find_clip(clip_id)
+        if track is not None:
+            self._set_selected_track(
+                track.id,
+                keep_piano=follow_piano and clip is not None and clip.is_midi,
+            )
+        if follow_piano and clip is not None and clip.is_midi:
+            self._open_piano_roll(clip_id, reveal=False)
 
-    def _set_selected_track(self, track_id: Optional[str]) -> None:
+    def _set_selected_track(self, track_id: Optional[str], *, keep_piano: bool = False) -> None:
         self.selected_track_id = track_id
-        self._apply_selection_highlight()
+        self._apply_selection_highlight(keep_piano=keep_piano)
 
-    def _apply_selection_highlight(self) -> None:
+    def _apply_selection_highlight(self, *, keep_piano: bool = False) -> None:
         self.header_panel.set_selected(self.selected_track_id)
         self.timeline.set_selected_track(self.selected_track_id)
         self._update_target_label()
@@ -3803,8 +3938,10 @@ class MainWindow(QMainWindow):
         self._refresh_eq_curve()
         if self.editor.stack.currentIndex() == 2:
             pass  # keep the EQ view up while stepping through tracks
+        elif keep_piano:
+            self.editor.switch_to_piano_mode()
         elif track is not None and getattr(track, "is_synth", False):
-            self.editor.show_synth(track)
+            self.editor.show_synth(track, reveal=self.editor.is_open())
         else:
             self.editor.switch_to_piano_mode()
 

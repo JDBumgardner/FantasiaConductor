@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsRectItem,
@@ -120,7 +120,7 @@ class ClipItem(QGraphicsRectItem):
             self._paint_midi(painter, rect)
         elif empty:
             painter.setPen(QColor(220, 220, 220, 120))
-            painter.setFont(QFont("", 8))
+            painter.setFont(theme.ui_font(8))
             painter.drawText(rect, Qt.AlignCenter, "empty · right-click to fill")
         elif pool is not None:
             self._paint_waveform(painter, rect, pool)
@@ -128,7 +128,7 @@ class ClipItem(QGraphicsRectItem):
         self._paint_fades(painter, rect)
 
         painter.setPen(QColor(245, 245, 245))
-        painter.setFont(QFont("", 9))
+        painter.setFont(theme.ui_font(9))
         text_rect = rect.adjusted(6, 2, -6, -2)
         painter.drawText(text_rect, Qt.AlignLeft | Qt.AlignTop, self.clip.name)
 
@@ -136,7 +136,7 @@ class ClipItem(QGraphicsRectItem):
         notes = self.clip.notes
         if not notes:
             painter.setPen(QColor(230, 230, 230, 140))
-            painter.setFont(QFont("", 8))
+            painter.setFont(theme.ui_font(8))
             painter.drawText(rect, Qt.AlignCenter, "MIDI · empty")
             return
         pitches = [n.pitch for n in notes]
@@ -365,6 +365,8 @@ class TimelineView(QGraphicsView):
     loop_region_changed = Signal(float, float)
     loop_enabled_changed = Signal(bool)
     grid_menu_requested = Signal(object)  # QPoint — empty-lane context menu
+    solo_requested = Signal()
+    mute_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         self._scene = QGraphicsScene()
@@ -582,7 +584,30 @@ class TimelineView(QGraphicsView):
                 self.paste_requested.emit()
                 event.accept()
                 return
+        if not (event.modifiers() & (Qt.ControlModifier | Qt.AltModifier)):
+            if event.key() == Qt.Key_S:
+                self.solo_requested.emit()
+                event.accept()
+                return
+            if event.key() == Qt.Key_0:
+                self.mute_requested.emit()
+                event.accept()
+                return
+            if event.key() in (Qt.Key_Left, Qt.Key_Right) and not self.selected_clip_ids():
+                self.nudge_playhead(-1 if event.key() == Qt.Key_Left else 1)
+                event.accept()
+                return
         super().keyPressEvent(event)
+
+    def nudge_playhead(self, steps: int) -> None:
+        """Nudge the locator by the current grid (clamped at 0)."""
+        step = self._grid_seconds()
+        if step is None or step <= 0:
+            if self._project is not None:
+                step = self._project.seconds_per_beat() * max(self._project.beats_per_bar, 1)
+            else:
+                step = 1.0
+        self.locate(max(0.0, self.playhead + steps * step))
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
         item = self.itemAt(event.pos())
@@ -743,7 +768,7 @@ class TimelineView(QGraphicsView):
         bar_px = spb * bpb * self.pps
         if bar_px > 0:
             painter.setPen(theme.RULER_TEXT)
-            painter.setFont(QFont("", 8))
+            painter.setFont(theme.ui_font(8))
             first_bar = max(int(rect.left() // bar_px), 0)
             last_bar = int(rect.right() // bar_px) + 1
             for bar in range(first_bar, last_bar + 1):
@@ -764,7 +789,7 @@ class TimelineView(QGraphicsView):
         painter.drawRect(QRectF(x0 - 2, bar_top, 4, LOOP_BAR_H))
         painter.drawRect(QRectF(x1 - 2, bar_top, 4, LOOP_BAR_H))
         painter.setPen(QColor(theme.FG_BRIGHT if on else theme.FG_DIM))
-        painter.setFont(QFont("", 7, QFont.Bold if on else QFont.Normal))
+        painter.setFont(theme.ui_font(7, bold=on))
         painter.drawText(int(x0) + 6, int(bar_top + 9), "LOOP" if on else "loop")
 
         # Playhead (full height + ruler marker).

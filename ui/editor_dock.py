@@ -116,6 +116,21 @@ class EditorDock(QWidget):
         if len(sizes) == 2 and sizes[1] > 80:
             self._saved_sizes = sizes
 
+    def is_open(self) -> bool:
+        return self.isVisible()
+
+    def is_piano_open(self) -> bool:
+        return self.isVisible() and self.stack.currentIndex() == 0
+
+    def collapse(self) -> None:
+        """Hide the editor and give the arrangement the full splitter."""
+        if self._split is not None and self.isVisible():
+            sizes = self._split.sizes()
+            if len(sizes) == 2 and sizes[1] > 80:
+                self._saved_sizes = sizes
+        self.setMinimumHeight(0)
+        self.hide()
+
     def _reveal(self) -> None:
         self.setMinimumHeight(140)
         self.show()
@@ -142,10 +157,11 @@ class EditorDock(QWidget):
         self._reveal()
         self.piano.view.setFocus(Qt.OtherFocusReason)
 
-    def show_synth(self, track) -> None:  # noqa: ANN001
+    def show_synth(self, track, reveal: bool = True) -> None:  # noqa: ANN001
         self.synth.set_track(track)
         self._set_mode(1)
-        self._reveal()
+        if reveal:
+            self._reveal()
 
     def show_eq(self, specs, sr: int = 44100, title: str = "") -> None:
         self.eq.set_chain(specs, sr, title)

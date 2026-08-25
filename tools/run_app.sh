@@ -1,26 +1,45 @@
 #!/usr/bin/env bash
-# Launch Fantasia Conductor with the repo venv.
+# The supported way to launch Fantasia Conductor (Fedora, Ubuntu/WSL, macOS).
 #
-# On Linux/WSL, wires up PortAudio + ALSA→Pulse when system packages aren't
-# installed yet (optional user-local tree under ~/.local/lib/fantasia-deps).
-# On macOS this is a thin wrapper around ``.venv/bin/python app.py``.
+# Do not use bare ``uv run python app.py`` as your daily launcher: ``uv run``
+# syncs only core extras and used to strip pyfluidsynth, and it never sets
+# Linux library paths (FluidSynth / PortAudio / Pulse).
+#
+# On Linux/WSL this also wires PortAudio + ALSA→Pulse and a user-local
+# FluidSynth extract under ~/.local/lib/fantasia-deps. On macOS it is a thin
+# wrapper around the venv.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 if [[ ! -x .venv/bin/python ]]; then
-  echo "No .venv yet. Create one first (see README Quick start)." >&2
-  exit 1
+  if command -v uv >/dev/null 2>&1; then
+    uv sync
+  else
+    echo "No .venv yet. Create one first (see README Quick start)." >&2
+    exit 1
+  fi
 fi
 
 # ---- Linux / WSL audio environment --------------------------------------
 if [[ "$(uname -s)" == "Linux" ]]; then
   DEPS="${FANTASIA_LOCAL_DEPS:-$HOME/.local/lib/fantasia-deps/root}"
-  if [[ -d "$DEPS/usr/lib/x86_64-linux-gnu" ]]; then
-    export LD_LIBRARY_PATH="$DEPS/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-    if [[ -d "$DEPS/usr/lib/x86_64-linux-gnu/alsa-lib" ]]; then
-      export ALSA_PLUGIN_DIR="${ALSA_PLUGIN_DIR:-$DEPS/usr/lib/x86_64-linux-gnu/alsa-lib}"
+  # Debian/WSL extract uses …/root/usr/lib/x86_64-linux-gnu; a Fedora RPM
+  # extract may live at …/fantasia-deps/usr/lib64 (no "root" prefix).
+  if [[ ! -d "$DEPS/usr/lib/x86_64-linux-gnu" && ! -d "$DEPS/usr/lib64" ]]; then
+    if [[ -d "$HOME/.local/lib/fantasia-deps/usr/lib64" ]]; then
+      DEPS="$HOME/.local/lib/fantasia-deps"
     fi
+  fi
+  for libdir in usr/lib/x86_64-linux-gnu usr/lib64 usr/lib; do
+    if [[ -d "$DEPS/$libdir" ]]; then
+      export LD_LIBRARY_PATH="$DEPS/$libdir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    fi
+  done
+  if [[ -d "$DEPS/usr/lib/x86_64-linux-gnu/alsa-lib" ]]; then
+    export ALSA_PLUGIN_DIR="${ALSA_PLUGIN_DIR:-$DEPS/usr/lib/x86_64-linux-gnu/alsa-lib}"
+  fi
+  if [[ -d "$DEPS/usr/bin" ]]; then
     export PATH="$DEPS/usr/bin${PATH:+:$PATH}"
   fi
 
