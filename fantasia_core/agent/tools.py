@@ -198,6 +198,17 @@ class AgentTools:
                  "ref_voice": {"type": "string", "description": "Reference-voice slug from list_reference_voices; switches to voice cloning"},
                  "clip_id": {"type": "string"}, "track_id": {"type": "string"}, "start": {"type": "number"}},
                  "required": ["text"]}},
+            {"name": "list_plugins", "description": "List installed VST3/AU plugins (synths and effects). A hosted synth like Vital brings its own engine, presets and interface, so prefer one over the built-in synth when the user wants a specific sound. Returns each plugin's name to pass as 'plugin' elsewhere.",
+             "input_schema": {"type": "object", "properties": {"refresh": {"type": "boolean"}}}},
+            {"name": "plugin_params", "description": "Search a plugin's parameters and read their current values. Big synths expose hundreds, so ALWAYS pass a 'query' (e.g. 'filter cutoff', 'osc 1 level', 'reverb') rather than listing everything. Values come back as the plugin displays them ('440 Hz', 'on'), which is also what set_plugin_param accepts.",
+             "input_schema": {"type": "object", "required": ["plugin"], "properties": {
+                 "plugin": {"type": "string", "description": "plugin name from list_plugins"},
+                 "query": {"type": "string", "description": "words that must all appear in the parameter name"},
+                 "limit": {"type": "integer", "description": "max rows, default 40"}}}},
+            {"name": "set_plugin_param", "description": "Set one plugin parameter. Prefer the plugin's own text form ('880 Hz', '-6 dB', 'on') — the plugin converts it, which is more reliable than guessing a 0-1 value. A raw 0-1 number also works. Call plugin_params first to find the exact name.",
+             "input_schema": {"type": "object", "required": ["plugin", "name", "value"], "properties": {
+                 "plugin": {"type": "string"}, "name": {"type": "string"},
+                 "value": {"description": "text like '880 Hz', or a number 0-1"}}}},
             {"name": "import_voicebank", "description": "Install a DiffSinger singing voicebank from a folder or .zip on disk. Handles the layouts banks ship in, unwraps a pack whose payload is another zip, and borrows a compatible vocoder from an installed bank if the new one did not include its own. Returns the installed bank; 'note' says if anything still needs attention.",
              "input_schema": {"type": "object", "required": ["path"], "properties": {
                  "path": {"type": "string", "description": "folder or .zip to install"},
@@ -457,6 +468,19 @@ class AgentTools:
             return {"error": "separate_stems must be run off the UI thread"}
         if name == "import_voicebank":
             return {"error": "import_voicebank must be run off the UI thread"}
+        if name == "list_plugins":
+            from fantasia_core import plugins as plg
+
+            if not plg.available():
+                return {"error": "plugin hosting needs pedalboard"}
+            found = plg.scan(refresh=bool(a.get("refresh")))
+            if not found:
+                return {"plugins": [], "note": "no VST3/AU plugins installed; "
+                        "searched " + ", ".join(str(p) for p in plg.search_paths())}
+            return {"plugins": [{"name": p.name, "format": p.format,
+                                 "instrument": p.is_instrument} for p in found]}
+        if name in ("plugin_params", "set_plugin_param"):
+            return {"error": f"{name} must be run off the UI thread"}
         if name == "list_voicebanks":
             from fantasia_core import svs
 

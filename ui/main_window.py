@@ -1346,6 +1346,8 @@ class _AgentWorker(QThread):
             return self._convert_voice(args)  # neural VC, minutes long — worker only
         if name == "import_voicebank":
             return self._import_voicebank(args)  # copies ~400MB — worker only
+        if name in ("plugin_params", "set_plugin_param"):
+            return self._plugin_tool(name, args)  # loading a plugin blocks
         if name in ("stretch_clip", "stretch_clip_to_bars"):
             return self._stretch(name, args)
         return self._marshal(name, args)
@@ -1454,6 +1456,26 @@ class _AgentWorker(QThread):
         return dict(self._marshal("_apply_vocalfx_result", {
             "clip_id": args.get("clip_id"), "effect": eff, "path": path,
             "duration": dur, "base": info.get("base"), "start": info.get("start", 0.0)}) or {})
+
+    def _plugin_tool(self, name: str, args: dict):
+        try:
+            from fantasia_core import plugins as plg
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        if not plg.available():
+            return {"error": "plugin hosting needs pedalboard"}
+        try:
+            plugin = plg.load(str(args["plugin"]))
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        try:
+            if name == "plugin_params":
+                rows = plg.describe(plugin, str(args.get("query", "")),
+                                    int(args.get("limit", 40) or 40))
+                return {"params": rows, "shown": len(rows)}
+            return {"ok": True, **plg.set_param(plugin, str(args["name"]), args["value"])}
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
 
     def _import_voicebank(self, args: dict):
         try:
