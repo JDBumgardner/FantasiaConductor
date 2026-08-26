@@ -92,6 +92,7 @@ def _clip_buffer(pool, clip, sr: int, clip_len_frames: int, warp_compute: bool =
 
 def render_track_block(
     track, pool, start_frame: int, num_frames: int, sr: int, midi_renderer=None, synth_renderer=None,
+    plugin_renderer=None,
     warp_compute: bool = True,
 ) -> np.ndarray:  # noqa: ANN001
     """Render one track's clips (pre-FX, pre-track-gain/pan) as ``(num_frames, 2)``.
@@ -112,7 +113,10 @@ def render_track_block(
             continue
 
         if clip.content_type == "midi":
-            if getattr(track, "is_synth", False) and synth_renderer is not None:
+            plug = getattr(track, "plugin", "")
+            if plug and plugin_renderer is not None:
+                data = plugin_renderer.cached(clip, plug, getattr(track, "plugin_state", ""))
+            elif getattr(track, "is_synth", False) and synth_renderer is not None:
                 data = synth_renderer.cached(clip, getattr(track, "synth", None) or {})
             elif midi_renderer is not None:
                 data = midi_renderer.cached(clip, track.instrument, getattr(track, "is_drum", False))
@@ -155,7 +159,7 @@ def render_track_block(
 
 def render_block(
     project, pool, start_frame: int, num_frames: int, sr: int,
-    fx_host=None, midi_renderer=None, synth_renderer=None,
+    fx_host=None, midi_renderer=None, synth_renderer=None, plugin_renderer=None,
     warp_compute: bool = True,
 ) -> np.ndarray:  # noqa: ANN001
     """Render one stereo block of the full mix as ``float32`` ``(num_frames, 2)``."""
@@ -167,6 +171,7 @@ def render_block(
             continue
         tb = render_track_block(
             track, pool, start_frame, num_frames, sr, midi_renderer, synth_renderer,
+            plugin_renderer,
             warp_compute=warp_compute,
         )
         if getattr(track, "fx", None) and fx_host is not None:

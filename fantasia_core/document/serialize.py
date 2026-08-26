@@ -55,6 +55,10 @@ def track_to_dict(track: Track) -> dict[str, Any]:
         "instrument": track.instrument,
         "is_drum": track.is_drum,
         "is_synth": track.is_synth,
+        # The plugin's own state blob. Base64 because a project file is JSON,
+        # and this is opaque binary that only the plugin can interpret.
+        "plugin": track.plugin,
+        "plugin_state": track.plugin_state,
         "synth": dict(track.synth),
         "clips": [clip_to_dict(c) for c in track.clips],
     }
@@ -120,6 +124,8 @@ def track_from_dict(data: dict[str, Any]) -> Track:
     track.instrument = int(data.get("instrument", 0))
     track.is_drum = bool(data.get("is_drum", False))
     track.is_synth = bool(data.get("is_synth", False))
+    track.plugin = str(data.get("plugin", "") or "")
+    track.plugin_state = str(data.get("plugin_state", "") or "")
     track.synth = dict(data.get("synth", {}))
     track.clips = [clip_from_dict(c) for c in data.get("clips", [])]
     return track

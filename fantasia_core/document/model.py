@@ -101,6 +101,8 @@ class Track:
     is_drum: bool = False  # render MIDI on the GM percussion bank (drum kit)
     is_synth: bool = False  # render MIDI with the built-in subtractive synth
     synth: dict = field(default_factory=dict)  # synth patch (empty → engine defaults)
+    plugin: str = ""  # VST3/AU instrument name; wins over is_synth when set
+    plugin_state: str = ""  # the plugin's own preset blob, base64 (see serialize)
 
     def clip_by_id(self, clip_id: str) -> Optional[Clip]:
         for clip in self.clips:

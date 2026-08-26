@@ -136,6 +136,7 @@ class PlaybackEngine:
         self._fx_host = FxHost()  # persistent per-track FX state for smooth tails
         self.midi_renderer = None  # set by the app; audio callback only reads its cache
         self.synth_renderer = None
+        self.plugin_renderer = None
 
     # ---- state -----------------------------------------------------------
     def set_project(self, project) -> None:  # noqa: ANN001
@@ -186,6 +187,7 @@ class PlaybackEngine:
                 self.project, self.pool, src, n, self.sr,
                 fx_host=self._fx_host, midi_renderer=self.midi_renderer,
                 synth_renderer=self.synth_renderer,
+                plugin_renderer=self.plugin_renderer,
                 warp_compute=False,
             )
             if self.metronome_enabled:

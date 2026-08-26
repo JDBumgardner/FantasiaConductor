@@ -82,6 +82,7 @@ class TrackHeader(QWidget):
         self._is_drum = getattr(track, "is_drum", False)
         self._is_synth = getattr(track, "is_synth", False)
         self._instrument = getattr(track, "instrument", 0)
+        self._plugin = getattr(track, "plugin", "") or ""
 
         # --- create widgets and set state from the model (no signals yet) ---
         self.name_edit = QLineEdit(track.name)
@@ -227,6 +228,12 @@ class TrackHeader(QWidget):
                     act.setCheckable(True)
                     act.setChecked(prog == self._instrument)
                     mapping[act] = f"instrument:{prog}"
+
+        # A hosted plugin replaces the built-in engines entirely, so it sits
+        # with them rather than in the FX chain below.
+        plug = menu.addAction("Plugin Instrument…"
+                              + (f"  [{self._plugin}]" if self._plugin else ""))
+        mapping[plug] = "plugin_instrument"
 
         menu.addSeparator()
         if self._fx_types:

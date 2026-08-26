@@ -828,6 +828,74 @@ class _ImportVoicebankWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class _PluginDialog(QDialog):
+    """Pick a VST3/AU instrument for a track, and open its own interface."""
+
+    def __init__(self, parent=None, current: str = "") -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Track Instrument")
+        form = QFormLayout(self)
+        self.combo = QComboBox()
+        self.combo.addItem("Built-in (soundfont / synth)", "")
+        from fantasia_core import plugins as plg
+
+        try:
+            found = plg.scan() if plg.available() else []
+        except Exception:  # noqa: BLE001
+            found = []
+        for p in found:
+            if p.is_instrument:
+                self.combo.addItem(f"{p.name}  ({p.format})", p.name)
+        idx = self.combo.findData(current or "")
+        if idx >= 0:
+            self.combo.setCurrentIndex(idx)
+        form.addRow("Instrument:", self.combo)
+
+        self.btn_editor = QPushButton("Open plugin interface…")
+        self.btn_editor.setEnabled(bool(found))
+        self.btn_editor.clicked.connect(self._open_editor)
+        form.addRow("", self.btn_editor)
+
+        note = QLabel(
+            "A plugin brings its own sound engine, presets and interface. "
+            "Its settings are saved with the project."
+            if found else
+            "No VST3/AU instruments found. Install one (Vital, for example) and "
+            "reopen this dialog.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color:#8a8f96; font-size:11px;")
+        form.addRow(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def _open_editor(self) -> None:
+        name = self.combo.currentData()
+        if not name:
+            return
+        from fantasia_core import plugins as plg
+
+        try:
+            plugin = plg.load(name)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Plugin", str(exc))
+            return
+        # show_editor blocks the calling thread until the window closes, and it
+        # must be the main thread — so the app is intentionally modal here
+        # rather than pretending the rest of the UI still works.
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            plugin.show_editor()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Plugin", f"Could not open the editor: {exc}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def result_values(self):
+        return self.combo.currentData() or ""
+
+
 class _VoicebankDialog(QDialog):
     """Install and manage the singing voicebanks."""
 
@@ -1701,6 +1769,10 @@ class MainWindow(QMainWindow):
         self.engine = PlaybackEngine(self.project, self.pool, self.project.sample_rate)
         self.engine.midi_renderer = self.midi
         self.engine.synth_renderer = self.synth_engine
+        from fantasia_core.engine.plugin_render import PluginRenderer
+
+        self.plugin_renderer = PluginRenderer(self.project.sample_rate)
+        self.engine.plugin_renderer = self.plugin_renderer
 
         self.search_service = SearchService(
             str(_REPO_ROOT / ".fantasia_cache" / "soundlib.lancedb")
@@ -2601,6 +2673,9 @@ class MainWindow(QMainWindow):
         self.pool.preload(p)
         self.midi.warm(p)
         self.synth_engine.warm(p)
+        pr = getattr(self, "plugin_renderer", None)
+        if pr is not None:
+            pr.warm(p)          # plugin instruments render here, never in the callback
 
     def _rebuild_all(self) -> None:
         self.header_panel.rebuild(self.project)
@@ -3827,6 +3902,30 @@ class MainWindow(QMainWindow):
             self._warm()
             state = "on" if track.is_synth else "off"
             self.statusBar().showMessage(f"Synth voice {state} — {track.name}")
+        elif action == "plugin_instrument":
+            dlg = _PluginDialog(self, getattr(track, "plugin", ""))
+            if dlg.exec() != QDialog.Accepted:
+                return
+            chosen = dlg.result_values()
+            self.bus.dispatch(SetTrackAttrCommand(track_id, "plugin", chosen))
+            if chosen:
+                # Capture whatever the user set up in the plugin's own window so
+                # it is saved with the project rather than lost on reopen.
+                try:
+                    from fantasia_core.engine.plugin_render import capture_state
+
+                    self.bus.dispatch(SetTrackAttrCommand(
+                        track_id, "plugin_state", capture_state(chosen)))
+                except Exception:  # noqa: BLE001
+                    pass
+            pr = getattr(self, "plugin_renderer", None)
+            if pr is not None:
+                pr.invalidate()
+            self._warm()
+            self._rebuild_all()
+            self.statusBar().showMessage(
+                f"{chosen or 'Built-in'} — {track.name}"
+                + ("  (rendering…)" if chosen else ""), 6000)
         elif action == "toggle_drum":
             self.bus.dispatch(SetTrackAttrCommand(track_id, "is_drum", not track.is_drum))
             self._warm()  # re-render this track's MIDI as drums/melodic
@@ -3891,6 +3990,7 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage("Rendering mix…")
                 dur = bounce_to_file(self.project, self.pool, sr, path,
                                      midi_renderer=self.midi, synth_renderer=self.synth_engine,
+                                     plugin_renderer=getattr(self, "plugin_renderer", None),
                                      subtype=subtype, loudness=loudness)
                 self.statusBar().showMessage(f"Exported {dur:.1f}s mix → {os.path.basename(path)}")
         except Exception as exc:  # noqa: BLE001
@@ -3919,6 +4019,7 @@ class MainWindow(QMainWindow):
             self.statusBar().repaint()
             bounce_track_to_file(self.project, self.pool, sr, path, track.id,
                                  midi_renderer=self.midi, synth_renderer=self.synth_engine,
+                                 plugin_renderer=getattr(self, "plugin_renderer", None),
                                  subtype=subtype, loudness=loudness)
             count += 1
         self.statusBar().showMessage(f"Exported {count} stems → {folder}")
