@@ -131,6 +131,7 @@ class AgentTools:
                  "mute": {"type": "boolean"}, "solo": {"type": "boolean"},
                  "gain_db": {"type": "number"}, "pan": {"type": "number", "description": "-1 (L) to 1 (R)"},
                  "is_drum": {"type": "boolean"}, "is_synth": {"type": "boolean"},
+                 "plugin": {"type": "string", "description": "VST3/AU instrument name from list_plugins; wins over is_synth. Empty string returns the track to the built-in soundfont."},
                  "instrument": {"type": "integer"}}, "required": ["track_id"]}},
             {"name": "add_fx", "description": (
                 "Append an effect to a track's FX chain. Mixing order is EQ -> colour -> dynamics.\n"
@@ -320,7 +321,7 @@ class AgentTools:
                     "duration": round(p.duration, 3), "num_tracks": len(p.tracks),
                     "seconds_per_beat": round(p.seconds_per_beat(), 4)}
         if name == "list_tracks":
-            return [{"id": t.id, "name": t.name, "is_drum": t.is_drum, "is_synth": t.is_synth,
+            return [{"id": t.id, "name": t.name, "is_drum": t.is_drum, "is_synth": t.is_synth, "plugin": getattr(t, "plugin", ""),
                      "instrument": t.instrument, "mute": t.mute, "solo": t.solo,
                      "gain_db": t.gain_db, "pan": t.pan, "num_clips": len(t.clips)} for t in p.tracks]
         if name == "list_clips":
@@ -349,7 +350,8 @@ class AgentTools:
             self.bus.dispatch(RemoveTrackCommand(a["track_id"]))
             return {"ok": True}
         if name == "set_track":
-            for key in ("name", "mute", "solo", "gain_db", "pan", "is_drum", "is_synth", "instrument"):
+            for key in ("name", "mute", "solo", "gain_db", "pan", "is_drum", "is_synth",
+                        "instrument", "plugin"):
                 if key in a:
                     self.bus.dispatch(SetTrackAttrCommand(a["track_id"], key, a[key]))
             return {"ok": True}
