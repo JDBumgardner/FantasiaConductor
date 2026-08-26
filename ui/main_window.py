@@ -3614,6 +3614,33 @@ class MainWindow(QMainWindow):
         self.timeline.viewport().update()
         return {"ok": True, "clip_id": args["clip_id"]}
 
+    def _resync_plugin_tracks(self, plugin_name: str) -> int:
+        """Save a plugin's current state onto the tracks using it and re-render.
+
+        Called after anything changes the plugin out from under the cache — an
+        agent setting a parameter, or the plugin's own window closing.
+        """
+        from fantasia_core.engine.plugin_render import capture_state
+
+        try:
+            state = capture_state(plugin_name)
+        except Exception:  # noqa: BLE001
+            return 0
+        hit = 0
+        for track in self.project.tracks:
+            if getattr(track, "plugin", "") != plugin_name:
+                continue
+            if getattr(track, "plugin_state", "") != state:
+                self.bus.dispatch(SetTrackAttrCommand(track.id, "plugin_state", state))
+            hit += 1
+        if hit:
+            pr = getattr(self, "plugin_renderer", None)
+            if pr is not None:
+                pr.invalidate(plugin_name)
+            self._warm()
+            self._rebuild_all()
+        return hit
+
     def _open_plugin_editor(self, track) -> None:
         """Open a plugin's own window, then save whatever was changed in it.
 
@@ -3645,12 +3672,7 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001
             state = ""
         if state and state != getattr(track, "plugin_state", ""):
-            self.bus.dispatch(SetTrackAttrCommand(track.id, "plugin_state", state))
-            pr = getattr(self, "plugin_renderer", None)
-            if pr is not None:
-                pr.invalidate(name)       # the patch changed; re-render its clips
-            self._warm()
-            self._rebuild_all()
+            self._resync_plugin_tracks(name)
             self.statusBar().showMessage(f"{name} patch saved with the project", 5000)
         else:
             self.statusBar().showMessage(f"{name} closed", 3000)
@@ -3671,7 +3693,12 @@ class MainWindow(QMainWindow):
                 rows = plg.describe(plugin, str(args.get("query", "")),
                                     int(args.get("limit", 40) or 40))
                 return {"params": rows, "shown": len(rows)}
-            return {"ok": True, **plg.set_param(plugin, str(args["name"]), args["value"])}
+            result = plg.set_param(plugin, str(args["name"]), args["value"])
+            # Changing a knob is only half the job: the clips were rendered with
+            # the old sound and would keep playing it. Save the new state on
+            # every track using this plugin, drop their cached audio, re-render.
+            touched = self._resync_plugin_tracks(str(args["plugin"]))
+            return {"ok": True, **result, "tracks_rerendered": touched}
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
 
