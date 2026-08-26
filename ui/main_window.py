@@ -1414,7 +1414,11 @@ class _AgentWorker(QThread):
             return self._convert_voice(args)  # neural VC, minutes long — worker only
         if name == "import_voicebank":
             return self._import_voicebank(args)  # copies ~400MB — worker only
-        if name in ("plugin_params", "set_plugin_param"):
+        if name in ("save_project", "open_project"):
+            return self._marshal(f"_proj_{name}", args)
+        if name in ("plugin_params", "set_plugin_param",
+                    "save_plugin_preset", "load_plugin_preset",
+                    "load_vital_preset"):
             # A plugin belongs to the thread that loaded it, so these run on the
             # UI thread rather than this worker.
             return self._marshal(f"_plugin_{name}", args)
@@ -3479,7 +3483,13 @@ class MainWindow(QMainWindow):
                 holder["result"] = self._agent_prep_sing_melody(args)
             elif name == "_add_vocal":
                 holder["result"] = self._agent_add_vocal(args)
-            elif name in ("_plugin_plugin_params", "_plugin_set_plugin_param"):
+            elif name == "_proj_save_project":
+                holder["result"] = self._agent_save_project(args)
+            elif name == "_proj_open_project":
+                holder["result"] = self._agent_open_project(args)
+            elif name in ("_plugin_plugin_params", "_plugin_set_plugin_param",
+                          "_plugin_save_plugin_preset", "_plugin_load_plugin_preset",
+                          "_plugin_load_vital_preset"):
                 holder["result"] = self._agent_plugin_tool(
                     name.replace("_plugin_", "", 1), args)
             elif name == "_prep_vocalfx":
@@ -3677,6 +3687,37 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage(f"{name} closed", 3000)
 
+    def _agent_save_project(self, args: dict):
+        """UI thread: write the document to disk, like File > Save."""
+        path = str(args.get("path") or self._current_path or "")
+        if not path:
+            return {"error": "project has never been saved; pass an explicit path"}
+        if not path.endswith(".fcp"):
+            path += ".fcp"
+        try:
+            save_project(self.project, path)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        self._current_path = path
+        self._project_label = os.path.basename(path)
+        self._set_dirty(False)
+        self._remember_path(path)
+        self.statusBar().showMessage(f"Saved {path}")
+        return {"ok": True, "path": path, "tracks": len(self.project.tracks)}
+
+    def _agent_open_project(self, args: dict):
+        """UI thread: replace the document, like File > Open."""
+        path = str(args.get("path", ""))
+        if not os.path.exists(path):
+            return {"error": f"no such project file: {path!r}"}
+        try:
+            self._load_project(load_project(path), path=path)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        self.statusBar().showMessage(f"Opened {path}")
+        return {"ok": True, "path": path, "tracks": len(self.project.tracks),
+                "tempo": self.project.tempo}
+
     def _agent_plugin_tool(self, name: str, args: dict):
         try:
             from fantasia_core import plugins as plg
@@ -3693,6 +3734,61 @@ class MainWindow(QMainWindow):
                 rows = plg.describe(plugin, str(args.get("query", "")),
                                     int(args.get("limit", 40) or 40))
                 return {"params": rows, "shown": len(rows)}
+            if name == "load_vital_preset":
+                from fantasia_core import presets as pre
+
+                try:
+                    patch = pre.read_vital_file(str(args["path"]))
+                except Exception as exc:  # noqa: BLE001
+                    return {"error": f"could not read {args['path']!r}: {exc}"}
+                template = plg.preset_bytes(plugin)
+                if not template:
+                    return {"error": "plugin returned no state to use as a template"}
+                try:
+                    blob = pre.splice_vital(template, patch)
+                except Exception as exc:  # noqa: BLE001
+                    return {"error": str(exc)}
+                if not plg.restore_preset(plugin, blob):
+                    return {"error": "plugin refused the spliced preset"}
+                touched = self._resync_plugin_tracks(str(args["plugin"]))
+                mods = [
+                    {"slot": f"modulation_{i}_amount", "source": m.get("source"),
+                     "destination": m.get("destination")}
+                    for i, m in enumerate(patch.get("settings", {}).get("modulations", []), 1)
+                    if m.get("source")
+                ]
+                return {"ok": True, "preset": patch.get("preset_name") or args["path"],
+                        "author": patch.get("author", ""), "style": patch.get("preset_style", ""),
+                        "tracks_rerendered": touched, "modulations": mods}
+            if name == "save_plugin_preset":
+                from fantasia_core import presets as pre
+
+                data = plg.preset_bytes(plugin)
+                if not data:
+                    return {"error": "plugin returned no state to save"}
+                saved = pre.save(str(args["plugin"]), str(args["name"]), data,
+                                 note=str(args.get("note", "")))
+                return {"ok": True, "slug": saved.slug, "name": saved.name,
+                        "plugin": saved.plugin, "bytes": saved.bytes}
+            if name == "load_plugin_preset":
+                from fantasia_core import presets as pre
+
+                saved = pre.get(str(args["slug"]))
+                if saved is None:
+                    return {"error": f"no preset with slug {args['slug']!r}"}
+                data = pre.read_bytes(saved.slug) or b""
+                if not plg.restore_preset(plugin, data):
+                    return {"error": "plugin refused the preset data"}
+                # Same contract as a knob change: the clips were rendered with the
+                # old patch, so re-render every track on this plugin.
+                touched = self._resync_plugin_tracks(str(args["plugin"]))
+                out = {"ok": True, "slug": saved.slug, "name": saved.name,
+                       "tracks_rerendered": touched}
+                if saved.plugin != str(args["plugin"]):
+                    out["note"] = (f"saved from {saved.plugin!r}, loaded onto "
+                                   f"{args['plugin']!r}; a different plugin FORMAT "
+                                   f"(VST3 vs AU) may reject the blob")
+                return out
             result = plg.set_param(plugin, str(args["name"]), args["value"])
             # Changing a knob is only half the job: the clips were rendered with
             # the old sound and would keep playing it. Save the new state on

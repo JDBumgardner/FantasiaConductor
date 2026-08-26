@@ -1,0 +1,544 @@
+{
+ "plugin": "Vital",
+ "formats": [
+  "VST3",
+  "AU"
+ ],
+ "verified": "2026-08-25",
+ "how_to_use": "Read this before calling set_plugin_param on Vital. It records which value FORMAT each parameter actually accepts, measured by setting and reading back. The tool docstring recommends the plugin's text form; for Vital that is wrong more often than it is right.",
+ "hosting_constraints": {
+  "one_instance_per_plugin_name": "Tracks that share the SAME plugin string share one instance and one patch, and a param change re-renders all of them. Use distinct path strings (see multiple_instances_via_path) when you need different sounds per track.",
+  "set_params_before_writing_clips": "Each set_plugin_param re-renders all Vital tracks. Do patch design while those tracks have no clips (tracks_rerendered: 0) \u2014 it is effectively free then and slow afterwards.",
+  "editor_crash": "Observed SIGSEGV in Vital's own GUI thread (SynthEditor::render(Canvas&) -> Renderer::run), which kills the whole app and any unsaved project. Triggered while a second client drove the same shared instance. Avoid driving Vital from two sessions at once, and prefer keeping its editor window closed during bulk clip writes.",
+  "multiple_instances_via_path": "IMPORTANT: the one-patch-per-name limit is avoidable. load() keys _LOADED on the exact string you pass, and uses it directly when os.path.exists() is true. So passing distinct PATH strings yields independent instances, each with its own patch, and set_track accepts a path in 'plugin'. Verified with three simultaneous Vital patches: name 'Vital' (VST3), '/Library/Audio/Plug-Ins/Components/Vital.component' (AU), and '/Library/Audio/Plug-Ins/VST3/./Vital.vst3' (same VST3 binary, different key string). Any path variant that still resolves gives another instance. Each re-renders only ITS OWN tracks, so per-track patches also make param changes much cheaper.",
+  "au_build_returns_blank_display": "The AU build ('...Vital.component') returns an empty 'value' string from set_plugin_param and plugin_params. Verify by 'raw' instead. The VST3 build returns proper display text.",
+  "au_cannot_be_snapshotted": "save_plugin_preset on the AU build ('.../Vital.component') fails with 'plugin returned no state to save' \u2014 preset_bytes comes back empty, same build that returns blank display strings. Use VST3 path variants for any instance you may want to clone or bank."
+ },
+ "value_format_rules": {
+  "default": "Send a raw 0-1 float. Then READ THE RETURNED 'value' \u2014 set_plugin_param echoes what the plugin actually stored, so a wrong format is visible immediately.",
+  "choice_and_switch": "Use raw 1.0 / 0.0. Text names FAIL SILENTLY: sending 'On' set the switch to Off and still returned ok:true.",
+  "percent_params": "Send a FRACTION, not a percent string or a raw: 0.48 -> '48%'. The stored raw is sqrt(fraction), so 0.48 reads back as raw 0.6928. A 'NN%' string also works on the VST3 build and is REQUIRED for reverb_size.",
+  "stepped_or_scaled": "transpose, unison voices, tempo divisions and filter cutoff all need raw 0-1; their text forms were misparsed by large factors.",
+  "time_params": "reverb_decay_time misparsed BOTH forms. Set by trial and read back.",
+  "envelope_times": "Two observed behaviours. TEXT-parsed: value maps linearly to seconds over 0-32s, so send seconds/32. RAW: value is the 0-1 parameter and the curve is exponential \u2014 raw 0.02 -> 5us, 0.25 -> 0.125s, 0.30 -> 0.259s, 0.33 -> 0.379s, 0.36 -> 0.537s, 0.44 -> 1.2s, 0.67 -> 6.4s. Probe to find which one you are in.",
+  "THE_BIG_CAVEAT": "set_plugin_param's value handling depends on the LOADED PATCH, not just the parameter. envelope_1_decay took 0.0375 as text and gave 1.20s on the default patch; the identical call on Physical Tension was taken as RAW and gave 2 nanoseconds \u2014 silent. There is no way to know in advance. ALWAYS read back the echoed 'value', and probe two or three points before trusting a mapping.",
+  "envelope_and_time_law": {
+   "solved_2026_08_25": "Envelope/LFO times follow an exact 4th-power law, which is what made the earlier guesses look contradictory. seconds = (json_value)**4 for the field inside the preset JSON, and seconds = 32*(raw)**4 for the 0-1 parameter. So json_value = 2.3784 * raw.",
+   "checks": [
+    "env_1_release json 0.5476 -> 0.5476**4 = 0.0899 s (plugin displays '0.0899194 secs', raw 0.2302; 32*0.2302**4 = 0.0899)",
+    "env_1_attack  json 0.1495 -> 0.000499 s",
+    "env_1_decay json 1.0 -> 1 s"
+   ],
+   "practical": "For a one-shot drum, sustain 1.0 and a release long enough that note-off does not truncate the sample. Release only matters up to the sample's own decay -- past that it changes nothing."
+  },
+  "choice_params_in_json_are_indices": {
+   "rule": "A stepped/menu parameter is stored in the preset JSON as its INDEX, not as the 0-1 raw and not as the display string.",
+   "checks": [
+    "lfo_1_sync json 1.0 = 'Tempo' (0 Seconds, 1 Tempo, 2 Tempo Dotted, 3 Tempo Triplets, 4 Keytrack)",
+    "lfo_1_tempo json 7.0 = '1/2' (0 Freeze, 1 32/1, 2 16/1, 3 8/1, 4 4/1, 5 2/1, 6 1/1, 7 1/2, 8 1/4, 9 1/8, 10 1/16, 11 1/32, 12 1/64)",
+    "lfo_1_sync_type json 0.0 = 'Trigger' (1 Sync, 2 Envelope, ...)"
+   ],
+   "how_to_enumerate": "Load the plugin, walk raw_value over i/(num_steps-1) and read string_value; the index is i."
+  }
+ },
+ "measured": [
+  {
+   "key": "oscillator_2_switch",
+   "send": 1.0,
+   "got": "On",
+   "text_form_fails": {
+    "sent": "On",
+    "got": "Off"
+   }
+  },
+  {
+   "key": "filter_1_switch",
+   "send": 1.0,
+   "got": "On",
+   "text_form_fails": {
+    "sent": "On",
+    "got": "Off"
+   }
+  },
+  {
+   "key": "chorus_switch",
+   "send": 1.0,
+   "got": "On",
+   "text_form_fails": {
+    "sent": "On",
+    "got": "Off"
+   }
+  },
+  {
+   "key": "delay_switch",
+   "send": 1.0,
+   "got": "On",
+   "text_form_fails": {
+    "sent": "On",
+    "got": "Off"
+   }
+  },
+  {
+   "key": "reverb_switch",
+   "send": 1.0,
+   "got": "On",
+   "text_form_fails": {
+    "sent": "On",
+    "got": "Off"
+   }
+  },
+  {
+   "key": "oscillator_1_unison_detune",
+   "send": 0.48,
+   "got": "48%",
+   "text_form_fails": {
+    "sent": "30%",
+    "got": "3000%"
+   }
+  },
+  {
+   "key": "oscillator_2_transpose",
+   "send": 0.375,
+   "got": "-12",
+   "text_form_fails": {
+    "sent": "-12",
+    "got": "-1200"
+   },
+   "note": "raw 0.5 = 0 semitones; range is +/-48 over 97 steps"
+  },
+  {
+   "key": "oscillator_2_unison_voices",
+   "send": 0.2,
+   "got": "4v",
+   "text_form_fails": {
+    "sent": "4v",
+    "got": "61v"
+   },
+   "note": "16 steps"
+  },
+  {
+   "key": "filter_1_cutoff",
+   "send": 0.76,
+   "got": "45.28 semitones",
+   "text_form_fails": {
+    "sent": "88 semitones",
+    "got": "11212 semitones"
+   },
+   "note": "raw 0.4062 = 0 semitones"
+  },
+  {
+   "key": "delay_tempo",
+   "send": 0.625,
+   "got": "1/8",
+   "text_form_fails": {
+    "sent": "1/8",
+    "got": "1/64"
+   },
+   "note": "9 steps"
+  },
+  {
+   "key": "reverb_size",
+   "send": "66%",
+   "got": "66%",
+   "raw_form_fails": {
+    "sent": 0.66,
+    "got": "0.66%"
+   }
+  },
+  {
+   "key": "reverb_decay_time",
+   "send": 1.6,
+   "got": "4.39805 secs",
+   "note": "UNRELIABLE both ways. '2 secs' -> 64 secs; raw 0.62 -> 5e-05 secs. raw 0.5 = 1 sec, roughly exponential."
+  },
+  {
+   "key": "filter_1_resonance",
+   "send": "32%",
+   "got": "32%"
+  },
+  {
+   "key": "chorus_mix",
+   "send": "34%",
+   "got": "34%"
+  },
+  {
+   "key": "delay_mix",
+   "send": "26%",
+   "got": "26%"
+  },
+  {
+   "key": "reverb_mix",
+   "send": "24%",
+   "got": "24%"
+  },
+  {
+   "key": "oscillator_2_level",
+   "send": 0.42,
+   "got": "0.42"
+  },
+  {
+   "key": "envelope_1_attack",
+   "send": 0.0375,
+   "got": "1.20001 secs",
+   "note": "seconds/32; sending 0.72 gave 23.04 secs"
+  },
+  {
+   "key": "envelope_1_release",
+   "send": 0.05,
+   "got": "1.60002 secs",
+   "note": "seconds/32"
+  },
+  {
+   "key": "oscillator_1_unison_voices",
+   "send": 0.6,
+   "got": "10v",
+   "note": "16 steps, raw passes through"
+  }
+ ],
+ "patches": {
+  "synthwave_supersaw": {
+   "description": "Wide detuned saw with a sub octave. Works as lead, arp and (an octave down) bass, which matters because all Vital tracks share one patch.",
+   "settings": [
+    [
+     "oscillator_1_unison_detune",
+     0.48
+    ],
+    [
+     "oscillator_2_switch",
+     1.0
+    ],
+    [
+     "oscillator_2_transpose",
+     0.375
+    ],
+    [
+     "oscillator_2_unison_voices",
+     0.2
+    ],
+    [
+     "oscillator_2_level",
+     0.42
+    ],
+    [
+     "filter_1_switch",
+     1.0
+    ],
+    [
+     "filter_1_cutoff",
+     0.76
+    ],
+    [
+     "filter_1_resonance",
+     "32%"
+    ],
+    [
+     "chorus_switch",
+     1.0
+    ],
+    [
+     "chorus_mix",
+     "34%"
+    ],
+    [
+     "delay_switch",
+     1.0
+    ],
+    [
+     "delay_tempo",
+     0.625
+    ],
+    [
+     "delay_mix",
+     "26%"
+    ],
+    [
+     "reverb_switch",
+     1.0
+    ],
+    [
+     "reverb_mix",
+     "24%"
+    ],
+    [
+     "reverb_size",
+     "66%"
+    ]
+   ],
+   "defaults_worth_keeping": [
+    "oscillator_1_unison_voices is 8v",
+    "oscillator_1_stereo_spread is 100%",
+    "filter_1_model is Analog"
+   ],
+   "instance": "Vital"
+  },
+  "synthwave_bass": {
+   "description": "Tight sub-heavy bass. Put on its own instance via the AU path so it does not share the lead's patch.",
+   "instance": "/Library/Audio/Plug-Ins/Components/Vital.component",
+   "settings": [
+    [
+     "oscillator_1_unison_voices",
+     0.07
+    ],
+    [
+     "oscillator_1_unison_detune",
+     0.22
+    ],
+    [
+     "oscillator_2_switch",
+     1.0
+    ],
+    [
+     "oscillator_2_transpose",
+     0.375
+    ],
+    [
+     "oscillator_2_level",
+     0.62
+    ],
+    [
+     "filter_1_switch",
+     1.0
+    ],
+    [
+     "filter_1_cutoff",
+     0.46
+    ],
+    [
+     "filter_1_resonance",
+     "38%"
+    ],
+    [
+     "envelope_1_attack",
+     0.0
+    ],
+    [
+     "envelope_1_release",
+     0.006
+    ],
+    [
+     "chorus_switch",
+     0.0
+    ],
+    [
+     "delay_switch",
+     0.0
+    ],
+    [
+     "reverb_switch",
+     0.0
+    ]
+   ]
+  },
+  "synthwave_pad": {
+   "description": "Wide slow-swelling pad with an octave-up second osc. Needs its own instance because its 1.2s attack would ruin lead and bass.",
+   "instance": "/Library/Audio/Plug-Ins/VST3/./Vital.vst3",
+   "settings": [
+    [
+     "oscillator_1_unison_voices",
+     0.6
+    ],
+    [
+     "oscillator_1_unison_detune",
+     0.55
+    ],
+    [
+     "oscillator_2_switch",
+     1.0
+    ],
+    [
+     "oscillator_2_transpose",
+     0.625
+    ],
+    [
+     "oscillator_2_level",
+     0.32
+    ],
+    [
+     "filter_1_switch",
+     1.0
+    ],
+    [
+     "filter_1_cutoff",
+     0.62
+    ],
+    [
+     "filter_1_resonance",
+     "18%"
+    ],
+    [
+     "envelope_1_attack",
+     0.0375
+    ],
+    [
+     "envelope_1_release",
+     0.05
+    ],
+    [
+     "chorus_switch",
+     1.0
+    ],
+    [
+     "chorus_mix",
+     "45%"
+    ],
+    [
+     "reverb_switch",
+     1.0
+    ],
+    [
+     "reverb_mix",
+     "42%"
+    ],
+    [
+     "reverb_size",
+     "80%"
+    ],
+    [
+     "delay_switch",
+     0.0
+    ]
+   ]
+  },
+  "percussion_kit": {
+   "description": "Four drum voices, one Vital instance each (a shared instance would force one patch on all of them). Preset choice verified against settings, not names.",
+   "voices": {
+    "kick": {
+     "preset": "Kick Drum 1 (afro)",
+     "play_note": "C4 / MIDI 60 \u2014 the patch transposes -27, sounding ~55 Hz",
+     "handles": "modulation_1_amount = lfo_1 -> osc_1_transpose (pitch-drop depth); modulation_3_amount = distortion drive"
+    },
+    "snare": {
+     "preset": "Physical Tension",
+     "play_note": "D3 / MIDI 50",
+     "envelope_1_decay": 0.3,
+     "fix_applied": "modulation_7_amount 0.5 (zero), filter_1_key_track 0.5"
+    },
+    "hats": {
+     "preset": "Physical Tension, retuned",
+     "play_note": "A5 / MIDI 81",
+     "envelope_1_decay": 0.22,
+     "envelope_1_release": 0.2,
+     "note": "same preset as the snare on a separate instance; only the envelope differs",
+     "fix_applied": "modulation_7_amount 0.5 (zero), filter_1_key_track 0.5"
+    },
+    "anvil": {
+     "preset": "Metal Head (Yuli Yolo)",
+     "play_note": "G4 / MIDI 67"
+    }
+   }
+  },
+  "synthesized_drum_oneshots": {
+   "why": "Vital's own percussion presets are tonal instruments with sustain envelopes; EQ cannot turn one into a drum. Synthesizing the sample and injecting it into the SMP slot gives an actual drum, and the patch around it is trivial.",
+   "shared_patch": {
+    "sample_on": 1,
+    "sample_loop": 0,
+    "sample_keytrack": 0,
+    "osc_1_on": 0,
+    "osc_2_on": 0,
+    "osc_3_on": 0,
+    "all_fx_on": 0,
+    "env_1_attack": 0,
+    "env_1_sustain": 1,
+    "env_1_release": "1.0 (= 1 s, longer than any of these samples)",
+    "velocity_track": "0.4-0.7; 0.8 made 52-72 velocity hats inaudible"
+   },
+   "recipes": {
+    "anvil": "Free-free bar modes at ratios 1 : 2.76 : 5.40 : 8.93 : 13.34 : 18.64 off f0=524 Hz, the 2.76 mode loudest, plus ~58 dense modes 700-13500 Hz, plus a 4 ms noise transient band-passed 1.8-10.5 kHz. Per-mode T60 falls with frequency. The inharmonic ratios are what stop it reading as a pitched pipe.",
+    "kick": "Sine swept 134->46 Hz with a 28 ms time constant, amp decay 0.15 s, plus a 2nd harmonic at 0.22. Saturate the BODY only (tanh 1.7), then add the click -- saturating after burying it flattens the attack to nothing.",
+    "snare": "Shell modes 186 + 331 Hz (decay 0.095 s), noise body 190-6500 Hz, buzz 2.4-10 kHz (decay 0.115 s), 8 ms click. Aim for roughly 16% low / 23% mid / 60% high band energy; all-sizzle reads as thin.",
+    "hat": "The six 808 square frequencies 205.3, 304.4, 369.6, 522.7, 540, 800 Hz, high-passed at 6.8 kHz, decay 0.032 s, plus 30% noise."
+   },
+   "measured_balance_2026_08_25": "Rendered offline at the mixer gains: kick 0 dB reference, snare -3.9 dB peak, hats -5.9, anvil -4.7. Judging by RMS alone is misleading for short sounds -- hats measured -32 dB RMS while sounding fine on peaks."
+  },
+  "morphing_wavetable": {
+   "goal": "Add movement to a static patch without changing the sound it already has.",
+   "method": "FFT the existing keyframe-0 cycle, keep its phases, and build N frames by multiplying harmonic h by h**(tilt*f) for f = 0..1, plus a Gaussian formant bump that walks up the harmonic index. Normalize every frame to the ORIGINAL's RMS so morphing does not change level. Frame 0 is then identical to what was there, so modulation can only add richness.",
+   "wiring": "keyframes at position 0..255; component interpolation 1, interpolation_style 1. Route lfo_1 -> osc_N_wave_frame for slow movement (lfo_1_sync 1 'Tempo', tempo index 2-4 = 16/1..4/1, sync_type 1 'Sync' so voices move together) and velocity -> osc_N_wave_frame for touch.",
+   "trap": "Morph EVERY oscillator that is on. Morphing only osc_1 while osc_2 carried an equal level of plain Init wavetable moved the spectral centroid 1.5% -- inaudible. Morphing both moved it 18-44%."
+  }
+ },
+ "preset_library": {
+  "location": "~/Music/Vital/<author>/Presets/*.vital  (75 files installed)",
+  "format": "A .vital file is PLAIN JSON. Read it directly to learn a patch before or without loading it \u2014 settings.modulations lists every routing as {source, destination}, and its index+1 is the modulation_N_amount parameter that drives it. This is the only way to discover routings, since modulation source/destination are NOT exposed as parameters.",
+  "percussion_presets": [
+   "Kick Drum 1 (afro)",
+   "Physical Tension (Navi Retlav)",
+   "Metal Head (Yuli Yolo)",
+   "FM Drum Circle (Matt Tytel)",
+   "DIY (Yuli Yolo)",
+   "Easy Mallet (Yuli Yolo)"
+  ],
+  "picking_a_percussion_patch": "Judge by settings, not name. A one-shot hit has env_1_sustain 0 with a short decay (Physical Tension: A=0 D=0.274 S=0 R=0). Sustain 1.0 means it drones and is not a drum. Velocity->osc_1_level and velocity->filter_1_cutoff routings mean ghost notes will actually read as softer and darker.",
+  "double_pitch_tracking_trap": "Some presets add a 'note -> osc_1_transpose' modulation ON TOP of osc_1_midi_track, which is already on. Pitch then tracks the keyboard TWICE and notes sound about an octave high and thin \u2014 heard as a squeak or ping when used for drums. Physical Tension does this at modulation_7_amount = 1.0, with filter_1_keytrack = 1.0 opening the filter as well. Fix: set that modulation amount to raw 0.5 (= amount 0) and filter_1_key_track to 0.5. ALWAYS scan a percussion preset's routings for a note->pitch destination before writing a part to it."
+ },
+ "vstpreset_container": {
+  "why": "pedalboard.load_preset only accepts .vstpreset, and Vital's raw_state is an opaque 'VC3!' blob. But preset_data is a JUCE VST3 container that wraps the .vital JSON verbatim, so a preset can be built by swapping that JSON. fantasia_core.presets.splice_vital does this.",
+  "layout": {
+   "[0:4]": "'VST3'",
+   "[4:8]": "int32 version",
+   "[8:40]": "class id, 32 ascii chars",
+   "[40:48]": "int64 LITTLE-endian offset of the chunk list",
+   "[48:224]": "JUCE preamble: 'VstW' hdr, then a VST2 FXB header \u2014 'CcnK' + int32 BIG-endian byteSize, 'FBCh', version, fxID 'Vita', fxVersion, numPrograms, future[128], then int32 BIG-endian chunkSize as the LAST 4 bytes",
+   "[224:json_end]": "the .vital JSON",
+   "[json_end:list_off]": "32 bytes of component-chunk padding, keep verbatim",
+   "[list_off:]": "'List' + int32 count + per entry: 4-byte id, int64 offset, int64 size. Entries are ('Comp', 48, size) and ('Cont', list_off, 0)."
+  },
+  "five_fields_to_shift_by_delta": [
+   "header int64 at [40:48] (offsetToChunkList) \u2014 little-endian",
+   "chunk-list 'Comp' entry size \u2014 little-endian",
+   "chunk-list 'Cont' entry offset \u2014 little-endian",
+   "FXB 'CcnK' byteSize at preamble+4 after the magic \u2014 BIG-endian",
+   "FXB chunkSize, the last 4 bytes of the preamble \u2014 BIG-endian"
+  ],
+  "failure_mode": "Miss either BIG-endian field and restore_preset returns True while the plugin silently keeps its previous patch. Always verify by reading back a parameter the new patch changes (osc_1_transpose is a good probe).",
+  "sizes_seen": "Kick Drum 1 175KB, Physical Tension 164KB, Metal Head 943KB. Padding-to-fit only works for patches smaller than the template; resizing the container handles any size."
+ },
+ "parameter_catalog": {
+  "file": "vital_params.json",
+  "what": "All 903 parameters: key, display name, JSON field name, init value, raw value, type, steps, unit, group.",
+  "why_the_json_column_matters": "256 of the 903 have a DIFFERENT name inside the preset JSON than the name set_plugin_param takes. Writing the parameter name into the JSON adds a dead key the plugin ignores, and the real field keeps its old value -- no error. This cost a rendering: osc_1_on written as 'oscillator_1_switch' left the oscillator on and its saw drowned the sample under test.",
+  "groups": {
+   "oscillator_N": 30,
+   "filter_N": 16,
+   "lfo_N": 12,
+   "envelope_N": 9,
+   "modulation_N": 7,
+   "sample": 11,
+   "eq": 13,
+   "reverb": 13,
+   "chorus": 12,
+   "delay": 12,
+   "phaser": 10,
+   "flanger": 9,
+   "compressor": 8,
+   "distortion": 8,
+   "global": 70
+  }
+ },
+ "capability_boundary": {
+  "summary": "Vital's PARAMETER surface is knobs only. It carries no wiring and no assets: there is no parameter for a modulation's source or destination, for which wavetable an oscillator holds, for which file is in the sample slot, or for an LFO's drawn shape. Through set_plugin_param alone, those four are UI-only.",
+  "but_the_preset_json_carries_all_four": "They live in the .vital JSON, which splice_vital rewrites into a loadable VST3 blob. All four were authored from scratch and verified against a live plugin -- so nothing in Vital is actually UI-only. The editor is a convenience, not a requirement.",
+  "verified_2026_08_25": {
+   "modulation_routing": "settings.modulations is a 64-entry list of {source, destination}; slot N maps to modulation_(N+1)_amount. Wrote {'source':'lfo_1','destination':'filter_1_cutoff'} into an empty slot 0; the plugin reported it back.",
+   "wavetable": "settings.wavetables[osc].groups[0].components[0].keyframes[k].wave_data is base64 of 2048 float32 LE, range -1..1, one cycle. Generated a table of odd harmonics only; the render came back with partials at h1,3,5,7,9,11,13 and no even ones. Multiple keyframes at different 'position' values are what osc_N_wave_frame morphs through.",
+   "sample": "settings.sample = {name, length, sample_rate, samples}, where samples is base64 of int16 LE MONO, exactly 'length' of them. Injected a 300 Hz sine; with sample_keytrack 0 it rendered at 300.0 Hz regardless of note played. This makes Vital a fully agent-drivable sampler.",
+   "lfo_shape": "settings.lfos[N] = {name, num_points, points, powers, smooth}. points is a FLAT [x0,y0,x1,y1,...] list in 0..1, powers is one curve value per point (0 = linear). The stock Triangle is num_points 3, points [0,1, 0.5,0, 1,1]. Trivial to author -- no encoding involved."
+  },
+  "still_genuinely_UI_only": [
+   "Seeing and hearing the result -- the editor is the only visual feedback.",
+   "Vital's own preset browser metadata (tags, ratings) beyond author/name/style."
+  ],
+  "init_patch_already_holds_white_noise": "settings.sample is 'White Noise' (44100 int16) in the init patch with sample_on 0. A noise drum needs no file load at all -- just sample_on 1, sample_loop 0, sample_keytrack 0. This is how DT Snare and DT Hat were built."
+ },
+ "json_authoring_recipe": {
+  "steps": [
+   "1. tmpl = presets.read_bytes('vital_init')  (or any banked .vstpreset)",
+   "2. patch, _ = json.JSONDecoder().raw_decode(tmpl[presets.JSON_START:].decode('utf-8','replace'))",
+   "3. edit patch['settings'] -- USE THE 'json' COLUMN of vital_params.json for names",
+   "4. blob = presets.splice_vital(tmpl, patch)",
+   "5. presets.save('Vital', name, blob) then load_plugin_preset, OR set preset_data directly"
+  ],
+  "always_verify": "Snapshot the plugin back with save_plugin_preset and re-read the JSON. Both restore_preset and load_plugin_preset return ok/True on a blob the plugin then ignores; the readback is the only honest check. For audio, render and FFT.",
+  "instance_paths_are_not_free": "A distinct path string is a distinct instance, but check list_tracks first -- '/Library/Audio/Plug-Ins/VST3/./././././Vital.vst3' looked unused and was Vital Hats. Loading a test preset onto it overwrote the patch (the call even reported tracks_rerendered: 1, which is the tell)."
+ }
+}

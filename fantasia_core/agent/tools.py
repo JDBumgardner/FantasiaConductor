@@ -210,6 +210,28 @@ class AgentTools:
              "input_schema": {"type": "object", "required": ["plugin", "name", "value"], "properties": {
                  "plugin": {"type": "string"}, "name": {"type": "string"},
                  "value": {"description": "text like '880 Hz', or a number 0-1"}}}},
+            {"name": "list_plugin_presets", "description": "List saved plugin presets — whole patches captured from a plugin's own window and recallable by name. This is how a sound that CANNOT be built from parameters alone becomes available: Vital's modulation routings, wavetable choices and sample slots are not automatable parameters, so an agent can tune a knob but cannot invent a routing. Pass 'plugin' to filter to one plugin's presets.",
+             "input_schema": {"type": "object", "properties": {
+                 "plugin": {"type": "string", "description": "only presets saved from this plugin"}}}},
+            {"name": "save_plugin_preset", "description": "Snapshot a plugin's CURRENT patch — every routing, wavetable and knob — under a name, so it can be recalled later with load_plugin_preset. Call this right after the user finishes building a sound in the plugin's own window. Record in 'note' which modulation slot carries which routing, since that is exactly what cannot be discovered by reading parameters.",
+             "input_schema": {"type": "object", "required": ["plugin", "name"], "properties": {
+                 "plugin": {"type": "string", "description": "plugin name or path, as used on the track"},
+                 "name": {"type": "string", "description": "what to call it, e.g. 'DT Kick'"},
+                 "note": {"type": "string", "description": "what the patch contains, especially modulation_N -> destination"}}}},
+            {"name": "load_plugin_preset", "description": "Recall a saved preset onto a plugin, replacing its whole patch, and re-render every track using it. Use the 'slug' from list_plugin_presets. Once loaded, any modulation routing the patch carries is drivable through set_plugin_param as modulation_N_amount.",
+             "input_schema": {"type": "object", "required": ["plugin", "slug"], "properties": {
+                 "plugin": {"type": "string", "description": "plugin name or path to load it onto"},
+                 "slug": {"type": "string", "description": "preset slug from list_plugin_presets"}}}},
+            {"name": "load_vital_preset", "description": "Load a Vital .vital preset FILE onto a Vital track. Vital's own presets are JSON and carry things parameters cannot express — modulation routings, wavetables, sample slots — so this is how a factory sound like 'Kick Drum 1' becomes available. After loading, read the .vital JSON to learn which modulation_N slot holds which routing; those amounts are then drivable with set_plugin_param.",
+             "input_schema": {"type": "object", "required": ["plugin", "path"], "properties": {
+                 "plugin": {"type": "string", "description": "Vital instance name or path, as used on the track"},
+                 "path": {"type": "string", "description": "path to a .vital file, e.g. ~/Music/Vital/Afro/Presets/Kick Drum 1.vital"}}}},
+            {"name": "save_project", "description": "Save the project to a .fcp file. With no path, saves over the file it was opened from. This is the ONLY way to persist work: the document lives in memory and closing the app discards it.",
+             "input_schema": {"type": "object", "properties": {
+                 "path": {"type": "string", "description": "where to write it; omit to save over the current file"}}}},
+            {"name": "open_project", "description": "Open a .fcp project file, replacing whatever is loaded. Unsaved changes in the current project are lost, so save_project first.",
+             "input_schema": {"type": "object", "required": ["path"], "properties": {
+                 "path": {"type": "string", "description": "path to a .fcp file"}}}},
             {"name": "import_voicebank", "description": "Install a DiffSinger singing voicebank from a folder or .zip on disk. Handles the layouts banks ship in, unwraps a pack whose payload is another zip, and borrows a compatible vocoder from an installed bank if the new one did not include its own. Returns the installed bank; 'note' says if anything still needs attention.",
              "input_schema": {"type": "object", "required": ["path"], "properties": {
                  "path": {"type": "string", "description": "folder or .zip to install"},
@@ -481,7 +503,15 @@ class AgentTools:
                         "searched " + ", ".join(str(p) for p in plg.search_paths())}
             return {"plugins": [{"name": p.name, "format": p.format,
                                  "instrument": p.is_instrument} for p in found]}
-        if name in ("plugin_params", "set_plugin_param"):
+        if name == "list_plugin_presets":
+            from fantasia_core import presets as pre
+
+            rows = pre.list_presets(args.get("plugin") or None)
+            return {"presets": [{"slug": r.slug, "name": r.name, "plugin": r.plugin,
+                                 "bytes": r.bytes, "note": r.note} for r in rows]}
+        if name in ("plugin_params", "set_plugin_param",
+                    "save_plugin_preset", "load_plugin_preset",
+                    "load_vital_preset", "save_project", "open_project"):
             return {"error": f"{name} must be run off the UI thread"}
         if name == "list_voicebanks":
             from fantasia_core import svs

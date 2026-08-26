@@ -1,0 +1,8027 @@
+{
+ "_comment": "Vital 1.6.4 complete parameter catalog. Generated from a live plugin instance plus the init patch JSON. 'key' is what set_plugin_param takes; 'json' is the field name inside a .vital / spliced preset -- they differ for 256 of the 903, and a JSON edit under the WRONG name silently no-ops.",
+ "synth_version": "1.6.4",
+ "count": 903,
+ "renamed_between_param_and_json": 256,
+ "rename_rules": [
+  "oscillator_N_* -> osc_N_*            (and _switch -> _on)",
+  "envelope_N_*   -> env_N_*",
+  "random_lfo_N_* -> random_N_*         (transpose/tune -> keytrack_transpose/keytrack_tune)",
+  "lfo_N_delay    -> lfo_N_delay_time ; lfo_N_fade_in -> lfo_N_fade_time",
+  "lfo_N_transpose/tune -> lfo_N_keytrack_transpose/keytrack_tune",
+  "macro_N        -> macro_control_N",
+  "<fx>_switch    -> <fx>_on ; <fx>_mix -> <fx>_dry_wet",
+  "filter_*_key_track -> filter_*_keytrack",
+  "filter_*_comb_blend_offset -> filter_*_blend_transpose",
+  "oscillator_N_frequency_morph_* -> osc_N_spectral_morph_*",
+  "oscillator_N_blend -> osc_N_unison_blend ; _phase_randomization -> _random_phase",
+  "oscillator_N_unison_frame_spread -> osc_N_frame_spread",
+  "chorus_filter_(cutoff|spread) -> chorus_\\1",
+  "reverb_(low|high)_(cutoff|gain) -> reverb_\\1_shelf_\\2",
+  "delay_(frequency|sync|tempo)_2 -> delay_aux_\\1",
+  "(band|high|low)_(lower|upper)_(ratio|threshold) -> compressor_\\1_\\2_\\3"
+ ],
+ "parameters": [
+  {
+   "key": "band_lower_ratio",
+   "name": "Band Lower Ratio",
+   "json": "compressor_band_lower_ratio",
+   "init": "0.8",
+   "raw": 0.9,
+   "group": "global"
+  },
+  {
+   "key": "band_lower_threshold",
+   "name": "Band Lower Threshold",
+   "json": "compressor_band_lower_threshold",
+   "init": "-36 dB",
+   "raw": 0.55,
+   "group": "global",
+   "unit": "dB"
+  },
+  {
+   "key": "band_upper_ratio",
+   "name": "Band Upper Ratio",
+   "json": "compressor_band_upper_ratio",
+   "init": "0.857",
+   "raw": 0.857,
+   "group": "global"
+  },
+  {
+   "key": "band_upper_threshold",
+   "name": "Band Upper Threshold",
+   "json": "compressor_band_upper_threshold",
+   "init": "-25 dB",
+   "raw": 0.6875,
+   "group": "global",
+   "unit": "dB"
+  },
+  {
+   "key": "beats_per_minute",
+   "name": "Beats Per Minute",
+   "json": "beats_per_minute",
+   "init": "120",
+   "raw": 0.3571,
+   "group": "global"
+  },
+  {
+   "key": "bypass",
+   "name": "Bypass",
+   "json": "bypass",
+   "init": "0",
+   "raw": 0.0,
+   "group": "global",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "chorus_delay_1",
+   "name": "Chorus Delay 1",
+   "json": "chorus_delay_1",
+   "init": "1.95312ms",
+   "raw": 0.2296,
+   "group": "chorus",
+   "unit": "ms"
+  },
+  {
+   "key": "chorus_delay_2",
+   "name": "Chorus Delay 2",
+   "json": "chorus_delay_2",
+   "init": "7.8125 ms",
+   "raw": 0.6887,
+   "group": "chorus",
+   "unit": "ms"
+  },
+  {
+   "key": "chorus_feedback",
+   "name": "Chorus Feedback",
+   "json": "chorus_feedback",
+   "init": "40%",
+   "raw": 0.7105,
+   "group": "chorus",
+   "unit": "%"
+  },
+  {
+   "key": "chorus_filter_cutoff",
+   "name": "Chorus Filter Cutoff",
+   "json": "chorus_cutoff",
+   "init": "60",
+   "raw": 0.4062,
+   "group": "chorus"
+  },
+  {
+   "key": "chorus_filter_spread",
+   "name": "Chorus Filter Spread",
+   "json": "chorus_spread",
+   "init": "1",
+   "raw": 1.0,
+   "group": "chorus"
+  },
+  {
+   "key": "chorus_frequency",
+   "name": "Chorus Frequency",
+   "json": "chorus_frequency",
+   "init": "8 s",
+   "raw": 0.3333,
+   "group": "chorus"
+  },
+  {
+   "key": "chorus_mix",
+   "name": "Chorus Mix",
+   "json": "chorus_dry_wet",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "chorus",
+   "unit": "%"
+  },
+  {
+   "key": "chorus_mod_depth",
+   "name": "Chorus Mod Depth",
+   "json": "chorus_mod_depth",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "chorus",
+   "unit": "%"
+  },
+  {
+   "key": "chorus_switch",
+   "name": "Chorus Switch",
+   "json": "chorus_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "chorus",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "chorus_sync",
+   "name": "Chorus Sync",
+   "json": "chorus_sync",
+   "init": "Tempo",
+   "raw": 0.3333,
+   "group": "chorus",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "chorus_tempo",
+   "name": "Chorus Tempo",
+   "json": "chorus_tempo",
+   "init": "4/1",
+   "raw": 0.4,
+   "group": "chorus",
+   "type": "choice",
+   "steps": 11
+  },
+  {
+   "key": "chorus_voices",
+   "name": "Chorus Voices",
+   "json": "chorus_voices",
+   "init": "16",
+   "raw": 1.0,
+   "group": "chorus",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "compressor_attack",
+   "name": "Compressor Attack",
+   "json": "compressor_attack",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "compressor",
+   "unit": "%"
+  },
+  {
+   "key": "compressor_band_gain",
+   "name": "Compressor Band Gain",
+   "json": "compressor_band_gain",
+   "init": "11.7 dB",
+   "raw": 0.695,
+   "group": "compressor",
+   "unit": "dB"
+  },
+  {
+   "key": "compressor_enabled_bands",
+   "name": "Compressor Enabled Bands",
+   "json": "compressor_enabled_bands",
+   "init": "Multiband",
+   "raw": 0.0,
+   "group": "compressor",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "compressor_high_gain",
+   "name": "Compressor High Gain",
+   "json": "compressor_high_gain",
+   "init": "16.3 dB",
+   "raw": 0.7717,
+   "group": "compressor",
+   "unit": "dB"
+  },
+  {
+   "key": "compressor_low_gain",
+   "name": "Compressor Low Gain",
+   "json": "compressor_low_gain",
+   "init": "16.3 dB",
+   "raw": 0.7717,
+   "group": "compressor",
+   "unit": "dB"
+  },
+  {
+   "key": "compressor_mix",
+   "name": "Compressor Mix",
+   "json": "compressor_mix",
+   "init": "1",
+   "raw": 1.0,
+   "group": "compressor"
+  },
+  {
+   "key": "compressor_release",
+   "name": "Compressor Release",
+   "json": "compressor_release",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "compressor",
+   "unit": "%"
+  },
+  {
+   "key": "compressor_switch",
+   "name": "Compressor Switch",
+   "json": "compressor_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "compressor",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "delay_feedback",
+   "name": "Delay Feedback",
+   "json": "delay_feedback",
+   "init": "50%",
+   "raw": 0.75,
+   "group": "delay",
+   "unit": "%"
+  },
+  {
+   "key": "delay_filter_cutoff",
+   "name": "Delay Filter Cutoff",
+   "json": "delay_filter_cutoff",
+   "init": "60",
+   "raw": 0.4062,
+   "group": "delay"
+  },
+  {
+   "key": "delay_filter_spread",
+   "name": "Delay Filter Spread",
+   "json": "delay_filter_spread",
+   "init": "1",
+   "raw": 1.0,
+   "group": "delay"
+  },
+  {
+   "key": "delay_frequency",
+   "name": "Delay Frequency",
+   "json": "delay_frequency",
+   "init": "0.25 secs",
+   "raw": 0.3636,
+   "group": "delay"
+  },
+  {
+   "key": "delay_frequency_2",
+   "name": "Delay Frequency 2",
+   "json": "delay_aux_frequency",
+   "init": "0.25 s",
+   "raw": 0.3636,
+   "group": "delay"
+  },
+  {
+   "key": "delay_mix",
+   "name": "Delay Mix",
+   "json": "delay_dry_wet",
+   "init": "33.34%",
+   "raw": 0.3334,
+   "group": "delay",
+   "unit": "%"
+  },
+  {
+   "key": "delay_style",
+   "name": "Delay Style",
+   "json": "delay_style",
+   "init": "Mono",
+   "raw": 0.0,
+   "group": "delay",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "delay_switch",
+   "name": "Delay Switch",
+   "json": "delay_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "delay",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "delay_sync",
+   "name": "Delay Sync",
+   "json": "delay_sync",
+   "init": "Tempo",
+   "raw": 0.3333,
+   "group": "delay",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "delay_sync_2",
+   "name": "Delay Sync 2",
+   "json": "delay_aux_sync",
+   "init": "Tempo",
+   "raw": 0.3333,
+   "group": "delay",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "delay_tempo",
+   "name": "Delay Tempo",
+   "json": "delay_tempo",
+   "init": "1/8",
+   "raw": 0.625,
+   "group": "delay",
+   "type": "choice",
+   "steps": 9
+  },
+  {
+   "key": "delay_tempo_2",
+   "name": "Delay Tempo 2",
+   "json": "delay_aux_tempo",
+   "init": "1/8",
+   "raw": 0.625,
+   "group": "delay",
+   "type": "choice",
+   "steps": 9
+  },
+  {
+   "key": "distortion_drive",
+   "name": "Distortion Drive",
+   "json": "distortion_drive",
+   "init": "0 dB",
+   "raw": 0.5,
+   "group": "distortion",
+   "unit": "dB"
+  },
+  {
+   "key": "distortion_filter_blend",
+   "name": "Distortion Filter Blend",
+   "json": "distortion_filter_blend",
+   "init": "0",
+   "raw": 0.0,
+   "group": "distortion"
+  },
+  {
+   "key": "distortion_filter_cutoff",
+   "name": "Distortion Filter Cutoff",
+   "json": "distortion_filter_cutoff",
+   "init": "80 semitones",
+   "raw": 0.5625,
+   "group": "distortion"
+  },
+  {
+   "key": "distortion_filter_order",
+   "name": "Distortion Filter Order",
+   "json": "distortion_filter_order",
+   "init": "None",
+   "raw": 0.0,
+   "group": "distortion",
+   "type": "choice",
+   "steps": 3
+  },
+  {
+   "key": "distortion_filter_resonance",
+   "name": "Distortion Filter Resonance",
+   "json": "distortion_filter_resonance",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "distortion",
+   "unit": "%"
+  },
+  {
+   "key": "distortion_mix",
+   "name": "Distortion Mix",
+   "json": "distortion_mix",
+   "init": "1",
+   "raw": 1.0,
+   "group": "distortion"
+  },
+  {
+   "key": "distortion_switch",
+   "name": "Distortion Switch",
+   "json": "distortion_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "distortion",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "distortion_type",
+   "name": "Distortion Type",
+   "json": "distortion_type",
+   "init": "Soft Clip",
+   "raw": 0.0,
+   "group": "distortion",
+   "type": "choice",
+   "steps": 6
+  },
+  {
+   "key": "effect_chain_order",
+   "name": "Effect Chain Order",
+   "json": "effect_chain_order",
+   "init": "0",
+   "raw": 0.0,
+   "group": "global"
+  },
+  {
+   "key": "envelope_1_attack",
+   "name": "Envelope 1 Attack",
+   "json": "env_1_attack",
+   "init": "0.000499534 secs",
+   "raw": 0.0629,
+   "group": "envelope_1"
+  },
+  {
+   "key": "envelope_1_attack_power",
+   "name": "Envelope 1 Attack Power",
+   "json": "env_1_attack_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "envelope_1"
+  },
+  {
+   "key": "envelope_1_decay",
+   "name": "Envelope 1 Decay",
+   "json": "env_1_decay",
+   "init": "1 secs",
+   "raw": 0.4204,
+   "group": "envelope_1"
+  },
+  {
+   "key": "envelope_1_decay_power",
+   "name": "Envelope 1 Decay Power",
+   "json": "env_1_decay_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_1"
+  },
+  {
+   "key": "envelope_1_delay",
+   "name": "Envelope 1 Delay",
+   "json": "env_1_delay",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_1"
+  },
+  {
+   "key": "envelope_1_hold",
+   "name": "Envelope 1 Hold",
+   "json": "env_1_hold",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_1"
+  },
+  {
+   "key": "envelope_1_release",
+   "name": "Envelope 1 Release",
+   "json": "env_1_release",
+   "init": "0.0899194 secs",
+   "raw": 0.2302,
+   "group": "envelope_1"
+  },
+  {
+   "key": "envelope_1_release_power",
+   "name": "Envelope 1 Release Power",
+   "json": "env_1_release_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_1"
+  },
+  {
+   "key": "envelope_1_sustain",
+   "name": "Envelope 1 Sustain",
+   "json": "env_1_sustain",
+   "init": "1",
+   "raw": 1.0,
+   "group": "envelope_1"
+  },
+  {
+   "key": "envelope_2_attack",
+   "name": "Envelope 2 Attack",
+   "json": "env_2_attack",
+   "init": "0.000499534 secs",
+   "raw": 0.0629,
+   "group": "envelope_2"
+  },
+  {
+   "key": "envelope_2_attack_power",
+   "name": "Envelope 2 Attack Power",
+   "json": "env_2_attack_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "envelope_2"
+  },
+  {
+   "key": "envelope_2_decay",
+   "name": "Envelope 2 Decay",
+   "json": "env_2_decay",
+   "init": "1 secs",
+   "raw": 0.4204,
+   "group": "envelope_2"
+  },
+  {
+   "key": "envelope_2_decay_power",
+   "name": "Envelope 2 Decay Power",
+   "json": "env_2_decay_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_2"
+  },
+  {
+   "key": "envelope_2_delay",
+   "name": "Envelope 2 Delay",
+   "json": "env_2_delay",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_2"
+  },
+  {
+   "key": "envelope_2_hold",
+   "name": "Envelope 2 Hold",
+   "json": "env_2_hold",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_2"
+  },
+  {
+   "key": "envelope_2_release",
+   "name": "Envelope 2 Release",
+   "json": "env_2_release",
+   "init": "0.0899194 secs",
+   "raw": 0.2302,
+   "group": "envelope_2"
+  },
+  {
+   "key": "envelope_2_release_power",
+   "name": "Envelope 2 Release Power",
+   "json": "env_2_release_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_2"
+  },
+  {
+   "key": "envelope_2_sustain",
+   "name": "Envelope 2 Sustain",
+   "json": "env_2_sustain",
+   "init": "1",
+   "raw": 1.0,
+   "group": "envelope_2"
+  },
+  {
+   "key": "envelope_3_attack",
+   "name": "Envelope 3 Attack",
+   "json": "env_3_attack",
+   "init": "0.000499534 secs",
+   "raw": 0.0629,
+   "group": "envelope_3"
+  },
+  {
+   "key": "envelope_3_attack_power",
+   "name": "Envelope 3 Attack Power",
+   "json": "env_3_attack_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "envelope_3"
+  },
+  {
+   "key": "envelope_3_decay",
+   "name": "Envelope 3 Decay",
+   "json": "env_3_decay",
+   "init": "1 secs",
+   "raw": 0.4204,
+   "group": "envelope_3"
+  },
+  {
+   "key": "envelope_3_decay_power",
+   "name": "Envelope 3 Decay Power",
+   "json": "env_3_decay_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_3"
+  },
+  {
+   "key": "envelope_3_delay",
+   "name": "Envelope 3 Delay",
+   "json": "env_3_delay",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_3"
+  },
+  {
+   "key": "envelope_3_hold",
+   "name": "Envelope 3 Hold",
+   "json": "env_3_hold",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_3"
+  },
+  {
+   "key": "envelope_3_release",
+   "name": "Envelope 3 Release",
+   "json": "env_3_release",
+   "init": "0.0899194 secs",
+   "raw": 0.2302,
+   "group": "envelope_3"
+  },
+  {
+   "key": "envelope_3_release_power",
+   "name": "Envelope 3 Release Power",
+   "json": "env_3_release_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_3"
+  },
+  {
+   "key": "envelope_3_sustain",
+   "name": "Envelope 3 Sustain",
+   "json": "env_3_sustain",
+   "init": "1",
+   "raw": 1.0,
+   "group": "envelope_3"
+  },
+  {
+   "key": "envelope_4_attack",
+   "name": "Envelope 4 Attack",
+   "json": "env_4_attack",
+   "init": "0.000499534 secs",
+   "raw": 0.0629,
+   "group": "envelope_4"
+  },
+  {
+   "key": "envelope_4_attack_power",
+   "name": "Envelope 4 Attack Power",
+   "json": "env_4_attack_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "envelope_4"
+  },
+  {
+   "key": "envelope_4_decay",
+   "name": "Envelope 4 Decay",
+   "json": "env_4_decay",
+   "init": "1 secs",
+   "raw": 0.4204,
+   "group": "envelope_4"
+  },
+  {
+   "key": "envelope_4_decay_power",
+   "name": "Envelope 4 Decay Power",
+   "json": "env_4_decay_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_4"
+  },
+  {
+   "key": "envelope_4_delay",
+   "name": "Envelope 4 Delay",
+   "json": "env_4_delay",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_4"
+  },
+  {
+   "key": "envelope_4_hold",
+   "name": "Envelope 4 Hold",
+   "json": "env_4_hold",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_4"
+  },
+  {
+   "key": "envelope_4_release",
+   "name": "Envelope 4 Release",
+   "json": "env_4_release",
+   "init": "0.0899194 secs",
+   "raw": 0.2302,
+   "group": "envelope_4"
+  },
+  {
+   "key": "envelope_4_release_power",
+   "name": "Envelope 4 Release Power",
+   "json": "env_4_release_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_4"
+  },
+  {
+   "key": "envelope_4_sustain",
+   "name": "Envelope 4 Sustain",
+   "json": "env_4_sustain",
+   "init": "1",
+   "raw": 1.0,
+   "group": "envelope_4"
+  },
+  {
+   "key": "envelope_5_attack",
+   "name": "Envelope 5 Attack",
+   "json": "env_5_attack",
+   "init": "0.000499534 secs",
+   "raw": 0.0629,
+   "group": "envelope_5"
+  },
+  {
+   "key": "envelope_5_attack_power",
+   "name": "Envelope 5 Attack Power",
+   "json": "env_5_attack_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "envelope_5"
+  },
+  {
+   "key": "envelope_5_decay",
+   "name": "Envelope 5 Decay",
+   "json": "env_5_decay",
+   "init": "1 secs",
+   "raw": 0.4204,
+   "group": "envelope_5"
+  },
+  {
+   "key": "envelope_5_decay_power",
+   "name": "Envelope 5 Decay Power",
+   "json": "env_5_decay_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_5"
+  },
+  {
+   "key": "envelope_5_delay",
+   "name": "Envelope 5 Delay",
+   "json": "env_5_delay",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_5"
+  },
+  {
+   "key": "envelope_5_hold",
+   "name": "Envelope 5 Hold",
+   "json": "env_5_hold",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_5"
+  },
+  {
+   "key": "envelope_5_release",
+   "name": "Envelope 5 Release",
+   "json": "env_5_release",
+   "init": "0.0899194 secs",
+   "raw": 0.2302,
+   "group": "envelope_5"
+  },
+  {
+   "key": "envelope_5_release_power",
+   "name": "Envelope 5 Release Power",
+   "json": "env_5_release_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_5"
+  },
+  {
+   "key": "envelope_5_sustain",
+   "name": "Envelope 5 Sustain",
+   "json": "env_5_sustain",
+   "init": "1",
+   "raw": 1.0,
+   "group": "envelope_5"
+  },
+  {
+   "key": "envelope_6_attack",
+   "name": "Envelope 6 Attack",
+   "json": "env_6_attack",
+   "init": "0.000499534 secs",
+   "raw": 0.0629,
+   "group": "envelope_6"
+  },
+  {
+   "key": "envelope_6_attack_power",
+   "name": "Envelope 6 Attack Power",
+   "json": "env_6_attack_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "envelope_6"
+  },
+  {
+   "key": "envelope_6_decay",
+   "name": "Envelope 6 Decay",
+   "json": "env_6_decay",
+   "init": "1 secs",
+   "raw": 0.4204,
+   "group": "envelope_6"
+  },
+  {
+   "key": "envelope_6_decay_power",
+   "name": "Envelope 6 Decay Power",
+   "json": "env_6_decay_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_6"
+  },
+  {
+   "key": "envelope_6_delay",
+   "name": "Envelope 6 Delay",
+   "json": "env_6_delay",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_6"
+  },
+  {
+   "key": "envelope_6_hold",
+   "name": "Envelope 6 Hold",
+   "json": "env_6_hold",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "envelope_6"
+  },
+  {
+   "key": "envelope_6_release",
+   "name": "Envelope 6 Release",
+   "json": "env_6_release",
+   "init": "0.0899194 secs",
+   "raw": 0.2302,
+   "group": "envelope_6"
+  },
+  {
+   "key": "envelope_6_release_power",
+   "name": "Envelope 6 Release Power",
+   "json": "env_6_release_power",
+   "init": "-2",
+   "raw": 0.45,
+   "group": "envelope_6"
+  },
+  {
+   "key": "envelope_6_sustain",
+   "name": "Envelope 6 Sustain",
+   "json": "env_6_sustain",
+   "init": "1",
+   "raw": 1.0,
+   "group": "envelope_6"
+  },
+  {
+   "key": "eq_band_cutoff",
+   "name": "EQ Band Cutoff",
+   "json": "eq_band_cutoff",
+   "init": "80 semitones",
+   "raw": 0.5625,
+   "group": "eq"
+  },
+  {
+   "key": "eq_band_gain",
+   "name": "EQ Band Gain",
+   "json": "eq_band_gain",
+   "init": "0 dB",
+   "raw": 0.5,
+   "group": "eq",
+   "unit": "dB"
+  },
+  {
+   "key": "eq_band_mode",
+   "name": "EQ Band Mode",
+   "json": "eq_band_mode",
+   "init": "Shelf",
+   "raw": 0.0,
+   "group": "eq",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "eq_band_resonance",
+   "name": "EQ Band Resonance",
+   "json": "eq_band_resonance",
+   "init": "20.0077",
+   "raw": 0.4473,
+   "group": "eq"
+  },
+  {
+   "key": "eq_high_cutoff",
+   "name": "EQ High Cutoff",
+   "json": "eq_high_cutoff",
+   "init": "100 semitones",
+   "raw": 0.7188,
+   "group": "eq"
+  },
+  {
+   "key": "eq_high_gain",
+   "name": "EQ High Gain",
+   "json": "eq_high_gain",
+   "init": "0 dB",
+   "raw": 0.5,
+   "group": "eq",
+   "unit": "dB"
+  },
+  {
+   "key": "eq_high_mode",
+   "name": "EQ High Mode",
+   "json": "eq_high_mode",
+   "init": "Shelf",
+   "raw": 0.0,
+   "group": "eq",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "eq_high_resonance",
+   "name": "EQ High Resonance",
+   "json": "eq_high_resonance",
+   "init": "10.0046",
+   "raw": 0.3163,
+   "group": "eq"
+  },
+  {
+   "key": "eq_low_cutoff",
+   "name": "EQ Low Cutoff",
+   "json": "eq_low_cutoff",
+   "init": "40 semitones",
+   "raw": 0.25,
+   "group": "eq"
+  },
+  {
+   "key": "eq_low_gain",
+   "name": "EQ Low Gain",
+   "json": "eq_low_gain",
+   "init": "0 dB",
+   "raw": 0.5,
+   "group": "eq",
+   "unit": "dB"
+  },
+  {
+   "key": "eq_low_mode",
+   "name": "EQ Low Mode",
+   "json": "eq_low_mode",
+   "init": "Shelf",
+   "raw": 0.0,
+   "group": "eq",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "eq_low_resonance",
+   "name": "EQ Low Resonance",
+   "json": "eq_low_resonance",
+   "init": "10.0046%",
+   "raw": 0.3163,
+   "group": "eq",
+   "unit": "%"
+  },
+  {
+   "key": "eq_switch",
+   "name": "EQ Switch",
+   "json": "eq_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "eq",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "filter_1_blend",
+   "name": "Filter 1 Blend",
+   "json": "filter_1_blend",
+   "init": "0",
+   "raw": 0.0,
+   "group": "filter_1"
+  },
+  {
+   "key": "filter_1_comb_blend_offset",
+   "name": "Filter 1 Comb Blend Offset",
+   "json": "filter_1_blend_transpose",
+   "init": "42 semitones",
+   "raw": 0.5,
+   "group": "filter_1"
+  },
+  {
+   "key": "filter_1_cutoff",
+   "name": "Filter 1 Cutoff",
+   "json": "filter_1_cutoff",
+   "init": "0 semitones",
+   "raw": 0.4062,
+   "group": "filter_1"
+  },
+  {
+   "key": "filter_1_drive",
+   "name": "Filter 1 Drive",
+   "json": "filter_1_drive",
+   "init": "0dB",
+   "raw": 0.0,
+   "group": "filter_1",
+   "unit": "dB"
+  },
+  {
+   "key": "filter_1_filter_input",
+   "name": "Filter 1 FILTER Input",
+   "json": "filter_1_filter_input",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "filter_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "filter_1_formant_resonance",
+   "name": "Filter 1 Formant Resonance",
+   "json": "filter_1_formant_resonance",
+   "init": "85%",
+   "raw": 0.7857,
+   "group": "filter_1",
+   "unit": "%"
+  },
+  {
+   "key": "filter_1_formant_spread",
+   "name": "Filter 1 Formant Spread",
+   "json": "filter_1_formant_spread",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "filter_1",
+   "unit": "%"
+  },
+  {
+   "key": "filter_1_formant_transpose",
+   "name": "Filter 1 Formant Transpose",
+   "json": "filter_1_formant_transpose",
+   "init": "0",
+   "raw": 0.5,
+   "group": "filter_1"
+  },
+  {
+   "key": "filter_1_formant_x",
+   "name": "Filter 1 Formant X",
+   "json": "filter_1_formant_x",
+   "init": "0.5",
+   "raw": 0.5,
+   "group": "filter_1"
+  },
+  {
+   "key": "filter_1_formant_y",
+   "name": "Filter 1 Formant Y",
+   "json": "filter_1_formant_y",
+   "init": "0.5",
+   "raw": 0.5,
+   "group": "filter_1"
+  },
+  {
+   "key": "filter_1_key_track",
+   "name": "Filter 1 Key Track",
+   "json": "filter_1_keytrack",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "filter_1",
+   "unit": "%"
+  },
+  {
+   "key": "filter_1_mix",
+   "name": "Filter 1 Mix",
+   "json": "filter_1_mix",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "filter_1",
+   "unit": "%"
+  },
+  {
+   "key": "filter_1_model",
+   "name": "Filter 1 Model",
+   "json": "filter_1_model",
+   "init": "Analog",
+   "raw": 0.0,
+   "group": "filter_1",
+   "type": "choice",
+   "steps": 8
+  },
+  {
+   "key": "filter_1_resonance",
+   "name": "Filter 1 Resonance",
+   "json": "filter_1_resonance",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "filter_1",
+   "unit": "%"
+  },
+  {
+   "key": "filter_1_style",
+   "name": "Filter 1 Style",
+   "json": "filter_1_style",
+   "init": "12dB",
+   "raw": 0.0,
+   "group": "filter_1",
+   "type": "choice",
+   "steps": 9
+  },
+  {
+   "key": "filter_1_switch",
+   "name": "Filter 1 Switch",
+   "json": "filter_1_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "filter_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "filter_2_blend",
+   "name": "Filter 2 Blend",
+   "json": "filter_2_blend",
+   "init": "0",
+   "raw": 0.0,
+   "group": "filter_2"
+  },
+  {
+   "key": "filter_2_comb_blend_offset",
+   "name": "Filter 2 Comb Blend Offset",
+   "json": "filter_2_blend_transpose",
+   "init": "42 semitones",
+   "raw": 0.5,
+   "group": "filter_2"
+  },
+  {
+   "key": "filter_2_cutoff",
+   "name": "Filter 2 Cutoff",
+   "json": "filter_2_cutoff",
+   "init": "0 semitones",
+   "raw": 0.4062,
+   "group": "filter_2"
+  },
+  {
+   "key": "filter_2_drive",
+   "name": "Filter 2 Drive",
+   "json": "filter_2_drive",
+   "init": "0dB",
+   "raw": 0.0,
+   "group": "filter_2",
+   "unit": "dB"
+  },
+  {
+   "key": "filter_2_filter_input",
+   "name": "Filter 2 FILTER Input",
+   "json": "filter_2_filter_input",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "filter_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "filter_2_formant_resonance",
+   "name": "Filter 2 Formant Resonance",
+   "json": "filter_2_formant_resonance",
+   "init": "85%",
+   "raw": 0.7857,
+   "group": "filter_2",
+   "unit": "%"
+  },
+  {
+   "key": "filter_2_formant_spread",
+   "name": "Filter 2 Formant Spread",
+   "json": "filter_2_formant_spread",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "filter_2",
+   "unit": "%"
+  },
+  {
+   "key": "filter_2_formant_transpose",
+   "name": "Filter 2 Formant Transpose",
+   "json": "filter_2_formant_transpose",
+   "init": "0",
+   "raw": 0.5,
+   "group": "filter_2"
+  },
+  {
+   "key": "filter_2_formant_x",
+   "name": "Filter 2 Formant X",
+   "json": "filter_2_formant_x",
+   "init": "0.5",
+   "raw": 0.5,
+   "group": "filter_2"
+  },
+  {
+   "key": "filter_2_formant_y",
+   "name": "Filter 2 Formant Y",
+   "json": "filter_2_formant_y",
+   "init": "0.5",
+   "raw": 0.5,
+   "group": "filter_2"
+  },
+  {
+   "key": "filter_2_key_track",
+   "name": "Filter 2 Key Track",
+   "json": "filter_2_keytrack",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "filter_2",
+   "unit": "%"
+  },
+  {
+   "key": "filter_2_mix",
+   "name": "Filter 2 Mix",
+   "json": "filter_2_mix",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "filter_2",
+   "unit": "%"
+  },
+  {
+   "key": "filter_2_model",
+   "name": "Filter 2 Model",
+   "json": "filter_2_model",
+   "init": "Analog",
+   "raw": 0.0,
+   "group": "filter_2",
+   "type": "choice",
+   "steps": 8
+  },
+  {
+   "key": "filter_2_resonance",
+   "name": "Filter 2 Resonance",
+   "json": "filter_2_resonance",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "filter_2",
+   "unit": "%"
+  },
+  {
+   "key": "filter_2_style",
+   "name": "Filter 2 Style",
+   "json": "filter_2_style",
+   "init": "12dB",
+   "raw": 0.0,
+   "group": "filter_2",
+   "type": "choice",
+   "steps": 9
+  },
+  {
+   "key": "filter_2_switch",
+   "name": "Filter 2 Switch",
+   "json": "filter_2_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "filter_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "filter_fx_blend",
+   "name": "Filter fx Blend",
+   "json": "filter_fx_blend",
+   "init": "0",
+   "raw": 0.0,
+   "group": "filter_fx"
+  },
+  {
+   "key": "filter_fx_comb_blend_offset",
+   "name": "Filter fx Comb Blend Offset",
+   "json": "filter_fx_blend_transpose",
+   "init": "42 semitones",
+   "raw": 0.5,
+   "group": "filter_fx"
+  },
+  {
+   "key": "filter_fx_cutoff",
+   "name": "Filter fx Cutoff",
+   "json": "filter_fx_cutoff",
+   "init": "0 semitones",
+   "raw": 0.4062,
+   "group": "filter_fx"
+  },
+  {
+   "key": "filter_fx_drive",
+   "name": "Filter fx Drive",
+   "json": "filter_fx_drive",
+   "init": "0dB",
+   "raw": 0.0,
+   "group": "filter_fx",
+   "unit": "dB"
+  },
+  {
+   "key": "filter_fx_formant_resonance",
+   "name": "Filter fx Formant Resonance",
+   "json": "filter_fx_formant_resonance",
+   "init": "85%",
+   "raw": 0.7857,
+   "group": "filter_fx",
+   "unit": "%"
+  },
+  {
+   "key": "filter_fx_formant_spread",
+   "name": "Filter fx Formant Spread",
+   "json": "filter_fx_formant_spread",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "filter_fx",
+   "unit": "%"
+  },
+  {
+   "key": "filter_fx_formant_transpose",
+   "name": "Filter fx Formant Transpose",
+   "json": "filter_fx_formant_transpose",
+   "init": "0",
+   "raw": 0.5,
+   "group": "filter_fx"
+  },
+  {
+   "key": "filter_fx_formant_x",
+   "name": "Filter fx Formant X",
+   "json": "filter_fx_formant_x",
+   "init": "0.5",
+   "raw": 0.5,
+   "group": "filter_fx"
+  },
+  {
+   "key": "filter_fx_formant_y",
+   "name": "Filter fx Formant Y",
+   "json": "filter_fx_formant_y",
+   "init": "0.5",
+   "raw": 0.5,
+   "group": "filter_fx"
+  },
+  {
+   "key": "filter_fx_key_track",
+   "name": "Filter fx Key Track",
+   "json": "filter_fx_keytrack",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "filter_fx",
+   "unit": "%"
+  },
+  {
+   "key": "filter_fx_mix",
+   "name": "Filter fx Mix",
+   "json": "filter_fx_mix",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "filter_fx",
+   "unit": "%"
+  },
+  {
+   "key": "filter_fx_model",
+   "name": "Filter fx Model",
+   "json": "filter_fx_model",
+   "init": "Analog",
+   "raw": 0.0,
+   "group": "filter_fx",
+   "type": "choice",
+   "steps": 8
+  },
+  {
+   "key": "filter_fx_resonance",
+   "name": "Filter fx Resonance",
+   "json": "filter_fx_resonance",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "filter_fx",
+   "unit": "%"
+  },
+  {
+   "key": "filter_fx_style",
+   "name": "Filter fx Style",
+   "json": "filter_fx_style",
+   "init": "12dB",
+   "raw": 0.0,
+   "group": "filter_fx",
+   "type": "choice",
+   "steps": 9
+  },
+  {
+   "key": "filter_fx_switch",
+   "name": "Filter fx Switch",
+   "json": "filter_fx_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "filter_fx",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "flanger_center",
+   "name": "Flanger Center",
+   "json": "flanger_center",
+   "init": "64 semitones",
+   "raw": 0.4375,
+   "group": "flanger"
+  },
+  {
+   "key": "flanger_feedback",
+   "name": "Flanger Feedback",
+   "json": "flanger_feedback",
+   "init": "50%",
+   "raw": 0.75,
+   "group": "flanger",
+   "unit": "%"
+  },
+  {
+   "key": "flanger_frequency",
+   "name": "Flanger Frequency",
+   "json": "flanger_frequency",
+   "init": "0.25 s",
+   "raw": 1.0,
+   "group": "flanger"
+  },
+  {
+   "key": "flanger_mix",
+   "name": "Flanger Mix",
+   "json": "flanger_dry_wet",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "flanger",
+   "unit": "%"
+  },
+  {
+   "key": "flanger_mod_depth",
+   "name": "Flanger Mod Depth",
+   "json": "flanger_mod_depth",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "flanger",
+   "unit": "%"
+  },
+  {
+   "key": "flanger_phase_offset",
+   "name": "Flanger Phase Offset",
+   "json": "flanger_phase_offset",
+   "init": "120",
+   "raw": 0.3333,
+   "group": "flanger"
+  },
+  {
+   "key": "flanger_switch",
+   "name": "Flanger Switch",
+   "json": "flanger_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "flanger",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "flanger_sync",
+   "name": "Flanger Sync",
+   "json": "flanger_sync",
+   "init": "Tempo",
+   "raw": 0.3333,
+   "group": "flanger",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "flanger_tempo",
+   "name": "Flanger Tempo",
+   "json": "flanger_tempo",
+   "init": "4/1",
+   "raw": 0.4,
+   "group": "flanger",
+   "type": "choice",
+   "steps": 11
+  },
+  {
+   "key": "high_lower_ratio",
+   "name": "High Lower Ratio",
+   "json": "compressor_high_lower_ratio",
+   "init": "0.8",
+   "raw": 0.9,
+   "group": "global"
+  },
+  {
+   "key": "high_lower_threshold",
+   "name": "High Lower Threshold",
+   "json": "compressor_high_lower_threshold",
+   "init": "-35 dB",
+   "raw": 0.5625,
+   "group": "global",
+   "unit": "dB"
+  },
+  {
+   "key": "high_upper_ratio",
+   "name": "High Upper Ratio",
+   "json": "compressor_high_upper_ratio",
+   "init": "1",
+   "raw": 1.0,
+   "group": "global"
+  },
+  {
+   "key": "high_upper_threshold",
+   "name": "High Upper Threshold",
+   "json": "compressor_high_upper_threshold",
+   "init": "-30 dB",
+   "raw": 0.625,
+   "group": "global",
+   "unit": "dB"
+  },
+  {
+   "key": "legato",
+   "name": "Legato",
+   "json": "legato",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "global",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "lfo_1_delay",
+   "name": "LFO 1 Delay",
+   "json": "lfo_1_delay_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_1"
+  },
+  {
+   "key": "lfo_1_fade_in",
+   "name": "LFO 1 Fade In",
+   "json": "lfo_1_fade_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_1"
+  },
+  {
+   "key": "lfo_1_frequency",
+   "name": "LFO 1 Frequency",
+   "json": "lfo_1_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "lfo_1"
+  },
+  {
+   "key": "lfo_1_phase",
+   "name": "LFO 1 Phase",
+   "json": "lfo_1_phase",
+   "init": "0",
+   "raw": 0.0,
+   "group": "lfo_1"
+  },
+  {
+   "key": "lfo_1_smooth_mode",
+   "name": "LFO 1 Smooth Mode",
+   "json": "lfo_1_smooth_mode",
+   "init": "On",
+   "raw": 1.0,
+   "group": "lfo_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "lfo_1_smooth_time",
+   "name": "LFO 1 Smooth Time",
+   "json": "lfo_1_smooth_time",
+   "init": "0.00552427 secs",
+   "raw": 0.1786,
+   "group": "lfo_1"
+  },
+  {
+   "key": "lfo_1_stereo",
+   "name": "LFO 1 Stereo",
+   "json": "lfo_1_stereo",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_1"
+  },
+  {
+   "key": "lfo_1_sync",
+   "name": "LFO 1 Sync",
+   "json": "lfo_1_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "lfo_1",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "lfo_1_sync_type",
+   "name": "LFO 1 Sync Type",
+   "json": "lfo_1_sync_type",
+   "init": "Trigger",
+   "raw": 0.0,
+   "group": "lfo_1",
+   "type": "choice",
+   "steps": 7
+  },
+  {
+   "key": "lfo_1_tempo",
+   "name": "LFO 1 Tempo",
+   "json": "lfo_1_tempo",
+   "init": "1/2",
+   "raw": 0.5833,
+   "group": "lfo_1",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "lfo_1_transpose",
+   "name": "LFO 1 Transpose",
+   "json": "lfo_1_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "lfo_1",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "lfo_1_tune",
+   "name": "LFO 1 Tune",
+   "json": "lfo_1_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_1"
+  },
+  {
+   "key": "lfo_2_delay",
+   "name": "LFO 2 Delay",
+   "json": "lfo_2_delay_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_2"
+  },
+  {
+   "key": "lfo_2_fade_in",
+   "name": "LFO 2 Fade In",
+   "json": "lfo_2_fade_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_2"
+  },
+  {
+   "key": "lfo_2_frequency",
+   "name": "LFO 2 Frequency",
+   "json": "lfo_2_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "lfo_2"
+  },
+  {
+   "key": "lfo_2_phase",
+   "name": "LFO 2 Phase",
+   "json": "lfo_2_phase",
+   "init": "0",
+   "raw": 0.0,
+   "group": "lfo_2"
+  },
+  {
+   "key": "lfo_2_smooth_mode",
+   "name": "LFO 2 Smooth Mode",
+   "json": "lfo_2_smooth_mode",
+   "init": "On",
+   "raw": 1.0,
+   "group": "lfo_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "lfo_2_smooth_time",
+   "name": "LFO 2 Smooth Time",
+   "json": "lfo_2_smooth_time",
+   "init": "0.00552427 secs",
+   "raw": 0.1786,
+   "group": "lfo_2"
+  },
+  {
+   "key": "lfo_2_stereo",
+   "name": "LFO 2 Stereo",
+   "json": "lfo_2_stereo",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_2"
+  },
+  {
+   "key": "lfo_2_sync",
+   "name": "LFO 2 Sync",
+   "json": "lfo_2_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "lfo_2",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "lfo_2_sync_type",
+   "name": "LFO 2 Sync Type",
+   "json": "lfo_2_sync_type",
+   "init": "Trigger",
+   "raw": 0.0,
+   "group": "lfo_2",
+   "type": "choice",
+   "steps": 7
+  },
+  {
+   "key": "lfo_2_tempo",
+   "name": "LFO 2 Tempo",
+   "json": "lfo_2_tempo",
+   "init": "1/2",
+   "raw": 0.5833,
+   "group": "lfo_2",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "lfo_2_transpose",
+   "name": "LFO 2 Transpose",
+   "json": "lfo_2_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "lfo_2",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "lfo_2_tune",
+   "name": "LFO 2 Tune",
+   "json": "lfo_2_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_2"
+  },
+  {
+   "key": "lfo_3_delay",
+   "name": "LFO 3 Delay",
+   "json": "lfo_3_delay_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_3"
+  },
+  {
+   "key": "lfo_3_fade_in",
+   "name": "LFO 3 Fade In",
+   "json": "lfo_3_fade_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_3"
+  },
+  {
+   "key": "lfo_3_frequency",
+   "name": "LFO 3 Frequency",
+   "json": "lfo_3_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "lfo_3"
+  },
+  {
+   "key": "lfo_3_phase",
+   "name": "LFO 3 Phase",
+   "json": "lfo_3_phase",
+   "init": "0",
+   "raw": 0.0,
+   "group": "lfo_3"
+  },
+  {
+   "key": "lfo_3_smooth_mode",
+   "name": "LFO 3 Smooth Mode",
+   "json": "lfo_3_smooth_mode",
+   "init": "On",
+   "raw": 1.0,
+   "group": "lfo_3",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "lfo_3_smooth_time",
+   "name": "LFO 3 Smooth Time",
+   "json": "lfo_3_smooth_time",
+   "init": "0.00552427 secs",
+   "raw": 0.1786,
+   "group": "lfo_3"
+  },
+  {
+   "key": "lfo_3_stereo",
+   "name": "LFO 3 Stereo",
+   "json": "lfo_3_stereo",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_3"
+  },
+  {
+   "key": "lfo_3_sync",
+   "name": "LFO 3 Sync",
+   "json": "lfo_3_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "lfo_3",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "lfo_3_sync_type",
+   "name": "LFO 3 Sync Type",
+   "json": "lfo_3_sync_type",
+   "init": "Trigger",
+   "raw": 0.0,
+   "group": "lfo_3",
+   "type": "choice",
+   "steps": 7
+  },
+  {
+   "key": "lfo_3_tempo",
+   "name": "LFO 3 Tempo",
+   "json": "lfo_3_tempo",
+   "init": "1/2",
+   "raw": 0.5833,
+   "group": "lfo_3",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "lfo_3_transpose",
+   "name": "LFO 3 Transpose",
+   "json": "lfo_3_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "lfo_3",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "lfo_3_tune",
+   "name": "LFO 3 Tune",
+   "json": "lfo_3_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_3"
+  },
+  {
+   "key": "lfo_4_delay",
+   "name": "LFO 4 Delay",
+   "json": "lfo_4_delay_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_4"
+  },
+  {
+   "key": "lfo_4_fade_in",
+   "name": "LFO 4 Fade In",
+   "json": "lfo_4_fade_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_4"
+  },
+  {
+   "key": "lfo_4_frequency",
+   "name": "LFO 4 Frequency",
+   "json": "lfo_4_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "lfo_4"
+  },
+  {
+   "key": "lfo_4_phase",
+   "name": "LFO 4 Phase",
+   "json": "lfo_4_phase",
+   "init": "0",
+   "raw": 0.0,
+   "group": "lfo_4"
+  },
+  {
+   "key": "lfo_4_smooth_mode",
+   "name": "LFO 4 Smooth Mode",
+   "json": "lfo_4_smooth_mode",
+   "init": "On",
+   "raw": 1.0,
+   "group": "lfo_4",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "lfo_4_smooth_time",
+   "name": "LFO 4 Smooth Time",
+   "json": "lfo_4_smooth_time",
+   "init": "0.00552427 secs",
+   "raw": 0.1786,
+   "group": "lfo_4"
+  },
+  {
+   "key": "lfo_4_stereo",
+   "name": "LFO 4 Stereo",
+   "json": "lfo_4_stereo",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_4"
+  },
+  {
+   "key": "lfo_4_sync",
+   "name": "LFO 4 Sync",
+   "json": "lfo_4_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "lfo_4",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "lfo_4_sync_type",
+   "name": "LFO 4 Sync Type",
+   "json": "lfo_4_sync_type",
+   "init": "Trigger",
+   "raw": 0.0,
+   "group": "lfo_4",
+   "type": "choice",
+   "steps": 7
+  },
+  {
+   "key": "lfo_4_tempo",
+   "name": "LFO 4 Tempo",
+   "json": "lfo_4_tempo",
+   "init": "1/2",
+   "raw": 0.5833,
+   "group": "lfo_4",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "lfo_4_transpose",
+   "name": "LFO 4 Transpose",
+   "json": "lfo_4_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "lfo_4",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "lfo_4_tune",
+   "name": "LFO 4 Tune",
+   "json": "lfo_4_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_4"
+  },
+  {
+   "key": "lfo_5_delay",
+   "name": "LFO 5 Delay",
+   "json": "lfo_5_delay_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_5"
+  },
+  {
+   "key": "lfo_5_fade_in",
+   "name": "LFO 5 Fade In",
+   "json": "lfo_5_fade_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_5"
+  },
+  {
+   "key": "lfo_5_frequency",
+   "name": "LFO 5 Frequency",
+   "json": "lfo_5_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "lfo_5"
+  },
+  {
+   "key": "lfo_5_phase",
+   "name": "LFO 5 Phase",
+   "json": "lfo_5_phase",
+   "init": "0",
+   "raw": 0.0,
+   "group": "lfo_5"
+  },
+  {
+   "key": "lfo_5_smooth_mode",
+   "name": "LFO 5 Smooth Mode",
+   "json": "lfo_5_smooth_mode",
+   "init": "On",
+   "raw": 1.0,
+   "group": "lfo_5",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "lfo_5_smooth_time",
+   "name": "LFO 5 Smooth Time",
+   "json": "lfo_5_smooth_time",
+   "init": "0.00552427 secs",
+   "raw": 0.1786,
+   "group": "lfo_5"
+  },
+  {
+   "key": "lfo_5_stereo",
+   "name": "LFO 5 Stereo",
+   "json": "lfo_5_stereo",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_5"
+  },
+  {
+   "key": "lfo_5_sync",
+   "name": "LFO 5 Sync",
+   "json": "lfo_5_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "lfo_5",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "lfo_5_sync_type",
+   "name": "LFO 5 Sync Type",
+   "json": "lfo_5_sync_type",
+   "init": "Trigger",
+   "raw": 0.0,
+   "group": "lfo_5",
+   "type": "choice",
+   "steps": 7
+  },
+  {
+   "key": "lfo_5_tempo",
+   "name": "LFO 5 Tempo",
+   "json": "lfo_5_tempo",
+   "init": "1/2",
+   "raw": 0.5833,
+   "group": "lfo_5",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "lfo_5_transpose",
+   "name": "LFO 5 Transpose",
+   "json": "lfo_5_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "lfo_5",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "lfo_5_tune",
+   "name": "LFO 5 Tune",
+   "json": "lfo_5_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_5"
+  },
+  {
+   "key": "lfo_6_delay",
+   "name": "LFO 6 Delay",
+   "json": "lfo_6_delay_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_6"
+  },
+  {
+   "key": "lfo_6_fade_in",
+   "name": "LFO 6 Fade In",
+   "json": "lfo_6_fade_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_6"
+  },
+  {
+   "key": "lfo_6_frequency",
+   "name": "LFO 6 Frequency",
+   "json": "lfo_6_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "lfo_6"
+  },
+  {
+   "key": "lfo_6_phase",
+   "name": "LFO 6 Phase",
+   "json": "lfo_6_phase",
+   "init": "0",
+   "raw": 0.0,
+   "group": "lfo_6"
+  },
+  {
+   "key": "lfo_6_smooth_mode",
+   "name": "LFO 6 Smooth Mode",
+   "json": "lfo_6_smooth_mode",
+   "init": "On",
+   "raw": 1.0,
+   "group": "lfo_6",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "lfo_6_smooth_time",
+   "name": "LFO 6 Smooth Time",
+   "json": "lfo_6_smooth_time",
+   "init": "0.00552427 secs",
+   "raw": 0.1786,
+   "group": "lfo_6"
+  },
+  {
+   "key": "lfo_6_stereo",
+   "name": "LFO 6 Stereo",
+   "json": "lfo_6_stereo",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_6"
+  },
+  {
+   "key": "lfo_6_sync",
+   "name": "LFO 6 Sync",
+   "json": "lfo_6_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "lfo_6",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "lfo_6_sync_type",
+   "name": "LFO 6 Sync Type",
+   "json": "lfo_6_sync_type",
+   "init": "Trigger",
+   "raw": 0.0,
+   "group": "lfo_6",
+   "type": "choice",
+   "steps": 7
+  },
+  {
+   "key": "lfo_6_tempo",
+   "name": "LFO 6 Tempo",
+   "json": "lfo_6_tempo",
+   "init": "1/2",
+   "raw": 0.5833,
+   "group": "lfo_6",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "lfo_6_transpose",
+   "name": "LFO 6 Transpose",
+   "json": "lfo_6_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "lfo_6",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "lfo_6_tune",
+   "name": "LFO 6 Tune",
+   "json": "lfo_6_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_6"
+  },
+  {
+   "key": "lfo_7_delay",
+   "name": "LFO 7 Delay",
+   "json": "lfo_7_delay_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_7"
+  },
+  {
+   "key": "lfo_7_fade_in",
+   "name": "LFO 7 Fade In",
+   "json": "lfo_7_fade_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_7"
+  },
+  {
+   "key": "lfo_7_frequency",
+   "name": "LFO 7 Frequency",
+   "json": "lfo_7_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "lfo_7"
+  },
+  {
+   "key": "lfo_7_phase",
+   "name": "LFO 7 Phase",
+   "json": "lfo_7_phase",
+   "init": "0",
+   "raw": 0.0,
+   "group": "lfo_7"
+  },
+  {
+   "key": "lfo_7_smooth_mode",
+   "name": "LFO 7 Smooth Mode",
+   "json": "lfo_7_smooth_mode",
+   "init": "On",
+   "raw": 1.0,
+   "group": "lfo_7",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "lfo_7_smooth_time",
+   "name": "LFO 7 Smooth Time",
+   "json": "lfo_7_smooth_time",
+   "init": "0.00552427 secs",
+   "raw": 0.1786,
+   "group": "lfo_7"
+  },
+  {
+   "key": "lfo_7_stereo",
+   "name": "LFO 7 Stereo",
+   "json": "lfo_7_stereo",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_7"
+  },
+  {
+   "key": "lfo_7_sync",
+   "name": "LFO 7 Sync",
+   "json": "lfo_7_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "lfo_7",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "lfo_7_sync_type",
+   "name": "LFO 7 Sync Type",
+   "json": "lfo_7_sync_type",
+   "init": "Trigger",
+   "raw": 0.0,
+   "group": "lfo_7",
+   "type": "choice",
+   "steps": 7
+  },
+  {
+   "key": "lfo_7_tempo",
+   "name": "LFO 7 Tempo",
+   "json": "lfo_7_tempo",
+   "init": "1/2",
+   "raw": 0.5833,
+   "group": "lfo_7",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "lfo_7_transpose",
+   "name": "LFO 7 Transpose",
+   "json": "lfo_7_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "lfo_7",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "lfo_7_tune",
+   "name": "LFO 7 Tune",
+   "json": "lfo_7_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_7"
+  },
+  {
+   "key": "lfo_8_delay",
+   "name": "LFO 8 Delay",
+   "json": "lfo_8_delay_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_8"
+  },
+  {
+   "key": "lfo_8_fade_in",
+   "name": "LFO 8 Fade In",
+   "json": "lfo_8_fade_time",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "lfo_8"
+  },
+  {
+   "key": "lfo_8_frequency",
+   "name": "LFO 8 Frequency",
+   "json": "lfo_8_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "lfo_8"
+  },
+  {
+   "key": "lfo_8_phase",
+   "name": "LFO 8 Phase",
+   "json": "lfo_8_phase",
+   "init": "0",
+   "raw": 0.0,
+   "group": "lfo_8"
+  },
+  {
+   "key": "lfo_8_smooth_mode",
+   "name": "LFO 8 Smooth Mode",
+   "json": "lfo_8_smooth_mode",
+   "init": "On",
+   "raw": 1.0,
+   "group": "lfo_8",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "lfo_8_smooth_time",
+   "name": "LFO 8 Smooth Time",
+   "json": "lfo_8_smooth_time",
+   "init": "0.00552427 secs",
+   "raw": 0.1786,
+   "group": "lfo_8"
+  },
+  {
+   "key": "lfo_8_stereo",
+   "name": "LFO 8 Stereo",
+   "json": "lfo_8_stereo",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_8"
+  },
+  {
+   "key": "lfo_8_sync",
+   "name": "LFO 8 Sync",
+   "json": "lfo_8_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "lfo_8",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "lfo_8_sync_type",
+   "name": "LFO 8 Sync Type",
+   "json": "lfo_8_sync_type",
+   "init": "Trigger",
+   "raw": 0.0,
+   "group": "lfo_8",
+   "type": "choice",
+   "steps": 7
+  },
+  {
+   "key": "lfo_8_tempo",
+   "name": "LFO 8 Tempo",
+   "json": "lfo_8_tempo",
+   "init": "1/2",
+   "raw": 0.5833,
+   "group": "lfo_8",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "lfo_8_transpose",
+   "name": "LFO 8 Transpose",
+   "json": "lfo_8_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "lfo_8",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "lfo_8_tune",
+   "name": "LFO 8 Tune",
+   "json": "lfo_8_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "lfo_8"
+  },
+  {
+   "key": "low_lower_ratio",
+   "name": "Low Lower Ratio",
+   "json": "compressor_low_lower_ratio",
+   "init": "0.8",
+   "raw": 0.9,
+   "group": "global"
+  },
+  {
+   "key": "low_lower_threshold",
+   "name": "Low Lower Threshold",
+   "json": "compressor_low_lower_threshold",
+   "init": "-35 dB",
+   "raw": 0.5625,
+   "group": "global",
+   "unit": "dB"
+  },
+  {
+   "key": "low_upper_ratio",
+   "name": "Low Upper Ratio",
+   "json": "compressor_low_upper_ratio",
+   "init": "0.9",
+   "raw": 0.9,
+   "group": "global"
+  },
+  {
+   "key": "low_upper_threshold",
+   "name": "Low Upper Threshold",
+   "json": "compressor_low_upper_threshold",
+   "init": "-28 dB",
+   "raw": 0.65,
+   "group": "global",
+   "unit": "dB"
+  },
+  {
+   "key": "macro_1",
+   "name": "Macro 1",
+   "json": "macro_control_1",
+   "init": "0",
+   "raw": 0.0,
+   "group": "macro_"
+  },
+  {
+   "key": "macro_2",
+   "name": "Macro 2",
+   "json": "macro_control_2",
+   "init": "0",
+   "raw": 0.0,
+   "group": "macro_"
+  },
+  {
+   "key": "macro_3",
+   "name": "Macro 3",
+   "json": "macro_control_3",
+   "init": "0",
+   "raw": 0.0,
+   "group": "macro_"
+  },
+  {
+   "key": "macro_4",
+   "name": "Macro 4",
+   "json": "macro_control_4",
+   "init": "0",
+   "raw": 0.0,
+   "group": "macro_"
+  },
+  {
+   "key": "mod_wheel",
+   "name": "Mod Wheel",
+   "json": "mod_wheel",
+   "init": "0",
+   "raw": 0.0,
+   "group": "global"
+  },
+  {
+   "key": "modulation_10_amount",
+   "name": "Modulation 10 Amount",
+   "json": "modulation_10_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_10"
+  },
+  {
+   "key": "modulation_10_bipolar",
+   "name": "Modulation 10 Bipolar",
+   "json": "modulation_10_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_10",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_10_bypass",
+   "name": "Modulation 10 Bypass",
+   "json": "modulation_10_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_10",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_10_power",
+   "name": "Modulation 10 Power",
+   "json": "modulation_10_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_10"
+  },
+  {
+   "key": "modulation_10_ramp_down",
+   "name": "Modulation 10 Ramp Down",
+   "json": "modulation_10_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_10"
+  },
+  {
+   "key": "modulation_10_ramp_up",
+   "name": "Modulation 10 Ramp Up",
+   "json": "modulation_10_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_10"
+  },
+  {
+   "key": "modulation_10_stereo",
+   "name": "Modulation 10 Stereo",
+   "json": "modulation_10_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_10",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_11_amount",
+   "name": "Modulation 11 Amount",
+   "json": "modulation_11_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_11"
+  },
+  {
+   "key": "modulation_11_bipolar",
+   "name": "Modulation 11 Bipolar",
+   "json": "modulation_11_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_11",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_11_bypass",
+   "name": "Modulation 11 Bypass",
+   "json": "modulation_11_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_11",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_11_power",
+   "name": "Modulation 11 Power",
+   "json": "modulation_11_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_11"
+  },
+  {
+   "key": "modulation_11_ramp_down",
+   "name": "Modulation 11 Ramp Down",
+   "json": "modulation_11_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_11"
+  },
+  {
+   "key": "modulation_11_ramp_up",
+   "name": "Modulation 11 Ramp Up",
+   "json": "modulation_11_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_11"
+  },
+  {
+   "key": "modulation_11_stereo",
+   "name": "Modulation 11 Stereo",
+   "json": "modulation_11_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_11",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_12_amount",
+   "name": "Modulation 12 Amount",
+   "json": "modulation_12_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_12"
+  },
+  {
+   "key": "modulation_12_bipolar",
+   "name": "Modulation 12 Bipolar",
+   "json": "modulation_12_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_12",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_12_bypass",
+   "name": "Modulation 12 Bypass",
+   "json": "modulation_12_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_12",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_12_power",
+   "name": "Modulation 12 Power",
+   "json": "modulation_12_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_12"
+  },
+  {
+   "key": "modulation_12_ramp_down",
+   "name": "Modulation 12 Ramp Down",
+   "json": "modulation_12_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_12"
+  },
+  {
+   "key": "modulation_12_ramp_up",
+   "name": "Modulation 12 Ramp Up",
+   "json": "modulation_12_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_12"
+  },
+  {
+   "key": "modulation_12_stereo",
+   "name": "Modulation 12 Stereo",
+   "json": "modulation_12_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_12",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_13_amount",
+   "name": "Modulation 13 Amount",
+   "json": "modulation_13_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_13"
+  },
+  {
+   "key": "modulation_13_bipolar",
+   "name": "Modulation 13 Bipolar",
+   "json": "modulation_13_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_13",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_13_bypass",
+   "name": "Modulation 13 Bypass",
+   "json": "modulation_13_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_13",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_13_power",
+   "name": "Modulation 13 Power",
+   "json": "modulation_13_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_13"
+  },
+  {
+   "key": "modulation_13_ramp_down",
+   "name": "Modulation 13 Ramp Down",
+   "json": "modulation_13_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_13"
+  },
+  {
+   "key": "modulation_13_ramp_up",
+   "name": "Modulation 13 Ramp Up",
+   "json": "modulation_13_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_13"
+  },
+  {
+   "key": "modulation_13_stereo",
+   "name": "Modulation 13 Stereo",
+   "json": "modulation_13_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_13",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_14_amount",
+   "name": "Modulation 14 Amount",
+   "json": "modulation_14_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_14"
+  },
+  {
+   "key": "modulation_14_bipolar",
+   "name": "Modulation 14 Bipolar",
+   "json": "modulation_14_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_14",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_14_bypass",
+   "name": "Modulation 14 Bypass",
+   "json": "modulation_14_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_14",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_14_power",
+   "name": "Modulation 14 Power",
+   "json": "modulation_14_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_14"
+  },
+  {
+   "key": "modulation_14_ramp_down",
+   "name": "Modulation 14 Ramp Down",
+   "json": "modulation_14_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_14"
+  },
+  {
+   "key": "modulation_14_ramp_up",
+   "name": "Modulation 14 Ramp Up",
+   "json": "modulation_14_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_14"
+  },
+  {
+   "key": "modulation_14_stereo",
+   "name": "Modulation 14 Stereo",
+   "json": "modulation_14_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_14",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_15_amount",
+   "name": "Modulation 15 Amount",
+   "json": "modulation_15_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_15"
+  },
+  {
+   "key": "modulation_15_bipolar",
+   "name": "Modulation 15 Bipolar",
+   "json": "modulation_15_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_15",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_15_bypass",
+   "name": "Modulation 15 Bypass",
+   "json": "modulation_15_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_15",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_15_power",
+   "name": "Modulation 15 Power",
+   "json": "modulation_15_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_15"
+  },
+  {
+   "key": "modulation_15_ramp_down",
+   "name": "Modulation 15 Ramp Down",
+   "json": "modulation_15_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_15"
+  },
+  {
+   "key": "modulation_15_ramp_up",
+   "name": "Modulation 15 Ramp Up",
+   "json": "modulation_15_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_15"
+  },
+  {
+   "key": "modulation_15_stereo",
+   "name": "Modulation 15 Stereo",
+   "json": "modulation_15_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_15",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_16_amount",
+   "name": "Modulation 16 Amount",
+   "json": "modulation_16_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_16"
+  },
+  {
+   "key": "modulation_16_bipolar",
+   "name": "Modulation 16 Bipolar",
+   "json": "modulation_16_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_16",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_16_bypass",
+   "name": "Modulation 16 Bypass",
+   "json": "modulation_16_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_16",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_16_power",
+   "name": "Modulation 16 Power",
+   "json": "modulation_16_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_16"
+  },
+  {
+   "key": "modulation_16_ramp_down",
+   "name": "Modulation 16 Ramp Down",
+   "json": "modulation_16_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_16"
+  },
+  {
+   "key": "modulation_16_ramp_up",
+   "name": "Modulation 16 Ramp Up",
+   "json": "modulation_16_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_16"
+  },
+  {
+   "key": "modulation_16_stereo",
+   "name": "Modulation 16 Stereo",
+   "json": "modulation_16_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_16",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_17_amount",
+   "name": "Modulation 17 Amount",
+   "json": "modulation_17_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_17"
+  },
+  {
+   "key": "modulation_17_bipolar",
+   "name": "Modulation 17 Bipolar",
+   "json": "modulation_17_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_17",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_17_bypass",
+   "name": "Modulation 17 Bypass",
+   "json": "modulation_17_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_17",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_17_power",
+   "name": "Modulation 17 Power",
+   "json": "modulation_17_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_17"
+  },
+  {
+   "key": "modulation_17_ramp_down",
+   "name": "Modulation 17 Ramp Down",
+   "json": "modulation_17_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_17"
+  },
+  {
+   "key": "modulation_17_ramp_up",
+   "name": "Modulation 17 Ramp Up",
+   "json": "modulation_17_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_17"
+  },
+  {
+   "key": "modulation_17_stereo",
+   "name": "Modulation 17 Stereo",
+   "json": "modulation_17_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_17",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_18_amount",
+   "name": "Modulation 18 Amount",
+   "json": "modulation_18_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_18"
+  },
+  {
+   "key": "modulation_18_bipolar",
+   "name": "Modulation 18 Bipolar",
+   "json": "modulation_18_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_18",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_18_bypass",
+   "name": "Modulation 18 Bypass",
+   "json": "modulation_18_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_18",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_18_power",
+   "name": "Modulation 18 Power",
+   "json": "modulation_18_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_18"
+  },
+  {
+   "key": "modulation_18_ramp_down",
+   "name": "Modulation 18 Ramp Down",
+   "json": "modulation_18_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_18"
+  },
+  {
+   "key": "modulation_18_ramp_up",
+   "name": "Modulation 18 Ramp Up",
+   "json": "modulation_18_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_18"
+  },
+  {
+   "key": "modulation_18_stereo",
+   "name": "Modulation 18 Stereo",
+   "json": "modulation_18_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_18",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_19_amount",
+   "name": "Modulation 19 Amount",
+   "json": "modulation_19_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_19"
+  },
+  {
+   "key": "modulation_19_bipolar",
+   "name": "Modulation 19 Bipolar",
+   "json": "modulation_19_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_19",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_19_bypass",
+   "name": "Modulation 19 Bypass",
+   "json": "modulation_19_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_19",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_19_power",
+   "name": "Modulation 19 Power",
+   "json": "modulation_19_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_19"
+  },
+  {
+   "key": "modulation_19_ramp_down",
+   "name": "Modulation 19 Ramp Down",
+   "json": "modulation_19_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_19"
+  },
+  {
+   "key": "modulation_19_ramp_up",
+   "name": "Modulation 19 Ramp Up",
+   "json": "modulation_19_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_19"
+  },
+  {
+   "key": "modulation_19_stereo",
+   "name": "Modulation 19 Stereo",
+   "json": "modulation_19_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_19",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_1_amount",
+   "name": "Modulation 1 Amount",
+   "json": "modulation_1_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_1"
+  },
+  {
+   "key": "modulation_1_bipolar",
+   "name": "Modulation 1 Bipolar",
+   "json": "modulation_1_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_1_bypass",
+   "name": "Modulation 1 Bypass",
+   "json": "modulation_1_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_1_power",
+   "name": "Modulation 1 Power",
+   "json": "modulation_1_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_1"
+  },
+  {
+   "key": "modulation_1_ramp_down",
+   "name": "Modulation 1 Ramp Down",
+   "json": "modulation_1_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_1"
+  },
+  {
+   "key": "modulation_1_ramp_up",
+   "name": "Modulation 1 Ramp Up",
+   "json": "modulation_1_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_1"
+  },
+  {
+   "key": "modulation_1_stereo",
+   "name": "Modulation 1 Stereo",
+   "json": "modulation_1_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_20_amount",
+   "name": "Modulation 20 Amount",
+   "json": "modulation_20_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_20"
+  },
+  {
+   "key": "modulation_20_bipolar",
+   "name": "Modulation 20 Bipolar",
+   "json": "modulation_20_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_20",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_20_bypass",
+   "name": "Modulation 20 Bypass",
+   "json": "modulation_20_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_20",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_20_power",
+   "name": "Modulation 20 Power",
+   "json": "modulation_20_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_20"
+  },
+  {
+   "key": "modulation_20_ramp_down",
+   "name": "Modulation 20 Ramp Down",
+   "json": "modulation_20_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_20"
+  },
+  {
+   "key": "modulation_20_ramp_up",
+   "name": "Modulation 20 Ramp Up",
+   "json": "modulation_20_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_20"
+  },
+  {
+   "key": "modulation_20_stereo",
+   "name": "Modulation 20 Stereo",
+   "json": "modulation_20_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_20",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_21_amount",
+   "name": "Modulation 21 Amount",
+   "json": "modulation_21_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_21"
+  },
+  {
+   "key": "modulation_21_bipolar",
+   "name": "Modulation 21 Bipolar",
+   "json": "modulation_21_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_21",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_21_bypass",
+   "name": "Modulation 21 Bypass",
+   "json": "modulation_21_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_21",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_21_power",
+   "name": "Modulation 21 Power",
+   "json": "modulation_21_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_21"
+  },
+  {
+   "key": "modulation_21_ramp_down",
+   "name": "Modulation 21 Ramp Down",
+   "json": "modulation_21_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_21"
+  },
+  {
+   "key": "modulation_21_ramp_up",
+   "name": "Modulation 21 Ramp Up",
+   "json": "modulation_21_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_21"
+  },
+  {
+   "key": "modulation_21_stereo",
+   "name": "Modulation 21 Stereo",
+   "json": "modulation_21_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_21",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_22_amount",
+   "name": "Modulation 22 Amount",
+   "json": "modulation_22_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_22"
+  },
+  {
+   "key": "modulation_22_bipolar",
+   "name": "Modulation 22 Bipolar",
+   "json": "modulation_22_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_22",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_22_bypass",
+   "name": "Modulation 22 Bypass",
+   "json": "modulation_22_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_22",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_22_power",
+   "name": "Modulation 22 Power",
+   "json": "modulation_22_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_22"
+  },
+  {
+   "key": "modulation_22_ramp_down",
+   "name": "Modulation 22 Ramp Down",
+   "json": "modulation_22_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_22"
+  },
+  {
+   "key": "modulation_22_ramp_up",
+   "name": "Modulation 22 Ramp Up",
+   "json": "modulation_22_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_22"
+  },
+  {
+   "key": "modulation_22_stereo",
+   "name": "Modulation 22 Stereo",
+   "json": "modulation_22_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_22",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_23_amount",
+   "name": "Modulation 23 Amount",
+   "json": "modulation_23_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_23"
+  },
+  {
+   "key": "modulation_23_bipolar",
+   "name": "Modulation 23 Bipolar",
+   "json": "modulation_23_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_23",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_23_bypass",
+   "name": "Modulation 23 Bypass",
+   "json": "modulation_23_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_23",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_23_power",
+   "name": "Modulation 23 Power",
+   "json": "modulation_23_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_23"
+  },
+  {
+   "key": "modulation_23_ramp_down",
+   "name": "Modulation 23 Ramp Down",
+   "json": "modulation_23_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_23"
+  },
+  {
+   "key": "modulation_23_ramp_up",
+   "name": "Modulation 23 Ramp Up",
+   "json": "modulation_23_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_23"
+  },
+  {
+   "key": "modulation_23_stereo",
+   "name": "Modulation 23 Stereo",
+   "json": "modulation_23_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_23",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_24_amount",
+   "name": "Modulation 24 Amount",
+   "json": "modulation_24_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_24"
+  },
+  {
+   "key": "modulation_24_bipolar",
+   "name": "Modulation 24 Bipolar",
+   "json": "modulation_24_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_24",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_24_bypass",
+   "name": "Modulation 24 Bypass",
+   "json": "modulation_24_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_24",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_24_power",
+   "name": "Modulation 24 Power",
+   "json": "modulation_24_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_24"
+  },
+  {
+   "key": "modulation_24_ramp_down",
+   "name": "Modulation 24 Ramp Down",
+   "json": "modulation_24_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_24"
+  },
+  {
+   "key": "modulation_24_ramp_up",
+   "name": "Modulation 24 Ramp Up",
+   "json": "modulation_24_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_24"
+  },
+  {
+   "key": "modulation_24_stereo",
+   "name": "Modulation 24 Stereo",
+   "json": "modulation_24_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_24",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_25_amount",
+   "name": "Modulation 25 Amount",
+   "json": "modulation_25_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_25"
+  },
+  {
+   "key": "modulation_25_bipolar",
+   "name": "Modulation 25 Bipolar",
+   "json": "modulation_25_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_25",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_25_bypass",
+   "name": "Modulation 25 Bypass",
+   "json": "modulation_25_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_25",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_25_power",
+   "name": "Modulation 25 Power",
+   "json": "modulation_25_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_25"
+  },
+  {
+   "key": "modulation_25_ramp_down",
+   "name": "Modulation 25 Ramp Down",
+   "json": "modulation_25_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_25"
+  },
+  {
+   "key": "modulation_25_ramp_up",
+   "name": "Modulation 25 Ramp Up",
+   "json": "modulation_25_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_25"
+  },
+  {
+   "key": "modulation_25_stereo",
+   "name": "Modulation 25 Stereo",
+   "json": "modulation_25_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_25",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_26_amount",
+   "name": "Modulation 26 Amount",
+   "json": "modulation_26_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_26"
+  },
+  {
+   "key": "modulation_26_bipolar",
+   "name": "Modulation 26 Bipolar",
+   "json": "modulation_26_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_26",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_26_bypass",
+   "name": "Modulation 26 Bypass",
+   "json": "modulation_26_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_26",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_26_power",
+   "name": "Modulation 26 Power",
+   "json": "modulation_26_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_26"
+  },
+  {
+   "key": "modulation_26_ramp_down",
+   "name": "Modulation 26 Ramp Down",
+   "json": "modulation_26_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_26"
+  },
+  {
+   "key": "modulation_26_ramp_up",
+   "name": "Modulation 26 Ramp Up",
+   "json": "modulation_26_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_26"
+  },
+  {
+   "key": "modulation_26_stereo",
+   "name": "Modulation 26 Stereo",
+   "json": "modulation_26_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_26",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_27_amount",
+   "name": "Modulation 27 Amount",
+   "json": "modulation_27_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_27"
+  },
+  {
+   "key": "modulation_27_bipolar",
+   "name": "Modulation 27 Bipolar",
+   "json": "modulation_27_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_27",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_27_bypass",
+   "name": "Modulation 27 Bypass",
+   "json": "modulation_27_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_27",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_27_power",
+   "name": "Modulation 27 Power",
+   "json": "modulation_27_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_27"
+  },
+  {
+   "key": "modulation_27_ramp_down",
+   "name": "Modulation 27 Ramp Down",
+   "json": "modulation_27_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_27"
+  },
+  {
+   "key": "modulation_27_ramp_up",
+   "name": "Modulation 27 Ramp Up",
+   "json": "modulation_27_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_27"
+  },
+  {
+   "key": "modulation_27_stereo",
+   "name": "Modulation 27 Stereo",
+   "json": "modulation_27_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_27",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_28_amount",
+   "name": "Modulation 28 Amount",
+   "json": "modulation_28_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_28"
+  },
+  {
+   "key": "modulation_28_bipolar",
+   "name": "Modulation 28 Bipolar",
+   "json": "modulation_28_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_28",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_28_bypass",
+   "name": "Modulation 28 Bypass",
+   "json": "modulation_28_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_28",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_28_power",
+   "name": "Modulation 28 Power",
+   "json": "modulation_28_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_28"
+  },
+  {
+   "key": "modulation_28_ramp_down",
+   "name": "Modulation 28 Ramp Down",
+   "json": "modulation_28_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_28"
+  },
+  {
+   "key": "modulation_28_ramp_up",
+   "name": "Modulation 28 Ramp Up",
+   "json": "modulation_28_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_28"
+  },
+  {
+   "key": "modulation_28_stereo",
+   "name": "Modulation 28 Stereo",
+   "json": "modulation_28_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_28",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_29_amount",
+   "name": "Modulation 29 Amount",
+   "json": "modulation_29_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_29"
+  },
+  {
+   "key": "modulation_29_bipolar",
+   "name": "Modulation 29 Bipolar",
+   "json": "modulation_29_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_29",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_29_bypass",
+   "name": "Modulation 29 Bypass",
+   "json": "modulation_29_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_29",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_29_power",
+   "name": "Modulation 29 Power",
+   "json": "modulation_29_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_29"
+  },
+  {
+   "key": "modulation_29_ramp_down",
+   "name": "Modulation 29 Ramp Down",
+   "json": "modulation_29_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_29"
+  },
+  {
+   "key": "modulation_29_ramp_up",
+   "name": "Modulation 29 Ramp Up",
+   "json": "modulation_29_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_29"
+  },
+  {
+   "key": "modulation_29_stereo",
+   "name": "Modulation 29 Stereo",
+   "json": "modulation_29_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_29",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_2_amount",
+   "name": "Modulation 2 Amount",
+   "json": "modulation_2_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_2"
+  },
+  {
+   "key": "modulation_2_bipolar",
+   "name": "Modulation 2 Bipolar",
+   "json": "modulation_2_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_2_bypass",
+   "name": "Modulation 2 Bypass",
+   "json": "modulation_2_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_2_power",
+   "name": "Modulation 2 Power",
+   "json": "modulation_2_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_2"
+  },
+  {
+   "key": "modulation_2_ramp_down",
+   "name": "Modulation 2 Ramp Down",
+   "json": "modulation_2_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_2"
+  },
+  {
+   "key": "modulation_2_ramp_up",
+   "name": "Modulation 2 Ramp Up",
+   "json": "modulation_2_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_2"
+  },
+  {
+   "key": "modulation_2_stereo",
+   "name": "Modulation 2 Stereo",
+   "json": "modulation_2_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_30_amount",
+   "name": "Modulation 30 Amount",
+   "json": "modulation_30_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_30"
+  },
+  {
+   "key": "modulation_30_bipolar",
+   "name": "Modulation 30 Bipolar",
+   "json": "modulation_30_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_30",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_30_bypass",
+   "name": "Modulation 30 Bypass",
+   "json": "modulation_30_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_30",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_30_power",
+   "name": "Modulation 30 Power",
+   "json": "modulation_30_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_30"
+  },
+  {
+   "key": "modulation_30_ramp_down",
+   "name": "Modulation 30 Ramp Down",
+   "json": "modulation_30_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_30"
+  },
+  {
+   "key": "modulation_30_ramp_up",
+   "name": "Modulation 30 Ramp Up",
+   "json": "modulation_30_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_30"
+  },
+  {
+   "key": "modulation_30_stereo",
+   "name": "Modulation 30 Stereo",
+   "json": "modulation_30_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_30",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_31_amount",
+   "name": "Modulation 31 Amount",
+   "json": "modulation_31_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_31"
+  },
+  {
+   "key": "modulation_31_bipolar",
+   "name": "Modulation 31 Bipolar",
+   "json": "modulation_31_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_31",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_31_bypass",
+   "name": "Modulation 31 Bypass",
+   "json": "modulation_31_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_31",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_31_power",
+   "name": "Modulation 31 Power",
+   "json": "modulation_31_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_31"
+  },
+  {
+   "key": "modulation_31_ramp_down",
+   "name": "Modulation 31 Ramp Down",
+   "json": "modulation_31_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_31"
+  },
+  {
+   "key": "modulation_31_ramp_up",
+   "name": "Modulation 31 Ramp Up",
+   "json": "modulation_31_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_31"
+  },
+  {
+   "key": "modulation_31_stereo",
+   "name": "Modulation 31 Stereo",
+   "json": "modulation_31_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_31",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_32_amount",
+   "name": "Modulation 32 Amount",
+   "json": "modulation_32_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_32"
+  },
+  {
+   "key": "modulation_32_bipolar",
+   "name": "Modulation 32 Bipolar",
+   "json": "modulation_32_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_32",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_32_bypass",
+   "name": "Modulation 32 Bypass",
+   "json": "modulation_32_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_32",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_32_power",
+   "name": "Modulation 32 Power",
+   "json": "modulation_32_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_32"
+  },
+  {
+   "key": "modulation_32_ramp_down",
+   "name": "Modulation 32 Ramp Down",
+   "json": "modulation_32_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_32"
+  },
+  {
+   "key": "modulation_32_ramp_up",
+   "name": "Modulation 32 Ramp Up",
+   "json": "modulation_32_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_32"
+  },
+  {
+   "key": "modulation_32_stereo",
+   "name": "Modulation 32 Stereo",
+   "json": "modulation_32_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_32",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_33_amount",
+   "name": "Modulation 33 Amount",
+   "json": "modulation_33_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_33"
+  },
+  {
+   "key": "modulation_33_bipolar",
+   "name": "Modulation 33 Bipolar",
+   "json": "modulation_33_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_33",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_33_bypass",
+   "name": "Modulation 33 Bypass",
+   "json": "modulation_33_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_33",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_33_power",
+   "name": "Modulation 33 Power",
+   "json": "modulation_33_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_33"
+  },
+  {
+   "key": "modulation_33_ramp_down",
+   "name": "Modulation 33 Ramp Down",
+   "json": "modulation_33_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_33"
+  },
+  {
+   "key": "modulation_33_ramp_up",
+   "name": "Modulation 33 Ramp Up",
+   "json": "modulation_33_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_33"
+  },
+  {
+   "key": "modulation_33_stereo",
+   "name": "Modulation 33 Stereo",
+   "json": "modulation_33_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_33",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_34_amount",
+   "name": "Modulation 34 Amount",
+   "json": "modulation_34_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_34"
+  },
+  {
+   "key": "modulation_34_bipolar",
+   "name": "Modulation 34 Bipolar",
+   "json": "modulation_34_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_34",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_34_bypass",
+   "name": "Modulation 34 Bypass",
+   "json": "modulation_34_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_34",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_34_power",
+   "name": "Modulation 34 Power",
+   "json": "modulation_34_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_34"
+  },
+  {
+   "key": "modulation_34_ramp_down",
+   "name": "Modulation 34 Ramp Down",
+   "json": "modulation_34_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_34"
+  },
+  {
+   "key": "modulation_34_ramp_up",
+   "name": "Modulation 34 Ramp Up",
+   "json": "modulation_34_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_34"
+  },
+  {
+   "key": "modulation_34_stereo",
+   "name": "Modulation 34 Stereo",
+   "json": "modulation_34_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_34",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_35_amount",
+   "name": "Modulation 35 Amount",
+   "json": "modulation_35_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_35"
+  },
+  {
+   "key": "modulation_35_bipolar",
+   "name": "Modulation 35 Bipolar",
+   "json": "modulation_35_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_35",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_35_bypass",
+   "name": "Modulation 35 Bypass",
+   "json": "modulation_35_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_35",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_35_power",
+   "name": "Modulation 35 Power",
+   "json": "modulation_35_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_35"
+  },
+  {
+   "key": "modulation_35_ramp_down",
+   "name": "Modulation 35 Ramp Down",
+   "json": "modulation_35_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_35"
+  },
+  {
+   "key": "modulation_35_ramp_up",
+   "name": "Modulation 35 Ramp Up",
+   "json": "modulation_35_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_35"
+  },
+  {
+   "key": "modulation_35_stereo",
+   "name": "Modulation 35 Stereo",
+   "json": "modulation_35_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_35",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_36_amount",
+   "name": "Modulation 36 Amount",
+   "json": "modulation_36_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_36"
+  },
+  {
+   "key": "modulation_36_bipolar",
+   "name": "Modulation 36 Bipolar",
+   "json": "modulation_36_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_36",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_36_bypass",
+   "name": "Modulation 36 Bypass",
+   "json": "modulation_36_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_36",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_36_power",
+   "name": "Modulation 36 Power",
+   "json": "modulation_36_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_36"
+  },
+  {
+   "key": "modulation_36_ramp_down",
+   "name": "Modulation 36 Ramp Down",
+   "json": "modulation_36_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_36"
+  },
+  {
+   "key": "modulation_36_ramp_up",
+   "name": "Modulation 36 Ramp Up",
+   "json": "modulation_36_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_36"
+  },
+  {
+   "key": "modulation_36_stereo",
+   "name": "Modulation 36 Stereo",
+   "json": "modulation_36_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_36",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_37_amount",
+   "name": "Modulation 37 Amount",
+   "json": "modulation_37_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_37"
+  },
+  {
+   "key": "modulation_37_bipolar",
+   "name": "Modulation 37 Bipolar",
+   "json": "modulation_37_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_37",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_37_bypass",
+   "name": "Modulation 37 Bypass",
+   "json": "modulation_37_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_37",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_37_power",
+   "name": "Modulation 37 Power",
+   "json": "modulation_37_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_37"
+  },
+  {
+   "key": "modulation_37_ramp_down",
+   "name": "Modulation 37 Ramp Down",
+   "json": "modulation_37_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_37"
+  },
+  {
+   "key": "modulation_37_ramp_up",
+   "name": "Modulation 37 Ramp Up",
+   "json": "modulation_37_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_37"
+  },
+  {
+   "key": "modulation_37_stereo",
+   "name": "Modulation 37 Stereo",
+   "json": "modulation_37_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_37",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_38_amount",
+   "name": "Modulation 38 Amount",
+   "json": "modulation_38_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_38"
+  },
+  {
+   "key": "modulation_38_bipolar",
+   "name": "Modulation 38 Bipolar",
+   "json": "modulation_38_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_38",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_38_bypass",
+   "name": "Modulation 38 Bypass",
+   "json": "modulation_38_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_38",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_38_power",
+   "name": "Modulation 38 Power",
+   "json": "modulation_38_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_38"
+  },
+  {
+   "key": "modulation_38_ramp_down",
+   "name": "Modulation 38 Ramp Down",
+   "json": "modulation_38_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_38"
+  },
+  {
+   "key": "modulation_38_ramp_up",
+   "name": "Modulation 38 Ramp Up",
+   "json": "modulation_38_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_38"
+  },
+  {
+   "key": "modulation_38_stereo",
+   "name": "Modulation 38 Stereo",
+   "json": "modulation_38_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_38",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_39_amount",
+   "name": "Modulation 39 Amount",
+   "json": "modulation_39_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_39"
+  },
+  {
+   "key": "modulation_39_bipolar",
+   "name": "Modulation 39 Bipolar",
+   "json": "modulation_39_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_39",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_39_bypass",
+   "name": "Modulation 39 Bypass",
+   "json": "modulation_39_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_39",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_39_power",
+   "name": "Modulation 39 Power",
+   "json": "modulation_39_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_39"
+  },
+  {
+   "key": "modulation_39_ramp_down",
+   "name": "Modulation 39 Ramp Down",
+   "json": "modulation_39_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_39"
+  },
+  {
+   "key": "modulation_39_ramp_up",
+   "name": "Modulation 39 Ramp Up",
+   "json": "modulation_39_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_39"
+  },
+  {
+   "key": "modulation_39_stereo",
+   "name": "Modulation 39 Stereo",
+   "json": "modulation_39_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_39",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_3_amount",
+   "name": "Modulation 3 Amount",
+   "json": "modulation_3_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_3"
+  },
+  {
+   "key": "modulation_3_bipolar",
+   "name": "Modulation 3 Bipolar",
+   "json": "modulation_3_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_3",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_3_bypass",
+   "name": "Modulation 3 Bypass",
+   "json": "modulation_3_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_3",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_3_power",
+   "name": "Modulation 3 Power",
+   "json": "modulation_3_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_3"
+  },
+  {
+   "key": "modulation_3_ramp_down",
+   "name": "Modulation 3 Ramp Down",
+   "json": "modulation_3_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_3"
+  },
+  {
+   "key": "modulation_3_ramp_up",
+   "name": "Modulation 3 Ramp Up",
+   "json": "modulation_3_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_3"
+  },
+  {
+   "key": "modulation_3_stereo",
+   "name": "Modulation 3 Stereo",
+   "json": "modulation_3_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_3",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_40_amount",
+   "name": "Modulation 40 Amount",
+   "json": "modulation_40_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_40"
+  },
+  {
+   "key": "modulation_40_bipolar",
+   "name": "Modulation 40 Bipolar",
+   "json": "modulation_40_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_40",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_40_bypass",
+   "name": "Modulation 40 Bypass",
+   "json": "modulation_40_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_40",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_40_power",
+   "name": "Modulation 40 Power",
+   "json": "modulation_40_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_40"
+  },
+  {
+   "key": "modulation_40_ramp_down",
+   "name": "Modulation 40 Ramp Down",
+   "json": "modulation_40_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_40"
+  },
+  {
+   "key": "modulation_40_ramp_up",
+   "name": "Modulation 40 Ramp Up",
+   "json": "modulation_40_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_40"
+  },
+  {
+   "key": "modulation_40_stereo",
+   "name": "Modulation 40 Stereo",
+   "json": "modulation_40_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_40",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_41_amount",
+   "name": "Modulation 41 Amount",
+   "json": "modulation_41_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_41"
+  },
+  {
+   "key": "modulation_41_bipolar",
+   "name": "Modulation 41 Bipolar",
+   "json": "modulation_41_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_41",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_41_bypass",
+   "name": "Modulation 41 Bypass",
+   "json": "modulation_41_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_41",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_41_power",
+   "name": "Modulation 41 Power",
+   "json": "modulation_41_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_41"
+  },
+  {
+   "key": "modulation_41_ramp_down",
+   "name": "Modulation 41 Ramp Down",
+   "json": "modulation_41_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_41"
+  },
+  {
+   "key": "modulation_41_ramp_up",
+   "name": "Modulation 41 Ramp Up",
+   "json": "modulation_41_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_41"
+  },
+  {
+   "key": "modulation_41_stereo",
+   "name": "Modulation 41 Stereo",
+   "json": "modulation_41_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_41",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_42_amount",
+   "name": "Modulation 42 Amount",
+   "json": "modulation_42_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_42"
+  },
+  {
+   "key": "modulation_42_bipolar",
+   "name": "Modulation 42 Bipolar",
+   "json": "modulation_42_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_42",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_42_bypass",
+   "name": "Modulation 42 Bypass",
+   "json": "modulation_42_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_42",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_42_power",
+   "name": "Modulation 42 Power",
+   "json": "modulation_42_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_42"
+  },
+  {
+   "key": "modulation_42_ramp_down",
+   "name": "Modulation 42 Ramp Down",
+   "json": "modulation_42_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_42"
+  },
+  {
+   "key": "modulation_42_ramp_up",
+   "name": "Modulation 42 Ramp Up",
+   "json": "modulation_42_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_42"
+  },
+  {
+   "key": "modulation_42_stereo",
+   "name": "Modulation 42 Stereo",
+   "json": "modulation_42_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_42",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_43_amount",
+   "name": "Modulation 43 Amount",
+   "json": "modulation_43_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_43"
+  },
+  {
+   "key": "modulation_43_bipolar",
+   "name": "Modulation 43 Bipolar",
+   "json": "modulation_43_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_43",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_43_bypass",
+   "name": "Modulation 43 Bypass",
+   "json": "modulation_43_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_43",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_43_power",
+   "name": "Modulation 43 Power",
+   "json": "modulation_43_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_43"
+  },
+  {
+   "key": "modulation_43_ramp_down",
+   "name": "Modulation 43 Ramp Down",
+   "json": "modulation_43_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_43"
+  },
+  {
+   "key": "modulation_43_ramp_up",
+   "name": "Modulation 43 Ramp Up",
+   "json": "modulation_43_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_43"
+  },
+  {
+   "key": "modulation_43_stereo",
+   "name": "Modulation 43 Stereo",
+   "json": "modulation_43_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_43",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_44_amount",
+   "name": "Modulation 44 Amount",
+   "json": "modulation_44_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_44"
+  },
+  {
+   "key": "modulation_44_bipolar",
+   "name": "Modulation 44 Bipolar",
+   "json": "modulation_44_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_44",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_44_bypass",
+   "name": "Modulation 44 Bypass",
+   "json": "modulation_44_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_44",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_44_power",
+   "name": "Modulation 44 Power",
+   "json": "modulation_44_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_44"
+  },
+  {
+   "key": "modulation_44_ramp_down",
+   "name": "Modulation 44 Ramp Down",
+   "json": "modulation_44_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_44"
+  },
+  {
+   "key": "modulation_44_ramp_up",
+   "name": "Modulation 44 Ramp Up",
+   "json": "modulation_44_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_44"
+  },
+  {
+   "key": "modulation_44_stereo",
+   "name": "Modulation 44 Stereo",
+   "json": "modulation_44_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_44",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_45_amount",
+   "name": "Modulation 45 Amount",
+   "json": "modulation_45_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_45"
+  },
+  {
+   "key": "modulation_45_bipolar",
+   "name": "Modulation 45 Bipolar",
+   "json": "modulation_45_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_45",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_45_bypass",
+   "name": "Modulation 45 Bypass",
+   "json": "modulation_45_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_45",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_45_power",
+   "name": "Modulation 45 Power",
+   "json": "modulation_45_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_45"
+  },
+  {
+   "key": "modulation_45_ramp_down",
+   "name": "Modulation 45 Ramp Down",
+   "json": "modulation_45_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_45"
+  },
+  {
+   "key": "modulation_45_ramp_up",
+   "name": "Modulation 45 Ramp Up",
+   "json": "modulation_45_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_45"
+  },
+  {
+   "key": "modulation_45_stereo",
+   "name": "Modulation 45 Stereo",
+   "json": "modulation_45_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_45",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_46_amount",
+   "name": "Modulation 46 Amount",
+   "json": "modulation_46_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_46"
+  },
+  {
+   "key": "modulation_46_bipolar",
+   "name": "Modulation 46 Bipolar",
+   "json": "modulation_46_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_46",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_46_bypass",
+   "name": "Modulation 46 Bypass",
+   "json": "modulation_46_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_46",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_46_power",
+   "name": "Modulation 46 Power",
+   "json": "modulation_46_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_46"
+  },
+  {
+   "key": "modulation_46_ramp_down",
+   "name": "Modulation 46 Ramp Down",
+   "json": "modulation_46_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_46"
+  },
+  {
+   "key": "modulation_46_ramp_up",
+   "name": "Modulation 46 Ramp Up",
+   "json": "modulation_46_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_46"
+  },
+  {
+   "key": "modulation_46_stereo",
+   "name": "Modulation 46 Stereo",
+   "json": "modulation_46_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_46",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_47_amount",
+   "name": "Modulation 47 Amount",
+   "json": "modulation_47_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_47"
+  },
+  {
+   "key": "modulation_47_bipolar",
+   "name": "Modulation 47 Bipolar",
+   "json": "modulation_47_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_47",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_47_bypass",
+   "name": "Modulation 47 Bypass",
+   "json": "modulation_47_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_47",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_47_power",
+   "name": "Modulation 47 Power",
+   "json": "modulation_47_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_47"
+  },
+  {
+   "key": "modulation_47_ramp_down",
+   "name": "Modulation 47 Ramp Down",
+   "json": "modulation_47_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_47"
+  },
+  {
+   "key": "modulation_47_ramp_up",
+   "name": "Modulation 47 Ramp Up",
+   "json": "modulation_47_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_47"
+  },
+  {
+   "key": "modulation_47_stereo",
+   "name": "Modulation 47 Stereo",
+   "json": "modulation_47_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_47",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_48_amount",
+   "name": "Modulation 48 Amount",
+   "json": "modulation_48_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_48"
+  },
+  {
+   "key": "modulation_48_bipolar",
+   "name": "Modulation 48 Bipolar",
+   "json": "modulation_48_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_48",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_48_bypass",
+   "name": "Modulation 48 Bypass",
+   "json": "modulation_48_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_48",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_48_power",
+   "name": "Modulation 48 Power",
+   "json": "modulation_48_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_48"
+  },
+  {
+   "key": "modulation_48_ramp_down",
+   "name": "Modulation 48 Ramp Down",
+   "json": "modulation_48_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_48"
+  },
+  {
+   "key": "modulation_48_ramp_up",
+   "name": "Modulation 48 Ramp Up",
+   "json": "modulation_48_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_48"
+  },
+  {
+   "key": "modulation_48_stereo",
+   "name": "Modulation 48 Stereo",
+   "json": "modulation_48_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_48",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_49_amount",
+   "name": "Modulation 49 Amount",
+   "json": "modulation_49_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_49"
+  },
+  {
+   "key": "modulation_49_bipolar",
+   "name": "Modulation 49 Bipolar",
+   "json": "modulation_49_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_49",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_49_bypass",
+   "name": "Modulation 49 Bypass",
+   "json": "modulation_49_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_49",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_49_power",
+   "name": "Modulation 49 Power",
+   "json": "modulation_49_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_49"
+  },
+  {
+   "key": "modulation_49_ramp_down",
+   "name": "Modulation 49 Ramp Down",
+   "json": "modulation_49_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_49"
+  },
+  {
+   "key": "modulation_49_ramp_up",
+   "name": "Modulation 49 Ramp Up",
+   "json": "modulation_49_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_49"
+  },
+  {
+   "key": "modulation_49_stereo",
+   "name": "Modulation 49 Stereo",
+   "json": "modulation_49_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_49",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_4_amount",
+   "name": "Modulation 4 Amount",
+   "json": "modulation_4_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_4"
+  },
+  {
+   "key": "modulation_4_bipolar",
+   "name": "Modulation 4 Bipolar",
+   "json": "modulation_4_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_4",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_4_bypass",
+   "name": "Modulation 4 Bypass",
+   "json": "modulation_4_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_4",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_4_power",
+   "name": "Modulation 4 Power",
+   "json": "modulation_4_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_4"
+  },
+  {
+   "key": "modulation_4_ramp_down",
+   "name": "Modulation 4 Ramp Down",
+   "json": "modulation_4_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_4"
+  },
+  {
+   "key": "modulation_4_ramp_up",
+   "name": "Modulation 4 Ramp Up",
+   "json": "modulation_4_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_4"
+  },
+  {
+   "key": "modulation_4_stereo",
+   "name": "Modulation 4 Stereo",
+   "json": "modulation_4_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_4",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_50_amount",
+   "name": "Modulation 50 Amount",
+   "json": "modulation_50_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_50"
+  },
+  {
+   "key": "modulation_50_bipolar",
+   "name": "Modulation 50 Bipolar",
+   "json": "modulation_50_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_50",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_50_bypass",
+   "name": "Modulation 50 Bypass",
+   "json": "modulation_50_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_50",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_50_power",
+   "name": "Modulation 50 Power",
+   "json": "modulation_50_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_50"
+  },
+  {
+   "key": "modulation_50_ramp_down",
+   "name": "Modulation 50 Ramp Down",
+   "json": "modulation_50_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_50"
+  },
+  {
+   "key": "modulation_50_ramp_up",
+   "name": "Modulation 50 Ramp Up",
+   "json": "modulation_50_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_50"
+  },
+  {
+   "key": "modulation_50_stereo",
+   "name": "Modulation 50 Stereo",
+   "json": "modulation_50_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_50",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_51_amount",
+   "name": "Modulation 51 Amount",
+   "json": "modulation_51_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_51"
+  },
+  {
+   "key": "modulation_51_bipolar",
+   "name": "Modulation 51 Bipolar",
+   "json": "modulation_51_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_51",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_51_bypass",
+   "name": "Modulation 51 Bypass",
+   "json": "modulation_51_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_51",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_51_power",
+   "name": "Modulation 51 Power",
+   "json": "modulation_51_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_51"
+  },
+  {
+   "key": "modulation_51_ramp_down",
+   "name": "Modulation 51 Ramp Down",
+   "json": "modulation_51_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_51"
+  },
+  {
+   "key": "modulation_51_ramp_up",
+   "name": "Modulation 51 Ramp Up",
+   "json": "modulation_51_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_51"
+  },
+  {
+   "key": "modulation_51_stereo",
+   "name": "Modulation 51 Stereo",
+   "json": "modulation_51_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_51",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_52_amount",
+   "name": "Modulation 52 Amount",
+   "json": "modulation_52_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_52"
+  },
+  {
+   "key": "modulation_52_bipolar",
+   "name": "Modulation 52 Bipolar",
+   "json": "modulation_52_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_52",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_52_bypass",
+   "name": "Modulation 52 Bypass",
+   "json": "modulation_52_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_52",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_52_power",
+   "name": "Modulation 52 Power",
+   "json": "modulation_52_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_52"
+  },
+  {
+   "key": "modulation_52_ramp_down",
+   "name": "Modulation 52 Ramp Down",
+   "json": "modulation_52_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_52"
+  },
+  {
+   "key": "modulation_52_ramp_up",
+   "name": "Modulation 52 Ramp Up",
+   "json": "modulation_52_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_52"
+  },
+  {
+   "key": "modulation_52_stereo",
+   "name": "Modulation 52 Stereo",
+   "json": "modulation_52_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_52",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_53_amount",
+   "name": "Modulation 53 Amount",
+   "json": "modulation_53_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_53"
+  },
+  {
+   "key": "modulation_53_bipolar",
+   "name": "Modulation 53 Bipolar",
+   "json": "modulation_53_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_53",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_53_bypass",
+   "name": "Modulation 53 Bypass",
+   "json": "modulation_53_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_53",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_53_power",
+   "name": "Modulation 53 Power",
+   "json": "modulation_53_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_53"
+  },
+  {
+   "key": "modulation_53_ramp_down",
+   "name": "Modulation 53 Ramp Down",
+   "json": "modulation_53_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_53"
+  },
+  {
+   "key": "modulation_53_ramp_up",
+   "name": "Modulation 53 Ramp Up",
+   "json": "modulation_53_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_53"
+  },
+  {
+   "key": "modulation_53_stereo",
+   "name": "Modulation 53 Stereo",
+   "json": "modulation_53_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_53",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_54_amount",
+   "name": "Modulation 54 Amount",
+   "json": "modulation_54_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_54"
+  },
+  {
+   "key": "modulation_54_bipolar",
+   "name": "Modulation 54 Bipolar",
+   "json": "modulation_54_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_54",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_54_bypass",
+   "name": "Modulation 54 Bypass",
+   "json": "modulation_54_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_54",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_54_power",
+   "name": "Modulation 54 Power",
+   "json": "modulation_54_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_54"
+  },
+  {
+   "key": "modulation_54_ramp_down",
+   "name": "Modulation 54 Ramp Down",
+   "json": "modulation_54_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_54"
+  },
+  {
+   "key": "modulation_54_ramp_up",
+   "name": "Modulation 54 Ramp Up",
+   "json": "modulation_54_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_54"
+  },
+  {
+   "key": "modulation_54_stereo",
+   "name": "Modulation 54 Stereo",
+   "json": "modulation_54_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_54",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_55_amount",
+   "name": "Modulation 55 Amount",
+   "json": "modulation_55_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_55"
+  },
+  {
+   "key": "modulation_55_bipolar",
+   "name": "Modulation 55 Bipolar",
+   "json": "modulation_55_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_55",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_55_bypass",
+   "name": "Modulation 55 Bypass",
+   "json": "modulation_55_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_55",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_55_power",
+   "name": "Modulation 55 Power",
+   "json": "modulation_55_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_55"
+  },
+  {
+   "key": "modulation_55_ramp_down",
+   "name": "Modulation 55 Ramp Down",
+   "json": "modulation_55_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_55"
+  },
+  {
+   "key": "modulation_55_ramp_up",
+   "name": "Modulation 55 Ramp Up",
+   "json": "modulation_55_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_55"
+  },
+  {
+   "key": "modulation_55_stereo",
+   "name": "Modulation 55 Stereo",
+   "json": "modulation_55_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_55",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_56_amount",
+   "name": "Modulation 56 Amount",
+   "json": "modulation_56_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_56"
+  },
+  {
+   "key": "modulation_56_bipolar",
+   "name": "Modulation 56 Bipolar",
+   "json": "modulation_56_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_56",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_56_bypass",
+   "name": "Modulation 56 Bypass",
+   "json": "modulation_56_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_56",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_56_power",
+   "name": "Modulation 56 Power",
+   "json": "modulation_56_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_56"
+  },
+  {
+   "key": "modulation_56_ramp_down",
+   "name": "Modulation 56 Ramp Down",
+   "json": "modulation_56_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_56"
+  },
+  {
+   "key": "modulation_56_ramp_up",
+   "name": "Modulation 56 Ramp Up",
+   "json": "modulation_56_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_56"
+  },
+  {
+   "key": "modulation_56_stereo",
+   "name": "Modulation 56 Stereo",
+   "json": "modulation_56_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_56",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_57_amount",
+   "name": "Modulation 57 Amount",
+   "json": "modulation_57_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_57"
+  },
+  {
+   "key": "modulation_57_bipolar",
+   "name": "Modulation 57 Bipolar",
+   "json": "modulation_57_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_57",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_57_bypass",
+   "name": "Modulation 57 Bypass",
+   "json": "modulation_57_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_57",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_57_power",
+   "name": "Modulation 57 Power",
+   "json": "modulation_57_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_57"
+  },
+  {
+   "key": "modulation_57_ramp_down",
+   "name": "Modulation 57 Ramp Down",
+   "json": "modulation_57_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_57"
+  },
+  {
+   "key": "modulation_57_ramp_up",
+   "name": "Modulation 57 Ramp Up",
+   "json": "modulation_57_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_57"
+  },
+  {
+   "key": "modulation_57_stereo",
+   "name": "Modulation 57 Stereo",
+   "json": "modulation_57_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_57",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_58_amount",
+   "name": "Modulation 58 Amount",
+   "json": "modulation_58_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_58"
+  },
+  {
+   "key": "modulation_58_bipolar",
+   "name": "Modulation 58 Bipolar",
+   "json": "modulation_58_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_58",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_58_bypass",
+   "name": "Modulation 58 Bypass",
+   "json": "modulation_58_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_58",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_58_power",
+   "name": "Modulation 58 Power",
+   "json": "modulation_58_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_58"
+  },
+  {
+   "key": "modulation_58_ramp_down",
+   "name": "Modulation 58 Ramp Down",
+   "json": "modulation_58_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_58"
+  },
+  {
+   "key": "modulation_58_ramp_up",
+   "name": "Modulation 58 Ramp Up",
+   "json": "modulation_58_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_58"
+  },
+  {
+   "key": "modulation_58_stereo",
+   "name": "Modulation 58 Stereo",
+   "json": "modulation_58_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_58",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_59_amount",
+   "name": "Modulation 59 Amount",
+   "json": "modulation_59_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_59"
+  },
+  {
+   "key": "modulation_59_bipolar",
+   "name": "Modulation 59 Bipolar",
+   "json": "modulation_59_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_59",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_59_bypass",
+   "name": "Modulation 59 Bypass",
+   "json": "modulation_59_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_59",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_59_power",
+   "name": "Modulation 59 Power",
+   "json": "modulation_59_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_59"
+  },
+  {
+   "key": "modulation_59_ramp_down",
+   "name": "Modulation 59 Ramp Down",
+   "json": "modulation_59_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_59"
+  },
+  {
+   "key": "modulation_59_ramp_up",
+   "name": "Modulation 59 Ramp Up",
+   "json": "modulation_59_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_59"
+  },
+  {
+   "key": "modulation_59_stereo",
+   "name": "Modulation 59 Stereo",
+   "json": "modulation_59_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_59",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_5_amount",
+   "name": "Modulation 5 Amount",
+   "json": "modulation_5_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_5"
+  },
+  {
+   "key": "modulation_5_bipolar",
+   "name": "Modulation 5 Bipolar",
+   "json": "modulation_5_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_5",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_5_bypass",
+   "name": "Modulation 5 Bypass",
+   "json": "modulation_5_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_5",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_5_power",
+   "name": "Modulation 5 Power",
+   "json": "modulation_5_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_5"
+  },
+  {
+   "key": "modulation_5_ramp_down",
+   "name": "Modulation 5 Ramp Down",
+   "json": "modulation_5_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_5"
+  },
+  {
+   "key": "modulation_5_ramp_up",
+   "name": "Modulation 5 Ramp Up",
+   "json": "modulation_5_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_5"
+  },
+  {
+   "key": "modulation_5_stereo",
+   "name": "Modulation 5 Stereo",
+   "json": "modulation_5_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_5",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_60_amount",
+   "name": "Modulation 60 Amount",
+   "json": "modulation_60_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_60"
+  },
+  {
+   "key": "modulation_60_bipolar",
+   "name": "Modulation 60 Bipolar",
+   "json": "modulation_60_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_60",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_60_bypass",
+   "name": "Modulation 60 Bypass",
+   "json": "modulation_60_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_60",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_60_power",
+   "name": "Modulation 60 Power",
+   "json": "modulation_60_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_60"
+  },
+  {
+   "key": "modulation_60_ramp_down",
+   "name": "Modulation 60 Ramp Down",
+   "json": "modulation_60_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_60"
+  },
+  {
+   "key": "modulation_60_ramp_up",
+   "name": "Modulation 60 Ramp Up",
+   "json": "modulation_60_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_60"
+  },
+  {
+   "key": "modulation_60_stereo",
+   "name": "Modulation 60 Stereo",
+   "json": "modulation_60_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_60",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_61_amount",
+   "name": "Modulation 61 Amount",
+   "json": "modulation_61_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_61"
+  },
+  {
+   "key": "modulation_61_bipolar",
+   "name": "Modulation 61 Bipolar",
+   "json": "modulation_61_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_61",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_61_bypass",
+   "name": "Modulation 61 Bypass",
+   "json": "modulation_61_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_61",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_61_power",
+   "name": "Modulation 61 Power",
+   "json": "modulation_61_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_61"
+  },
+  {
+   "key": "modulation_61_ramp_down",
+   "name": "Modulation 61 Ramp Down",
+   "json": "modulation_61_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_61"
+  },
+  {
+   "key": "modulation_61_ramp_up",
+   "name": "Modulation 61 Ramp Up",
+   "json": "modulation_61_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_61"
+  },
+  {
+   "key": "modulation_61_stereo",
+   "name": "Modulation 61 Stereo",
+   "json": "modulation_61_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_61",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_62_amount",
+   "name": "Modulation 62 Amount",
+   "json": "modulation_62_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_62"
+  },
+  {
+   "key": "modulation_62_bipolar",
+   "name": "Modulation 62 Bipolar",
+   "json": "modulation_62_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_62",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_62_bypass",
+   "name": "Modulation 62 Bypass",
+   "json": "modulation_62_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_62",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_62_power",
+   "name": "Modulation 62 Power",
+   "json": "modulation_62_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_62"
+  },
+  {
+   "key": "modulation_62_ramp_down",
+   "name": "Modulation 62 Ramp Down",
+   "json": "modulation_62_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_62"
+  },
+  {
+   "key": "modulation_62_ramp_up",
+   "name": "Modulation 62 Ramp Up",
+   "json": "modulation_62_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_62"
+  },
+  {
+   "key": "modulation_62_stereo",
+   "name": "Modulation 62 Stereo",
+   "json": "modulation_62_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_62",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_63_amount",
+   "name": "Modulation 63 Amount",
+   "json": "modulation_63_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_63"
+  },
+  {
+   "key": "modulation_63_bipolar",
+   "name": "Modulation 63 Bipolar",
+   "json": "modulation_63_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_63",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_63_bypass",
+   "name": "Modulation 63 Bypass",
+   "json": "modulation_63_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_63",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_63_power",
+   "name": "Modulation 63 Power",
+   "json": "modulation_63_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_63"
+  },
+  {
+   "key": "modulation_63_ramp_down",
+   "name": "Modulation 63 Ramp Down",
+   "json": "modulation_63_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_63"
+  },
+  {
+   "key": "modulation_63_ramp_up",
+   "name": "Modulation 63 Ramp Up",
+   "json": "modulation_63_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_63"
+  },
+  {
+   "key": "modulation_63_stereo",
+   "name": "Modulation 63 Stereo",
+   "json": "modulation_63_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_63",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_64_amount",
+   "name": "Modulation 64 Amount",
+   "json": "modulation_64_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_64"
+  },
+  {
+   "key": "modulation_64_bipolar",
+   "name": "Modulation 64 Bipolar",
+   "json": "modulation_64_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_64",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_64_bypass",
+   "name": "Modulation 64 Bypass",
+   "json": "modulation_64_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_64",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_64_power",
+   "name": "Modulation 64 Power",
+   "json": "modulation_64_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_64"
+  },
+  {
+   "key": "modulation_64_ramp_down",
+   "name": "Modulation 64 Ramp Down",
+   "json": "modulation_64_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_64"
+  },
+  {
+   "key": "modulation_64_ramp_up",
+   "name": "Modulation 64 Ramp Up",
+   "json": "modulation_64_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_64"
+  },
+  {
+   "key": "modulation_64_stereo",
+   "name": "Modulation 64 Stereo",
+   "json": "modulation_64_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_64",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_6_amount",
+   "name": "Modulation 6 Amount",
+   "json": "modulation_6_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_6"
+  },
+  {
+   "key": "modulation_6_bipolar",
+   "name": "Modulation 6 Bipolar",
+   "json": "modulation_6_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_6",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_6_bypass",
+   "name": "Modulation 6 Bypass",
+   "json": "modulation_6_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_6",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_6_power",
+   "name": "Modulation 6 Power",
+   "json": "modulation_6_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_6"
+  },
+  {
+   "key": "modulation_6_ramp_down",
+   "name": "Modulation 6 Ramp Down",
+   "json": "modulation_6_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_6"
+  },
+  {
+   "key": "modulation_6_ramp_up",
+   "name": "Modulation 6 Ramp Up",
+   "json": "modulation_6_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_6"
+  },
+  {
+   "key": "modulation_6_stereo",
+   "name": "Modulation 6 Stereo",
+   "json": "modulation_6_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_6",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_7_amount",
+   "name": "Modulation 7 Amount",
+   "json": "modulation_7_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_7"
+  },
+  {
+   "key": "modulation_7_bipolar",
+   "name": "Modulation 7 Bipolar",
+   "json": "modulation_7_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_7",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_7_bypass",
+   "name": "Modulation 7 Bypass",
+   "json": "modulation_7_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_7",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_7_power",
+   "name": "Modulation 7 Power",
+   "json": "modulation_7_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_7"
+  },
+  {
+   "key": "modulation_7_ramp_down",
+   "name": "Modulation 7 Ramp Down",
+   "json": "modulation_7_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_7"
+  },
+  {
+   "key": "modulation_7_ramp_up",
+   "name": "Modulation 7 Ramp Up",
+   "json": "modulation_7_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_7"
+  },
+  {
+   "key": "modulation_7_stereo",
+   "name": "Modulation 7 Stereo",
+   "json": "modulation_7_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_7",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_8_amount",
+   "name": "Modulation 8 Amount",
+   "json": "modulation_8_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_8"
+  },
+  {
+   "key": "modulation_8_bipolar",
+   "name": "Modulation 8 Bipolar",
+   "json": "modulation_8_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_8",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_8_bypass",
+   "name": "Modulation 8 Bypass",
+   "json": "modulation_8_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_8",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_8_power",
+   "name": "Modulation 8 Power",
+   "json": "modulation_8_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_8"
+  },
+  {
+   "key": "modulation_8_ramp_down",
+   "name": "Modulation 8 Ramp Down",
+   "json": "modulation_8_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_8"
+  },
+  {
+   "key": "modulation_8_ramp_up",
+   "name": "Modulation 8 Ramp Up",
+   "json": "modulation_8_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_8"
+  },
+  {
+   "key": "modulation_8_stereo",
+   "name": "Modulation 8 Stereo",
+   "json": "modulation_8_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_8",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_9_amount",
+   "name": "Modulation 9 Amount",
+   "json": "modulation_9_amount",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_9"
+  },
+  {
+   "key": "modulation_9_bipolar",
+   "name": "Modulation 9 Bipolar",
+   "json": "modulation_9_bipolar",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_9",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_9_bypass",
+   "name": "Modulation 9 Bypass",
+   "json": "modulation_9_bypass",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_9",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "modulation_9_power",
+   "name": "Modulation 9 Power",
+   "json": "modulation_9_power",
+   "init": "0",
+   "raw": 0.5,
+   "group": "modulation_9"
+  },
+  {
+   "key": "modulation_9_ramp_down",
+   "name": "Modulation 9 Ramp Down",
+   "json": "modulation_9_ramp_down",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_9"
+  },
+  {
+   "key": "modulation_9_ramp_up",
+   "name": "Modulation 9 Ramp Up",
+   "json": "modulation_9_ramp_up",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "modulation_9"
+  },
+  {
+   "key": "modulation_9_stereo",
+   "name": "Modulation 9 Stereo",
+   "json": "modulation_9_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "modulation_9",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "mpe_enabled",
+   "name": "MPE Enabled",
+   "json": "mpe_enabled",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "global",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_1_blend",
+   "name": "Oscillator 1 Blend",
+   "json": "osc_1_unison_blend",
+   "init": "80%",
+   "raw": 0.8,
+   "group": "oscillator_1",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_1_destination",
+   "name": "Oscillator 1 Destination",
+   "json": "osc_1_destination",
+   "init": "FILTER 1",
+   "raw": 0.0,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 15
+  },
+  {
+   "key": "oscillator_1_detune_power",
+   "name": "Oscillator 1 Detune Power",
+   "json": "osc_1_detune_power",
+   "init": "0.911815",
+   "raw": 0.5912,
+   "group": "oscillator_1"
+  },
+  {
+   "key": "oscillator_1_detune_range",
+   "name": "Oscillator 1 Detune Range",
+   "json": "osc_1_detune_range",
+   "init": "2",
+   "raw": 0.0417,
+   "group": "oscillator_1"
+  },
+  {
+   "key": "oscillator_1_distortion_amount",
+   "name": "Oscillator 1 Distortion Amount",
+   "json": "osc_1_distortion_amount",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "oscillator_1",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_1_distortion_phase",
+   "name": "Oscillator 1 Distortion Phase",
+   "json": "osc_1_distortion_phase",
+   "init": "180",
+   "raw": 0.5,
+   "group": "oscillator_1"
+  },
+  {
+   "key": "oscillator_1_distortion_spread",
+   "name": "Oscillator 1 Distortion Spread",
+   "json": "osc_1_distortion_spread",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "oscillator_1",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_1_distortion_type",
+   "name": "Oscillator 1 Distortion Type",
+   "json": "osc_1_distortion_type",
+   "init": "None",
+   "raw": 0.0,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "oscillator_1_frequency_morph_amount",
+   "name": "Oscillator 1 Frequency Morph Amount",
+   "json": "osc_1_spectral_morph_amount",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "oscillator_1",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_1_frequency_morph_phase",
+   "name": "Oscillator 1 Frequency Morph Phase",
+   "json": "osc_1_spectral_morph_phase",
+   "init": "0.5",
+   "raw": 0.5,
+   "group": "oscillator_1"
+  },
+  {
+   "key": "oscillator_1_frequency_morph_spread",
+   "name": "Oscillator 1 Frequency Morph Spread",
+   "json": "osc_1_spectral_morph_spread",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "oscillator_1",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_1_frequency_morph_type",
+   "name": "Oscillator 1 Frequency Morph Type",
+   "json": "osc_1_spectral_morph_type",
+   "init": "None",
+   "raw": 0.0,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 17
+  },
+  {
+   "key": "oscillator_1_level",
+   "name": "Oscillator 1 Level",
+   "json": "osc_1_level",
+   "init": "0.5",
+   "raw": 0.7071,
+   "group": "oscillator_1"
+  },
+  {
+   "key": "oscillator_1_midi_track",
+   "name": "Oscillator 1 Midi Track",
+   "json": "osc_1_midi_track",
+   "init": "On",
+   "raw": 1.0,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_1_pan",
+   "name": "Oscillator 1 Pan",
+   "json": "osc_1_pan",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "oscillator_1",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_1_phase",
+   "name": "Oscillator 1 Phase",
+   "json": "osc_1_phase",
+   "init": "180",
+   "raw": 0.5,
+   "group": "oscillator_1"
+  },
+  {
+   "key": "oscillator_1_phase_randomization",
+   "name": "Oscillator 1 Phase Randomization",
+   "json": "osc_1_random_phase",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "oscillator_1",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_1_smooth_interpolation",
+   "name": "Oscillator 1 Smooth Interpolation",
+   "json": "osc_1_smooth_interpolation",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_1_spectral_unison",
+   "name": "Oscillator 1 Spectral Unison",
+   "json": "osc_1_spectral_unison",
+   "init": "On",
+   "raw": 1.0,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_1_stack_style",
+   "name": "Oscillator 1 Stack Style",
+   "json": "osc_1_stack_style",
+   "init": "Unison",
+   "raw": 0.0,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "oscillator_1_stereo_spread",
+   "name": "Oscillator 1 Stereo Spread",
+   "json": "osc_1_stereo_spread",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "oscillator_1",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_1_switch",
+   "name": "Oscillator 1 Switch",
+   "json": "osc_1_on",
+   "init": "On",
+   "raw": 1.0,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_1_transpose",
+   "name": "Oscillator 1 Transpose",
+   "json": "osc_1_transpose",
+   "init": "0",
+   "raw": 0.5,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "oscillator_1_transpose_quantize",
+   "name": "Oscillator 1 Transpose Quantize",
+   "json": "osc_1_transpose_quantize",
+   "init": "0",
+   "raw": 0.0,
+   "group": "oscillator_1"
+  },
+  {
+   "key": "oscillator_1_tune",
+   "name": "Oscillator 1 Tune",
+   "json": "osc_1_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "oscillator_1"
+  },
+  {
+   "key": "oscillator_1_unison_detune",
+   "name": "Oscillator 1 Unison Detune",
+   "json": "osc_1_unison_detune",
+   "init": "20%",
+   "raw": 0.4472,
+   "group": "oscillator_1",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_1_unison_frame_spread",
+   "name": "Oscillator 1 Unison Frame Spread",
+   "json": "osc_1_frame_spread",
+   "init": "0",
+   "raw": 0.5,
+   "group": "oscillator_1"
+  },
+  {
+   "key": "oscillator_1_unison_voices",
+   "name": "Oscillator 1 Unison Voices",
+   "json": "osc_1_unison_voices",
+   "init": "1v",
+   "raw": 0.0,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 16
+  },
+  {
+   "key": "oscillator_1_view_2d",
+   "name": "Oscillator 1 View 2D",
+   "json": "osc_1_view_2d",
+   "init": "On",
+   "raw": 0.5,
+   "group": "oscillator_1",
+   "type": "choice",
+   "steps": 3
+  },
+  {
+   "key": "oscillator_1_wave_frame",
+   "name": "Oscillator 1 Wave Frame",
+   "json": "osc_1_wave_frame",
+   "init": "0",
+   "raw": 0.0,
+   "group": "oscillator_1"
+  },
+  {
+   "key": "oscillator_2_blend",
+   "name": "Oscillator 2 Blend",
+   "json": "osc_2_unison_blend",
+   "init": "80%",
+   "raw": 0.8,
+   "group": "oscillator_2",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_2_destination",
+   "name": "Oscillator 2 Destination",
+   "json": "osc_2_destination",
+   "init": "FILTER 2",
+   "raw": 0.0714,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 15
+  },
+  {
+   "key": "oscillator_2_detune_power",
+   "name": "Oscillator 2 Detune Power",
+   "json": "osc_2_detune_power",
+   "init": "1.5",
+   "raw": 0.65,
+   "group": "oscillator_2"
+  },
+  {
+   "key": "oscillator_2_detune_range",
+   "name": "Oscillator 2 Detune Range",
+   "json": "osc_2_detune_range",
+   "init": "2",
+   "raw": 0.0417,
+   "group": "oscillator_2"
+  },
+  {
+   "key": "oscillator_2_distortion_amount",
+   "name": "Oscillator 2 Distortion Amount",
+   "json": "osc_2_distortion_amount",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "oscillator_2",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_2_distortion_phase",
+   "name": "Oscillator 2 Distortion Phase",
+   "json": "osc_2_distortion_phase",
+   "init": "180",
+   "raw": 0.5,
+   "group": "oscillator_2"
+  },
+  {
+   "key": "oscillator_2_distortion_spread",
+   "name": "Oscillator 2 Distortion Spread",
+   "json": "osc_2_distortion_spread",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "oscillator_2",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_2_distortion_type",
+   "name": "Oscillator 2 Distortion Type",
+   "json": "osc_2_distortion_type",
+   "init": "None",
+   "raw": 0.0,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "oscillator_2_frequency_morph_amount",
+   "name": "Oscillator 2 Frequency Morph Amount",
+   "json": "osc_2_spectral_morph_amount",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "oscillator_2",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_2_frequency_morph_phase",
+   "name": "Oscillator 2 Frequency Morph Phase",
+   "json": "osc_2_spectral_morph_phase",
+   "init": "0.5",
+   "raw": 0.5,
+   "group": "oscillator_2"
+  },
+  {
+   "key": "oscillator_2_frequency_morph_spread",
+   "name": "Oscillator 2 Frequency Morph Spread",
+   "json": "osc_2_spectral_morph_spread",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "oscillator_2",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_2_frequency_morph_type",
+   "name": "Oscillator 2 Frequency Morph Type",
+   "json": "osc_2_spectral_morph_type",
+   "init": "None",
+   "raw": 0.0,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 17
+  },
+  {
+   "key": "oscillator_2_level",
+   "name": "Oscillator 2 Level",
+   "json": "osc_2_level",
+   "init": "0.5",
+   "raw": 0.7071,
+   "group": "oscillator_2"
+  },
+  {
+   "key": "oscillator_2_midi_track",
+   "name": "Oscillator 2 Midi Track",
+   "json": "osc_2_midi_track",
+   "init": "On",
+   "raw": 1.0,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_2_pan",
+   "name": "Oscillator 2 Pan",
+   "json": "osc_2_pan",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "oscillator_2",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_2_phase",
+   "name": "Oscillator 2 Phase",
+   "json": "osc_2_phase",
+   "init": "180",
+   "raw": 0.5,
+   "group": "oscillator_2"
+  },
+  {
+   "key": "oscillator_2_phase_randomization",
+   "name": "Oscillator 2 Phase Randomization",
+   "json": "osc_2_random_phase",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "oscillator_2",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_2_smooth_interpolation",
+   "name": "Oscillator 2 Smooth Interpolation",
+   "json": "osc_2_smooth_interpolation",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_2_spectral_unison",
+   "name": "Oscillator 2 Spectral Unison",
+   "json": "osc_2_spectral_unison",
+   "init": "On",
+   "raw": 1.0,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_2_stack_style",
+   "name": "Oscillator 2 Stack Style",
+   "json": "osc_2_stack_style",
+   "init": "Unison",
+   "raw": 0.0,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "oscillator_2_stereo_spread",
+   "name": "Oscillator 2 Stereo Spread",
+   "json": "osc_2_stereo_spread",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "oscillator_2",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_2_switch",
+   "name": "Oscillator 2 Switch",
+   "json": "osc_2_on",
+   "init": "On",
+   "raw": 1.0,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_2_transpose",
+   "name": "Oscillator 2 Transpose",
+   "json": "osc_2_transpose",
+   "init": "0",
+   "raw": 0.5,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "oscillator_2_transpose_quantize",
+   "name": "Oscillator 2 Transpose Quantize",
+   "json": "osc_2_transpose_quantize",
+   "init": "0",
+   "raw": 0.0,
+   "group": "oscillator_2"
+  },
+  {
+   "key": "oscillator_2_tune",
+   "name": "Oscillator 2 Tune",
+   "json": "osc_2_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "oscillator_2"
+  },
+  {
+   "key": "oscillator_2_unison_detune",
+   "name": "Oscillator 2 Unison Detune",
+   "json": "osc_2_unison_detune",
+   "init": "20%",
+   "raw": 0.4472,
+   "group": "oscillator_2",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_2_unison_frame_spread",
+   "name": "Oscillator 2 Unison Frame Spread",
+   "json": "osc_2_frame_spread",
+   "init": "0",
+   "raw": 0.5,
+   "group": "oscillator_2"
+  },
+  {
+   "key": "oscillator_2_unison_voices",
+   "name": "Oscillator 2 Unison Voices",
+   "json": "osc_2_unison_voices",
+   "init": "1v",
+   "raw": 0.0,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 16
+  },
+  {
+   "key": "oscillator_2_view_2d",
+   "name": "Oscillator 2 View 2D",
+   "json": "osc_2_view_2d",
+   "init": "On",
+   "raw": 0.5,
+   "group": "oscillator_2",
+   "type": "choice",
+   "steps": 3
+  },
+  {
+   "key": "oscillator_2_wave_frame",
+   "name": "Oscillator 2 Wave Frame",
+   "json": "osc_2_wave_frame",
+   "init": "0",
+   "raw": 0.0,
+   "group": "oscillator_2"
+  },
+  {
+   "key": "oscillator_3_blend",
+   "name": "Oscillator 3 Blend",
+   "json": "osc_3_unison_blend",
+   "init": "80%",
+   "raw": 0.8,
+   "group": "oscillator_3",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_3_destination",
+   "name": "Oscillator 3 Destination",
+   "json": "osc_3_destination",
+   "init": "EFFECTS",
+   "raw": 0.2143,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 15
+  },
+  {
+   "key": "oscillator_3_detune_power",
+   "name": "Oscillator 3 Detune Power",
+   "json": "osc_3_detune_power",
+   "init": "1.5",
+   "raw": 0.65,
+   "group": "oscillator_3"
+  },
+  {
+   "key": "oscillator_3_detune_range",
+   "name": "Oscillator 3 Detune Range",
+   "json": "osc_3_detune_range",
+   "init": "2",
+   "raw": 0.0417,
+   "group": "oscillator_3"
+  },
+  {
+   "key": "oscillator_3_distortion_amount",
+   "name": "Oscillator 3 Distortion Amount",
+   "json": "osc_3_distortion_amount",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "oscillator_3",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_3_distortion_phase",
+   "name": "Oscillator 3 Distortion Phase",
+   "json": "osc_3_distortion_phase",
+   "init": "180",
+   "raw": 0.5,
+   "group": "oscillator_3"
+  },
+  {
+   "key": "oscillator_3_distortion_spread",
+   "name": "Oscillator 3 Distortion Spread",
+   "json": "osc_3_distortion_spread",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "oscillator_3",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_3_distortion_type",
+   "name": "Oscillator 3 Distortion Type",
+   "json": "osc_3_distortion_type",
+   "init": "None",
+   "raw": 0.0,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "oscillator_3_frequency_morph_amount",
+   "name": "Oscillator 3 Frequency Morph Amount",
+   "json": "osc_3_spectral_morph_amount",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "oscillator_3",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_3_frequency_morph_phase",
+   "name": "Oscillator 3 Frequency Morph Phase",
+   "json": "osc_3_spectral_morph_phase",
+   "init": "0.5",
+   "raw": 0.5,
+   "group": "oscillator_3"
+  },
+  {
+   "key": "oscillator_3_frequency_morph_spread",
+   "name": "Oscillator 3 Frequency Morph Spread",
+   "json": "osc_3_spectral_morph_spread",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "oscillator_3",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_3_frequency_morph_type",
+   "name": "Oscillator 3 Frequency Morph Type",
+   "json": "osc_3_spectral_morph_type",
+   "init": "None",
+   "raw": 0.0,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 17
+  },
+  {
+   "key": "oscillator_3_level",
+   "name": "Oscillator 3 Level",
+   "json": "osc_3_level",
+   "init": "0.5",
+   "raw": 0.7071,
+   "group": "oscillator_3"
+  },
+  {
+   "key": "oscillator_3_midi_track",
+   "name": "Oscillator 3 Midi Track",
+   "json": "osc_3_midi_track",
+   "init": "On",
+   "raw": 1.0,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_3_pan",
+   "name": "Oscillator 3 Pan",
+   "json": "osc_3_pan",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "oscillator_3",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_3_phase",
+   "name": "Oscillator 3 Phase",
+   "json": "osc_3_phase",
+   "init": "180",
+   "raw": 0.5,
+   "group": "oscillator_3"
+  },
+  {
+   "key": "oscillator_3_phase_randomization",
+   "name": "Oscillator 3 Phase Randomization",
+   "json": "osc_3_random_phase",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "oscillator_3",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_3_smooth_interpolation",
+   "name": "Oscillator 3 Smooth Interpolation",
+   "json": "osc_3_smooth_interpolation",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_3_spectral_unison",
+   "name": "Oscillator 3 Spectral Unison",
+   "json": "osc_3_spectral_unison",
+   "init": "On",
+   "raw": 1.0,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_3_stack_style",
+   "name": "Oscillator 3 Stack Style",
+   "json": "osc_3_stack_style",
+   "init": "Unison",
+   "raw": 0.0,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "oscillator_3_stereo_spread",
+   "name": "Oscillator 3 Stereo Spread",
+   "json": "osc_3_stereo_spread",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "oscillator_3",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_3_switch",
+   "name": "Oscillator 3 Switch",
+   "json": "osc_3_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "oscillator_3_transpose",
+   "name": "Oscillator 3 Transpose",
+   "json": "osc_3_transpose",
+   "init": "0",
+   "raw": 0.5,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "oscillator_3_transpose_quantize",
+   "name": "Oscillator 3 Transpose Quantize",
+   "json": "osc_3_transpose_quantize",
+   "init": "0",
+   "raw": 0.0,
+   "group": "oscillator_3"
+  },
+  {
+   "key": "oscillator_3_tune",
+   "name": "Oscillator 3 Tune",
+   "json": "osc_3_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "oscillator_3"
+  },
+  {
+   "key": "oscillator_3_unison_detune",
+   "name": "Oscillator 3 Unison Detune",
+   "json": "osc_3_unison_detune",
+   "init": "20%",
+   "raw": 0.4472,
+   "group": "oscillator_3",
+   "unit": "%"
+  },
+  {
+   "key": "oscillator_3_unison_frame_spread",
+   "name": "Oscillator 3 Unison Frame Spread",
+   "json": "osc_3_frame_spread",
+   "init": "0",
+   "raw": 0.5,
+   "group": "oscillator_3"
+  },
+  {
+   "key": "oscillator_3_unison_voices",
+   "name": "Oscillator 3 Unison Voices",
+   "json": "osc_3_unison_voices",
+   "init": "1v",
+   "raw": 0.0,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 16
+  },
+  {
+   "key": "oscillator_3_view_2d",
+   "name": "Oscillator 3 View 2D",
+   "json": "osc_3_view_2d",
+   "init": "On",
+   "raw": 0.5,
+   "group": "oscillator_3",
+   "type": "choice",
+   "steps": 3
+  },
+  {
+   "key": "oscillator_3_wave_frame",
+   "name": "Oscillator 3 Wave Frame",
+   "json": "osc_3_wave_frame",
+   "init": "0",
+   "raw": 0.0,
+   "group": "oscillator_3"
+  },
+  {
+   "key": "oversampling",
+   "name": "Oversampling",
+   "json": "oversampling",
+   "init": "2x",
+   "raw": 0.3333,
+   "group": "global",
+   "type": "choice",
+   "steps": 4,
+   "unit": "x"
+  },
+  {
+   "key": "phaser_blend",
+   "name": "Phaser Blend",
+   "json": "phaser_blend",
+   "init": "1",
+   "raw": 0.5,
+   "group": "phaser"
+  },
+  {
+   "key": "phaser_center",
+   "name": "Phaser Center",
+   "json": "phaser_center",
+   "init": "80 semitones",
+   "raw": 0.5625,
+   "group": "phaser"
+  },
+  {
+   "key": "phaser_feedback",
+   "name": "Phaser Feedback",
+   "json": "phaser_feedback",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "phaser",
+   "unit": "%"
+  },
+  {
+   "key": "phaser_frequency",
+   "name": "Phaser Frequency",
+   "json": "phaser_frequency",
+   "init": "8 s",
+   "raw": 0.2857,
+   "group": "phaser"
+  },
+  {
+   "key": "phaser_mix",
+   "name": "Phaser Mix",
+   "json": "phaser_dry_wet",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "phaser",
+   "unit": "%"
+  },
+  {
+   "key": "phaser_mod_depth",
+   "name": "Phaser Mod Depth",
+   "json": "phaser_mod_depth",
+   "init": "24 semitones",
+   "raw": 0.5,
+   "group": "phaser"
+  },
+  {
+   "key": "phaser_phase_offset",
+   "name": "Phaser Phase Offset",
+   "json": "phaser_phase_offset",
+   "init": "120",
+   "raw": 0.3333,
+   "group": "phaser"
+  },
+  {
+   "key": "phaser_switch",
+   "name": "Phaser Switch",
+   "json": "phaser_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "phaser",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "phaser_sync",
+   "name": "Phaser Sync",
+   "json": "phaser_sync",
+   "init": "Tempo",
+   "raw": 0.3333,
+   "group": "phaser",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "phaser_tempo",
+   "name": "Phaser Tempo",
+   "json": "phaser_tempo",
+   "init": "8/1",
+   "raw": 0.3,
+   "group": "phaser",
+   "type": "choice",
+   "steps": 11
+  },
+  {
+   "key": "pitch_bend_range",
+   "name": "Pitch Bend Range",
+   "json": "pitch_bend_range",
+   "init": "2 semitones",
+   "raw": 0.0417,
+   "group": "global",
+   "type": "choice",
+   "steps": 49
+  },
+  {
+   "key": "pitch_wheel",
+   "name": "Pitch Wheel",
+   "json": "pitch_wheel",
+   "init": "0",
+   "raw": 0.5,
+   "group": "global"
+  },
+  {
+   "key": "polyphony",
+   "name": "Polyphony",
+   "json": "polyphony",
+   "init": "8 voices",
+   "raw": 0.2258,
+   "group": "global",
+   "type": "choice",
+   "steps": 32
+  },
+  {
+   "key": "portamento_force",
+   "name": "Portamento Force",
+   "json": "portamento_force",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "portamento_",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "portamento_scale",
+   "name": "Portamento Scale",
+   "json": "portamento_scale",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "portamento_",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "portamento_slope",
+   "name": "Portamento Slope",
+   "json": "portamento_slope",
+   "init": "0",
+   "raw": 0.5,
+   "group": "portamento_"
+  },
+  {
+   "key": "portamento_time",
+   "name": "Portamento Time",
+   "json": "portamento_time",
+   "init": "0.000976562 secs",
+   "raw": 0.0,
+   "group": "portamento_"
+  },
+  {
+   "key": "random_lfo_1_frequency",
+   "name": "Random LFO 1 Frequency",
+   "json": "random_1_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "random_lfo_1"
+  },
+  {
+   "key": "random_lfo_1_stereo",
+   "name": "Random LFO 1 Stereo",
+   "json": "random_1_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "random_lfo_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "random_lfo_1_style",
+   "name": "Random LFO 1 Style",
+   "json": "random_1_style",
+   "init": "Perlin",
+   "raw": 0.0,
+   "group": "random_lfo_1",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "random_lfo_1_sync",
+   "name": "Random LFO 1 Sync",
+   "json": "random_1_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "random_lfo_1",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "random_lfo_1_sync_type",
+   "name": "Random LFO 1 Sync Type",
+   "json": "random_1_sync_type",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "random_lfo_1",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "random_lfo_1_tempo",
+   "name": "Random LFO 1 Tempo",
+   "json": "random_1_tempo",
+   "init": "1/4",
+   "raw": 0.6667,
+   "group": "random_lfo_1",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "random_lfo_1_transpose",
+   "name": "Random LFO 1 Transpose",
+   "json": "random_1_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "random_lfo_1",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "random_lfo_1_tune",
+   "name": "Random LFO 1 Tune",
+   "json": "random_1_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "random_lfo_1"
+  },
+  {
+   "key": "random_lfo_2_frequency",
+   "name": "Random LFO 2 Frequency",
+   "json": "random_2_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "random_lfo_2"
+  },
+  {
+   "key": "random_lfo_2_stereo",
+   "name": "Random LFO 2 Stereo",
+   "json": "random_2_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "random_lfo_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "random_lfo_2_style",
+   "name": "Random LFO 2 Style",
+   "json": "random_2_style",
+   "init": "Perlin",
+   "raw": 0.0,
+   "group": "random_lfo_2",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "random_lfo_2_sync",
+   "name": "Random LFO 2 Sync",
+   "json": "random_2_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "random_lfo_2",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "random_lfo_2_sync_type",
+   "name": "Random LFO 2 Sync Type",
+   "json": "random_2_sync_type",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "random_lfo_2",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "random_lfo_2_tempo",
+   "name": "Random LFO 2 Tempo",
+   "json": "random_2_tempo",
+   "init": "1/4",
+   "raw": 0.6667,
+   "group": "random_lfo_2",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "random_lfo_2_transpose",
+   "name": "Random LFO 2 Transpose",
+   "json": "random_2_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "random_lfo_2",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "random_lfo_2_tune",
+   "name": "Random LFO 2 Tune",
+   "json": "random_2_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "random_lfo_2"
+  },
+  {
+   "key": "random_lfo_3_frequency",
+   "name": "Random LFO 3 Frequency",
+   "json": "random_3_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "random_lfo_3"
+  },
+  {
+   "key": "random_lfo_3_stereo",
+   "name": "Random LFO 3 Stereo",
+   "json": "random_3_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "random_lfo_3",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "random_lfo_3_style",
+   "name": "Random LFO 3 Style",
+   "json": "random_3_style",
+   "init": "Perlin",
+   "raw": 0.0,
+   "group": "random_lfo_3",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "random_lfo_3_sync",
+   "name": "Random LFO 3 Sync",
+   "json": "random_3_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "random_lfo_3",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "random_lfo_3_sync_type",
+   "name": "Random LFO 3 Sync Type",
+   "json": "random_3_sync_type",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "random_lfo_3",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "random_lfo_3_tempo",
+   "name": "Random LFO 3 Tempo",
+   "json": "random_3_tempo",
+   "init": "1/4",
+   "raw": 0.6667,
+   "group": "random_lfo_3",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "random_lfo_3_transpose",
+   "name": "Random LFO 3 Transpose",
+   "json": "random_3_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "random_lfo_3",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "random_lfo_3_tune",
+   "name": "Random LFO 3 Tune",
+   "json": "random_3_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "random_lfo_3"
+  },
+  {
+   "key": "random_lfo_4_frequency",
+   "name": "Random LFO 4 Frequency",
+   "json": "random_4_frequency",
+   "init": "0.5 secs",
+   "raw": 0.5,
+   "group": "random_lfo_4"
+  },
+  {
+   "key": "random_lfo_4_stereo",
+   "name": "Random LFO 4 Stereo",
+   "json": "random_4_stereo",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "random_lfo_4",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "random_lfo_4_style",
+   "name": "Random LFO 4 Style",
+   "json": "random_4_style",
+   "init": "Perlin",
+   "raw": 0.0,
+   "group": "random_lfo_4",
+   "type": "choice",
+   "steps": 4
+  },
+  {
+   "key": "random_lfo_4_sync",
+   "name": "Random LFO 4 Sync",
+   "json": "random_4_sync",
+   "init": "Tempo",
+   "raw": 0.25,
+   "group": "random_lfo_4",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "random_lfo_4_sync_type",
+   "name": "Random LFO 4 Sync Type",
+   "json": "random_4_sync_type",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "random_lfo_4",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "random_lfo_4_tempo",
+   "name": "Random LFO 4 Tempo",
+   "json": "random_4_tempo",
+   "init": "1/4",
+   "raw": 0.6667,
+   "group": "random_lfo_4",
+   "type": "choice",
+   "steps": 13
+  },
+  {
+   "key": "random_lfo_4_transpose",
+   "name": "Random LFO 4 Transpose",
+   "json": "random_4_keytrack_transpose",
+   "init": "-12",
+   "raw": 0.5,
+   "group": "random_lfo_4",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "random_lfo_4_tune",
+   "name": "Random LFO 4 Tune",
+   "json": "random_4_keytrack_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "random_lfo_4"
+  },
+  {
+   "key": "reverb_chorus_amount",
+   "name": "Reverb Chorus Amount",
+   "json": "reverb_chorus_amount",
+   "init": "5.00001%",
+   "raw": 0.2236,
+   "group": "reverb",
+   "unit": "%"
+  },
+  {
+   "key": "reverb_chorus_frequency",
+   "name": "Reverb Chorus Frequency",
+   "json": "reverb_chorus_frequency",
+   "init": "0.25 Hz",
+   "raw": 0.5455,
+   "group": "reverb",
+   "unit": "Hz"
+  },
+  {
+   "key": "reverb_decay_time",
+   "name": "Reverb Decay Time",
+   "json": "reverb_decay_time",
+   "init": "1 secs",
+   "raw": 0.5,
+   "group": "reverb"
+  },
+  {
+   "key": "reverb_delay",
+   "name": "Reverb Delay",
+   "json": "reverb_delay",
+   "init": "0 secs",
+   "raw": 0.0,
+   "group": "reverb"
+  },
+  {
+   "key": "reverb_high_cutoff",
+   "name": "Reverb High Cutoff",
+   "json": "reverb_high_shelf_cutoff",
+   "init": "90 semitones",
+   "raw": 0.7031,
+   "group": "reverb"
+  },
+  {
+   "key": "reverb_high_gain",
+   "name": "Reverb High Gain",
+   "json": "reverb_high_shelf_gain",
+   "init": "-1 dB",
+   "raw": 0.8333,
+   "group": "reverb",
+   "unit": "dB"
+  },
+  {
+   "key": "reverb_low_cutoff",
+   "name": "Reverb Low Cutoff",
+   "json": "reverb_low_shelf_cutoff",
+   "init": "0 semitones",
+   "raw": 0.0,
+   "group": "reverb"
+  },
+  {
+   "key": "reverb_low_gain",
+   "name": "Reverb Low Gain",
+   "json": "reverb_low_shelf_gain",
+   "init": "0 dB",
+   "raw": 1.0,
+   "group": "reverb",
+   "unit": "dB"
+  },
+  {
+   "key": "reverb_mix",
+   "name": "Reverb Mix",
+   "json": "reverb_dry_wet",
+   "init": "25%",
+   "raw": 0.25,
+   "group": "reverb",
+   "unit": "%"
+  },
+  {
+   "key": "reverb_pre_high_cutoff",
+   "name": "Reverb Pre High Cutoff",
+   "json": "reverb_pre_high_cutoff",
+   "init": "110 semitones",
+   "raw": 0.8594,
+   "group": "reverb"
+  },
+  {
+   "key": "reverb_pre_low_cutoff",
+   "name": "Reverb Pre Low Cutoff",
+   "json": "reverb_pre_low_cutoff",
+   "init": "0 semitones",
+   "raw": 0.0,
+   "group": "reverb"
+  },
+  {
+   "key": "reverb_size",
+   "name": "Reverb Size",
+   "json": "reverb_size",
+   "init": "50%",
+   "raw": 0.5,
+   "group": "reverb",
+   "unit": "%"
+  },
+  {
+   "key": "reverb_switch",
+   "name": "Reverb Switch",
+   "json": "reverb_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "reverb",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "sample_bounce",
+   "name": "Sample Bounce",
+   "json": "sample_bounce",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "sample",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "sample_destination",
+   "name": "Sample Destination",
+   "json": "sample_destination",
+   "init": "EFFECTS",
+   "raw": 0.2143,
+   "group": "sample",
+   "type": "choice",
+   "steps": 15
+  },
+  {
+   "key": "sample_keytrack",
+   "name": "Sample Keytrack",
+   "json": "sample_keytrack",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "sample",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "sample_level",
+   "name": "Sample Level",
+   "json": "sample_level",
+   "init": "0.5",
+   "raw": 0.7071,
+   "group": "sample"
+  },
+  {
+   "key": "sample_loop",
+   "name": "Sample Loop",
+   "json": "sample_loop",
+   "init": "On",
+   "raw": 1.0,
+   "group": "sample",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "sample_pan",
+   "name": "Sample Pan",
+   "json": "sample_pan",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "sample",
+   "unit": "%"
+  },
+  {
+   "key": "sample_random_phase",
+   "name": "Sample Random Phase",
+   "json": "sample_random_phase",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "sample",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "sample_switch",
+   "name": "Sample Switch",
+   "json": "sample_on",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "sample",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "sample_transpose",
+   "name": "Sample Transpose",
+   "json": "sample_transpose",
+   "init": "0",
+   "raw": 0.5,
+   "group": "sample",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "sample_transpose_quantize",
+   "name": "Sample Transpose Quantize",
+   "json": "sample_transpose_quantize",
+   "init": "0",
+   "raw": 0.0,
+   "group": "sample"
+  },
+  {
+   "key": "sample_tune",
+   "name": "Sample Tune",
+   "json": "sample_tune",
+   "init": "0",
+   "raw": 0.5,
+   "group": "sample"
+  },
+  {
+   "key": "stereo_mode",
+   "name": "Stereo Mode",
+   "json": "stereo_mode",
+   "init": "SPREAD",
+   "raw": 0.0,
+   "group": "global",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "stereo_routing",
+   "name": "Stereo Routing",
+   "json": "stereo_routing",
+   "init": "100%",
+   "raw": 1.0,
+   "group": "global",
+   "unit": "%"
+  },
+  {
+   "key": "velocity_track",
+   "name": "Velocity Track",
+   "json": "velocity_track",
+   "init": "0%",
+   "raw": 0.5,
+   "group": "global",
+   "unit": "%"
+  },
+  {
+   "key": "view_spectrogram",
+   "name": "View Spectrogram",
+   "json": "view_spectrogram",
+   "init": "Off",
+   "raw": 0.0,
+   "group": "global",
+   "type": "choice",
+   "steps": 3
+  },
+  {
+   "key": "voice_amplitude",
+   "name": "Voice Amplitude",
+   "json": "voice_amplitude",
+   "init": "1",
+   "raw": 1.0,
+   "group": "voice_"
+  },
+  {
+   "key": "voice_override",
+   "name": "Voice Override",
+   "json": "voice_override",
+   "init": "Kill",
+   "raw": 0.0,
+   "group": "voice_",
+   "type": "choice",
+   "steps": 2
+  },
+  {
+   "key": "voice_priority",
+   "name": "Voice Priority",
+   "json": "voice_priority",
+   "init": "Round Robin",
+   "raw": 1.0,
+   "group": "voice_",
+   "type": "choice",
+   "steps": 5
+  },
+  {
+   "key": "voice_transpose",
+   "name": "Voice Transpose",
+   "json": "voice_transpose",
+   "init": "0",
+   "raw": 0.5,
+   "group": "voice_",
+   "type": "choice",
+   "steps": 97
+  },
+  {
+   "key": "voice_tune",
+   "name": "Voice Tune",
+   "json": "voice_tune",
+   "init": "0 c",
+   "raw": 0.5,
+   "group": "voice_"
+  },
+  {
+   "key": "volume",
+   "name": "Volume",
+   "json": "volume",
+   "init": "-6.02dB",
+   "raw": 0.7397,
+   "group": "global",
+   "unit": "dB"
+  }
+ ]
+}
