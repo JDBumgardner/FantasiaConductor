@@ -12,7 +12,21 @@
   "editor_crash": "Observed SIGSEGV in Vital's own GUI thread (SynthEditor::render(Canvas&) -> Renderer::run), which kills the whole app and any unsaved project. Triggered while a second client drove the same shared instance. Avoid driving Vital from two sessions at once, and prefer keeping its editor window closed during bulk clip writes.",
   "multiple_instances_via_path": "IMPORTANT: the one-patch-per-name limit is avoidable. load() keys _LOADED on the exact string you pass, and uses it directly when os.path.exists() is true. So passing distinct PATH strings yields independent instances, each with its own patch, and set_track accepts a path in 'plugin'. Verified with three simultaneous Vital patches: name 'Vital' (VST3), '/Library/Audio/Plug-Ins/Components/Vital.component' (AU), and '/Library/Audio/Plug-Ins/VST3/./Vital.vst3' (same VST3 binary, different key string). Any path variant that still resolves gives another instance. Each re-renders only ITS OWN tracks, so per-track patches also make param changes much cheaper.",
   "au_build_returns_blank_display": "The AU build ('...Vital.component') returns an empty 'value' string from set_plugin_param and plugin_params. Verify by 'raw' instead. The VST3 build returns proper display text.",
-  "au_cannot_be_snapshotted": "save_plugin_preset on the AU build ('.../Vital.component') fails with 'plugin returned no state to save' \u2014 preset_bytes comes back empty, same build that returns blank display strings. Use VST3 path variants for any instance you may want to clone or bank."
+  "au_cannot_be_snapshotted": {
+   "symptom": "save_plugin_preset on Vital.component returns 'plugin returned no state to save'; preset_bytes is empty. A track on the AU therefore saves with plugin_state = '' and LOSES ITS PATCH when the app restarts, silently -- the project file looks complete.",
+   "check": "After saving, read the .fcp and confirm every track with a 'plugin' has a non-empty 'plugin_state'.",
+   "recovery": [
+    "The AU will not give up preset_data, but it DOES report all 903 parameters. Both builds are the same Vital, with identical parameter keys.",
+    "1. plugin_params on the AU with query '' and limit 5000 -> 903 rows of raw values.",
+    "2. Check the 64 modulation_N_amount rows. If none differs from default, the patch    has no active routings, so the parameters ARE the whole patch and this    reconstruction is exact. If some are active, the routings cannot be recovered    this way -- they are not parameters.",
+    "3. In-process: load the VST3, restore vital_init, write every raw value on top,    then take preset_data and bank it. Doing this in one process avoids 903 bridge    round-trips.",
+    "4. load_plugin_preset onto a free path variant, then set_track(plugin=<that path>).",
+    "5. Verify: plugin_params on the new instance and diff all 903 raw values."
+   ],
+   "done_2026_08_25": "Recovered the Digital Tiger bass this way. It turned out to be factory init plus 4 parameters (filter_1_cutoff 0.6, filter_1_resonance 0.3, oscillator_1_detune_power 0.65, oscillator_2_switch off) with no routings; all 903 matched after.",
+   "ordering_trap": "_resync_plugin_tracks stamps state onto tracks whose 'plugin' ALREADY equals that name, so load_plugin_preset before set_track leaves plugin_state empty (the load reports tracks_rerendered: 0, which is the tell). Switch the track first, or load again after.",
+   "prefer": "Use VST3 path variants for anything the agent will drive. The AU's only advantage is being another instance, and path variants give that too."
+  }
  },
  "value_format_rules": {
   "default": "Send a raw 0-1 float. Then READ THE RETURNED 'value' \u2014 set_plugin_param echoes what the plugin actually stored, so a wrong format is visible immediately.",
