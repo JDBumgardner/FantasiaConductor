@@ -1415,7 +1415,9 @@ class _AgentWorker(QThread):
         if name == "import_voicebank":
             return self._import_voicebank(args)  # copies ~400MB — worker only
         if name in ("plugin_params", "set_plugin_param"):
-            return self._plugin_tool(name, args)  # loading a plugin blocks
+            # A plugin belongs to the thread that loaded it, so these run on the
+            # UI thread rather than this worker.
+            return self._marshal(f"_plugin_{name}", args)
         if name in ("stretch_clip", "stretch_clip_to_bars"):
             return self._stretch(name, args)
         return self._marshal(name, args)
@@ -1525,25 +1527,6 @@ class _AgentWorker(QThread):
             "clip_id": args.get("clip_id"), "effect": eff, "path": path,
             "duration": dur, "base": info.get("base"), "start": info.get("start", 0.0)}) or {})
 
-    def _plugin_tool(self, name: str, args: dict):
-        try:
-            from fantasia_core import plugins as plg
-        except Exception as exc:  # noqa: BLE001
-            return {"error": str(exc)}
-        if not plg.available():
-            return {"error": "plugin hosting needs pedalboard"}
-        try:
-            plugin = plg.load(str(args["plugin"]))
-        except Exception as exc:  # noqa: BLE001
-            return {"error": str(exc)}
-        try:
-            if name == "plugin_params":
-                rows = plg.describe(plugin, str(args.get("query", "")),
-                                    int(args.get("limit", 40) or 40))
-                return {"params": rows, "shown": len(rows)}
-            return {"ok": True, **plg.set_param(plugin, str(args["name"]), args["value"])}
-        except Exception as exc:  # noqa: BLE001
-            return {"error": str(exc)}
 
     def _import_voicebank(self, args: dict):
         try:
@@ -3496,6 +3479,9 @@ class MainWindow(QMainWindow):
                 holder["result"] = self._agent_prep_sing_melody(args)
             elif name == "_add_vocal":
                 holder["result"] = self._agent_add_vocal(args)
+            elif name in ("_plugin_plugin_params", "_plugin_set_plugin_param"):
+                holder["result"] = self._agent_plugin_tool(
+                    name.replace("_plugin_", "", 1), args)
             elif name == "_prep_vocalfx":
                 holder["result"] = self._agent_prep_vocalfx(args)
             elif name == "_apply_vocalfx_result":
@@ -3627,6 +3613,26 @@ class MainWindow(QMainWindow):
         self.timeline.refresh_clip(args["clip_id"])
         self.timeline.viewport().update()
         return {"ok": True, "clip_id": args["clip_id"]}
+
+    def _agent_plugin_tool(self, name: str, args: dict):
+        try:
+            from fantasia_core import plugins as plg
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        if not plg.available():
+            return {"error": "plugin hosting needs pedalboard"}
+        try:
+            plugin = plg.load(str(args["plugin"]))
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        try:
+            if name == "plugin_params":
+                rows = plg.describe(plugin, str(args.get("query", "")),
+                                    int(args.get("limit", 40) or 40))
+                return {"params": rows, "shown": len(rows)}
+            return {"ok": True, **plg.set_param(plugin, str(args["name"]), args["value"])}
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
 
     def _agent_prep_vocalfx(self, args: dict) -> dict:
         """UI thread: pull a clip's audio segment for the vocal-fx worker."""

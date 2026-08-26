@@ -96,6 +96,11 @@ def scan(refresh: bool = False) -> List[PluginInfo]:
     return found
 
 
+# A loaded plugin belongs to the thread that loaded it — pedalboard refuses to
+# use one from anywhere else ("must be reloaded on the current thread"), and
+# show_editor insists on the main thread regardless. So every call here has to
+# come from the same thread; in the app that is the UI thread, and the agent's
+# plugin tools marshal onto it rather than running on their worker.
 _LOADED: Dict[str, object] = {}
 
 
