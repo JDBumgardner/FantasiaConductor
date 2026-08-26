@@ -234,6 +234,10 @@ class TrackHeader(QWidget):
         plug = menu.addAction("Plugin Instrument…"
                               + (f"  [{self._plugin}]" if self._plugin else ""))
         mapping[plug] = "plugin_instrument"
+        if self._plugin:
+            # Editing the patch is the frequent action once a plugin is chosen;
+            # going back through the picker every time is friction.
+            mapping[menu.addAction(f"Open {self._plugin} Interface…")] = "plugin_editor"
 
         menu.addSeparator()
         if self._fx_types:

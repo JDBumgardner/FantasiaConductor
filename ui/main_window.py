@@ -3614,6 +3614,47 @@ class MainWindow(QMainWindow):
         self.timeline.viewport().update()
         return {"ok": True, "clip_id": args["clip_id"]}
 
+    def _open_plugin_editor(self, track) -> None:
+        """Open a plugin's own window, then save whatever was changed in it.
+
+        The state is captured as soon as the window closes rather than when some
+        dialog is accepted: a patch built in the plugin and then abandoned at a
+        Cancel button is work quietly thrown away.
+        """
+        name = getattr(track, "plugin", "")
+        if not name:
+            return
+        from fantasia_core import plugins as plg
+        from fantasia_core.engine.plugin_render import capture_state
+
+        try:
+            plugin = plg.load(name)
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Could not load {name}: {exc}", 8000)
+            return
+        self.statusBar().showMessage(
+            f"{name} is open — the rest of the app waits until you close it")
+        QApplication.processEvents()
+        try:
+            plugin.show_editor()          # blocks here until the window closes
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"{name}: {exc}", 8000)
+            return
+        try:
+            state = capture_state(name)
+        except Exception:  # noqa: BLE001
+            state = ""
+        if state and state != getattr(track, "plugin_state", ""):
+            self.bus.dispatch(SetTrackAttrCommand(track.id, "plugin_state", state))
+            pr = getattr(self, "plugin_renderer", None)
+            if pr is not None:
+                pr.invalidate(name)       # the patch changed; re-render its clips
+            self._warm()
+            self._rebuild_all()
+            self.statusBar().showMessage(f"{name} patch saved with the project", 5000)
+        else:
+            self.statusBar().showMessage(f"{name} closed", 3000)
+
     def _agent_plugin_tool(self, name: str, args: dict):
         try:
             from fantasia_core import plugins as plg
@@ -3908,6 +3949,8 @@ class MainWindow(QMainWindow):
             self._warm()
             state = "on" if track.is_synth else "off"
             self.statusBar().showMessage(f"Synth voice {state} — {track.name}")
+        elif action == "plugin_editor":
+            self._open_plugin_editor(track)
         elif action == "plugin_instrument":
             dlg = _PluginDialog(self, getattr(track, "plugin", ""))
             if dlg.exec() != QDialog.Accepted:
