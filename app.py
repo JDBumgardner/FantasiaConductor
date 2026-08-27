@@ -6,6 +6,7 @@ Boots the Qt application and shows the main window. The UI layer talks to
 
 from __future__ import annotations
 
+import gc
 import sys
 
 
@@ -35,6 +36,23 @@ def main() -> int:
 
     window = MainWindow()
     window.show()
+
+    # Python's cyclic collector holds the GIL for the whole pass, and a full
+    # gen-2 sweep of a loaded project measured 148ms median and over a second at
+    # worst — against a 93ms audio deadline, so every sweep was a dropout. Most
+    # of what it walks is the ~130k objects Qt and the imports create at startup
+    # and never free, so they are moved out of scanning entirely: the same sweep
+    # then costs 0.0ms.
+    #
+    # Only the startup set is frozen. Anything built afterwards — clips, notes,
+    # graphics items — is still collected normally, so a real cycle in the
+    # editing code is still found.
+    gc.collect()
+    gc.freeze()
+    # And make full sweeps rarer: the default (700, 10, 10) fires gen2 every
+    # ~70k allocations, which playback reaches on its own.
+    gc.set_threshold(2000, 25, 25)
+
     return app.exec()
 
 

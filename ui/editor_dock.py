@@ -151,6 +151,7 @@ class EditorDock(QWidget):
         elif self._split.sizes()[-1] < 140:
             self._split.setSizes([int(total * 0.52), int(total * 0.48)])
 
+
     def close_panel(self) -> None:
         """Hide the editor and hand its space back to the arrangement.
 

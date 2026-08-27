@@ -2660,9 +2660,43 @@ class MainWindow(QMainWindow):
         self.pool.preload(p)
         self.midi.warm(p)
         self.synth_engine.warm(p)
-        pr = getattr(self, "plugin_renderer", None)
-        if pr is not None:
-            pr.warm(p)          # plugin instruments render here, never in the callback
+        # Plugin instruments render here rather than in the audio callback, but
+        # not all at once: one clip through a plugin is a few hundred
+        # milliseconds, and a project with several plugin tracks blocked startup
+        # for the best part of a minute. Queue them and let the event loop
+        # drain the queue a clip at a time.
+        if getattr(self, "plugin_renderer", None) is not None:
+            self._queue_plugin_render(p)
+
+    PLUGIN_RENDER_GAP_MS = 15
+
+    def _queue_plugin_render(self, project) -> None:
+        """Render outstanding plugin clips one at a time, off the startup path."""
+        pending = self.plugin_renderer.pending(project)
+        if not pending:
+            return
+        self._plugin_queue = pending
+        if getattr(self, "_plugin_timer", None) is None:
+            self._plugin_timer = QTimer(self)
+            self._plugin_timer.setInterval(self.PLUGIN_RENDER_GAP_MS)
+            self._plugin_timer.timeout.connect(self._render_next_plugin_clip)
+        self.statusBar().showMessage(f"Rendering {len(pending)} plugin clip(s)…")
+        self._plugin_timer.start()
+
+    def _render_next_plugin_clip(self) -> None:
+        queue = getattr(self, "_plugin_queue", None)
+        if not queue:
+            self._plugin_timer.stop()
+            self.statusBar().showMessage("Plugin tracks ready", 4000)
+            self.timeline.viewport().update()
+            return
+        clip, plugin, state = queue.pop(0)
+        try:
+            self.plugin_renderer.render(clip, plugin, state)
+        except Exception:  # noqa: BLE001 — one bad clip must not stall the rest
+            pass
+        if len(queue) % 5 == 0 and queue:
+            self.statusBar().showMessage(f"Rendering plugin clips… {len(queue)} left")
 
     def _rebuild_all(self) -> None:
         self.header_panel.rebuild(self.project)

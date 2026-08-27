@@ -70,13 +70,28 @@ class PluginRenderer:
         self._cache[key] = buf
         return buf
 
-    def warm(self, project) -> None:  # noqa: ANN001
+    def pending(self, project) -> list:  # noqa: ANN001
+        """Plugin clips with no rendered audio yet, as ``(clip, plugin, state)``.
+
+        Rendering one clip through a plugin costs a few hundred milliseconds, so
+        a project with a plugin on several tracks is many seconds of work. The
+        caller spreads that over the event loop instead of blocking on it.
+        """
+        out = []
         for track in project.tracks:
-            if not getattr(track, "plugin", ""):
+            plugin = getattr(track, "plugin", "")
+            if not plugin:
                 continue
+            state = getattr(track, "plugin_state", "")
             for clip in track.clips:
-                if clip.content_type == "midi":
-                    self.render(clip, track.plugin, getattr(track, "plugin_state", ""))
+                if clip.content_type == "midi" and self.cached(clip, plugin, state) is None:
+                    out.append((clip, plugin, state))
+        return out
+
+    def warm(self, project) -> None:  # noqa: ANN001
+        """Render everything now. Blocks — prefer :meth:`pending` in the UI."""
+        for clip, plugin, state in self.pending(project):
+            self.render(clip, plugin, state)
 
     def invalidate(self, plugin: Optional[str] = None) -> None:
         if plugin is None:

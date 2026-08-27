@@ -144,3 +144,40 @@ def test_invalidate_clears_one_plugin_or_all(fake_plugin):
     assert r.cached(clip, "Other") is not None
     r.invalidate()
     assert r.cached(clip, "Other") is None
+
+
+def test_pending_lists_only_what_is_not_rendered(fake_plugin):
+    """Rendering a clip through a plugin costs a few hundred milliseconds, so
+    the caller needs to know what is left rather than blocking on all of it."""
+    r = PluginRenderer(1000)
+    a, b = _Clip([_Note(60, 0, 1)], cid="a"), _Clip([_Note(62, 0, 1)], cid="b")
+    proj = _Project([_Track([a, b], plugin="Vital")])
+    assert len(r.pending(proj)) == 2
+    r.render(a, "Vital")
+    assert [c.id for c, _p, _s in r.pending(proj)] == ["b"]
+
+
+def test_pending_ignores_tracks_without_a_plugin(fake_plugin):
+    r = PluginRenderer(1000)
+    proj = _Project([_Track([_Clip([_Note(60, 0, 1)], cid="a")]),
+                     _Track([_Clip([_Note(60, 0, 1)], cid="b")], plugin="Vital")])
+    assert [c.id for c, _p, _s in r.pending(proj)] == ["b"]
+
+
+def test_pending_reflects_a_changed_patch(fake_plugin):
+    """A new patch means the old renders are stale and have to be redone."""
+    r = PluginRenderer(1000)
+    clip = _Clip([_Note(60, 0, 1)])
+    track = _Track([clip], plugin="Vital", state="AAAA")
+    r.render(clip, "Vital", "AAAA")
+    assert r.pending(_Project([track])) == []
+    track.plugin_state = "BBBB"
+    assert len(r.pending(_Project([track]))) == 1
+
+
+def test_warm_still_renders_everything(fake_plugin):
+    r = PluginRenderer(1000)
+    proj = _Project([_Track([_Clip([_Note(60, 0, 1)], cid="a"),
+                             _Clip([_Note(62, 0, 1)], cid="b")], plugin="Vital")])
+    r.warm(proj)
+    assert r.pending(proj) == []
