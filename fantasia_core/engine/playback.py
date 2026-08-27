@@ -116,11 +116,20 @@ def loop_render_plan(
 
 
 class PlaybackEngine:
-    # 1024 frames is 23ms, and the callback does real work inside that window:
-    # MIDI and synth tracks are rendered per block, not pre-mixed. On a busy
-    # project that overruns the deadline and PortAudio fills the gap with
-    # silence, which is heard as popping and crackling. 4096 gives it room.
-    def __init__(self, project, pool, sample_rate: int = 44100, block: int = 4096) -> None:  # noqa: ANN001
+    # How long the callback has to produce a block: 8192 frames is ~186ms at
+    # 44.1k. The size is set by what has to be survived rather than by how
+    # little latency is achievable.
+    #
+    # Shortening the GIL switch interval keeps ordinary Python work from
+    # starving the callback, but a call into C holds the lock for its whole
+    # duration whatever that interval is — and Qt painting is exactly that. The
+    # first paint of the synth panel measured ~97ms, which overran a 4096-frame
+    # deadline and was heard as a skip. 8192 absorbs it.
+    #
+    # The cost is start-up latency on playback, not sync: this engine renders a
+    # timeline rather than monitoring live input, so ~186ms before the first
+    # sound is not something you play against. Drop it if that ever changes.
+    def __init__(self, project, pool, sample_rate: int = 44100, block: int = 8192) -> None:  # noqa: ANN001
         self.project = project
         self.pool = pool
         self.sr = sample_rate
