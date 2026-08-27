@@ -380,9 +380,15 @@ class TimelineView(QGraphicsView):
         # viewport and clips drift away from their (top-aligned) track headers.
         self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.setFocusPolicy(Qt.StrongFocus)  # receive Delete/Backspace when focused
-        # Repaint the whole viewport on scroll. The default (blit + repaint the
-        # newly-exposed strip) leaves ghost copies of the viewport-pinned ruler.
-        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        # Repainting the whole viewport on every change is what the pinned ruler
+        # needs on scroll, but the playhead moves ~33 times a second and does not
+        # scroll anything — paying a full repaint for it costs a third of the UI
+        # thread and starves the audio callback. So: minimal updates, with the
+        # playhead invalidating just the strips it left and entered, and a full
+        # repaint wired to scrolling, where the ghosting actually happens.
+        self.setViewportUpdateMode(QGraphicsView.MinimalViewportUpdate)
+        for bar in (self.horizontalScrollBar(), self.verticalScrollBar()):
+            bar.valueChanged.connect(lambda _v: self.viewport().update())
 
         self._project: Optional[Project] = None
         self.audio_pool = None  # set via set_audio_pool(); used to draw waveforms
@@ -512,10 +518,23 @@ class TimelineView(QGraphicsView):
         super().wheelEvent(event)
 
     # ---- playhead --------------------------------------------------------
+    PLAYHEAD_MARGIN = 4          # px either side, so the line and its cap repaint
+
     def set_playhead(self, seconds: float) -> None:
+        old = self.playhead
         self.playhead = max(0.0, seconds)
-        self.viewport().update()
+        self._invalidate_playhead(old, self.playhead)
         self.playhead_moved.emit(self.playhead)
+
+    def _invalidate_playhead(self, *times) -> None:
+        """Repaint only where the playhead was and is now."""
+        vp = self.viewport()
+        m = self.PLAYHEAD_MARGIN
+        for t in times:
+            if t is None:
+                continue
+            x = int(self.mapFromScene(t * self.pps, 0).x())
+            vp.update(x - m, 0, 2 * m, vp.height())
 
     # ---- selection -------------------------------------------------------
     def _on_selection_changed(self) -> None:

@@ -196,7 +196,12 @@ class PianoRollView(QGraphicsView):
         self.setBackgroundBrush(QColor(theme.TIMELINE_BG))
         self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        # See the note in timeline_view: full repaints are for scrolling, where
+        # the pinned key column and ruler would ghost. The playhead gets narrow
+        # strip updates instead of repainting all 88 lanes 33 times a second.
+        self.setViewportUpdateMode(QGraphicsView.MinimalViewportUpdate)
+        for _bar in (self.horizontalScrollBar(), self.verticalScrollBar()):
+            _bar.valueChanged.connect(lambda _v: self.viewport().update())
         # Custom rubber-band: Qt's RubberBandDrag swallows double-clicks, so
         # empty-space create never fired.
         self.setDragMode(QGraphicsView.NoDrag)
@@ -323,10 +328,16 @@ class PianoRollView(QGraphicsView):
 
     def set_playhead(self, seconds: Optional[float], follow: bool = False) -> None:
         """Clip-relative playhead (seconds). ``follow`` keeps it in view while playing."""
+        old = self.playhead
         self.playhead = None if seconds is None else float(seconds)
         if follow and self.playhead is not None:
             self._follow_playhead()
-        self.viewport().update()
+        vp = self.viewport()
+        for t in (old, self.playhead):
+            if t is None:
+                continue
+            x = int(self.mapFromScene(self.time_to_x(t), 0).x())
+            vp.update(x - 4, 0, 8, vp.height())
 
     def _follow_playhead(self) -> None:
         t = self.playhead
