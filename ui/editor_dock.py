@@ -72,6 +72,14 @@ class EditorDock(QWidget):
         row.addWidget(self.btn_synth)
         row.addWidget(self.btn_eq)
         row.addStretch(1)
+        # Closing the panel gives its height back to the arrangement. The mode
+        # buttons only switch what is shown, so without this the only way out is
+        # dragging the splitter shut.
+        self.btn_close = QPushButton("✕")
+        self.btn_close.setToolTip("Close the editor panel")
+        self.btn_close.setFixedWidth(30)
+        self.btn_close.setCheckable(False)
+        row.addWidget(self.btn_close)
 
         self.stack = QStackedWidget()
         self.piano = PianoRollPanel()
@@ -103,6 +111,7 @@ class EditorDock(QWidget):
         self.btn_piano.clicked.connect(lambda: self.switch_to_piano_mode())
         self.btn_synth.clicked.connect(lambda: self._set_mode(1))
         self.btn_eq.clicked.connect(lambda: self._set_mode(2))
+        self.btn_close.clicked.connect(self.close_panel)
         self.hide()
 
     def attach_splitter(self, split: QSplitter) -> None:
@@ -141,6 +150,19 @@ class EditorDock(QWidget):
             self._split.setSizes(self._saved_sizes)
         elif self._split.sizes()[-1] < 140:
             self._split.setSizes([int(total * 0.52), int(total * 0.48)])
+
+    def close_panel(self) -> None:
+        """Hide the editor and hand its space back to the arrangement.
+
+        The splitter sizes are remembered first, so reopening restores the
+        height you had rather than a default.
+        """
+        self._remember_sizes()
+        self.hide()
+        if self._split is not None:
+            sizes = self._split.sizes()
+            if len(sizes) == 2:
+                self._split.setSizes([sum(sizes), 0])
 
     def _set_mode(self, idx: int) -> None:
         self.stack.setCurrentIndex(idx)
