@@ -98,10 +98,16 @@ def test_eq_pills_select_and_cut_drag_sets_q(panel):
     assert eq._bands[2]["gain"] == 4.0
     assert eq._gain.isVisible() is True
 
-    was = eq._bands[2]["enabled"]
+    assert eq._bands[2]["enabled"] is True
     eq._band_btns[2].click()
     assert eq.selected_index() == 2
-    assert eq._bands[2]["enabled"] == was
+    assert eq._bands[2]["enabled"] is False
+    eq._band_btns[2].click()
+    assert eq._bands[2]["enabled"] is True
+    assert eq._bands[7]["enabled"] is False
+    eq._band_btns[7].click()
+    assert eq.selected_index() == 7
+    assert eq._bands[7]["enabled"] is True
 
 
 def test_closing_an_already_closed_panel_is_harmless(panel):

@@ -93,10 +93,10 @@ def _plot_rect(widget: QWidget) -> QRectF:
 
 
 class _BandPill(QAbstractButton):
-    """Select-only band chip: fill = enabled, cyan ring = selected.
+    """On/off band chip: fill = enabled, cyan ring = selected.
 
-    Clicking selects; it does not toggle on/off (that lives on the power
-    control and on a double-click of the handle).
+    Clicking selects the band and toggles it. Same enable surface as the
+    power control and a double-click of the handle.
     """
 
     def __init__(self, number: int, parent: Optional[QWidget] = None) -> None:
@@ -107,7 +107,7 @@ class _BandPill(QAbstractButton):
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(24, 24)
         self.setFocusPolicy(Qt.NoFocus)
-        self.setToolTip(f"Select band {number}")
+        self.setToolTip(f"Toggle band {number}")
 
     def set_state(self, enabled: bool, chosen: bool) -> None:
         if self._enabled == enabled and self._chosen == chosen:
@@ -443,7 +443,7 @@ class EqEditor(QWidget):
         self._band_btns: List[_BandPill] = []
         for i in range(MAX_BANDS):
             btn = _BandPill(i + 1)
-            btn.clicked.connect(lambda _=False, idx=i: self._select(idx))
+            btn.clicked.connect(lambda _=False, idx=i: self._on_pill(idx))
             self._band_btns.append(btn)
             row.addWidget(btn)
 
@@ -520,6 +520,11 @@ class EqEditor(QWidget):
         self._selected = index
         self.plot.set_selected(index)
         self._sync_inspector()
+
+    def _on_pill(self, index: int) -> None:
+        if self._suspend or not self._bands:
+            return
+        self._on_toggle(index)
 
     def _on_drag(self, index: int, freq: float, gain: float, q: float) -> None:
         b = self._bands[index]
