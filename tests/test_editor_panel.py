@@ -61,6 +61,49 @@ def test_close_button_exists_and_is_not_a_mode(panel):
     assert dock.btn_close.text() == "✕"
 
 
+def test_eq_editor_shows_eight_bands(panel):
+    from fantasia_core.engine.eq import MAX_BANDS
+
+    dock, _ = panel
+    dock.show_eq([], 44100, "EQ — Test")
+    assert len(dock.eq._bands) == MAX_BANDS
+    assert dock.stack.currentIndex() == 2
+
+
+def test_eq_pills_select_and_cut_drag_sets_q(panel):
+    from PySide6.QtWidgets import QCheckBox
+
+    from fantasia_core.engine.eq import MAX_BANDS
+
+    dock, _ = panel
+    dock.show_eq([], 44100, "EQ — Test")
+    eq = dock.eq
+    assert len(eq._band_btns) == MAX_BANDS
+    assert not isinstance(eq._band_btns[0], QCheckBox)
+
+    q0 = eq._bands[0]["q"]
+    gain0 = eq._bands[0]["gain"]
+    assert eq._bands[0]["type"] == "low_cut"
+    eq._on_drag(0, 90.0, 12.0, 2.4)
+    assert eq._bands[0]["freq"] == 90.0
+    assert eq._bands[0]["q"] == 2.4
+    assert eq._bands[0]["gain"] == gain0
+    assert eq._bands[0]["enabled"] is True
+    assert eq._gain.isVisible() is False
+    assert "Q" in eq._hint.text()
+
+    eq._select(2)
+    assert eq._bands[2]["type"] == "bell"
+    eq._on_drag(2, 800.0, 4.0, q0)
+    assert eq._bands[2]["gain"] == 4.0
+    assert eq._gain.isVisible() is True
+
+    was = eq._bands[2]["enabled"]
+    eq._band_btns[2].click()
+    assert eq.selected_index() == 2
+    assert eq._bands[2]["enabled"] == was
+
+
 def test_closing_an_already_closed_panel_is_harmless(panel):
     dock, _ = panel
     dock.close_panel()

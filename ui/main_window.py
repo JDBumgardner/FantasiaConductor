@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
 
 from fantasia_core.commands import (
     AddClipCommand,
+    AddFxCommand,
     AddTrackCommand,
     CommandBus,
     DuplicateClipsCommand,
@@ -70,6 +71,7 @@ from fantasia_core.commands import (
 )
 from fantasia_core.agent import AgentSession, AgentTools
 from fantasia_core.document import (
+    MASTER_ID,
     Note,
     Project,
     default_drum_pattern,
@@ -87,6 +89,8 @@ from fantasia_core.engine import (
     default_soundfont,
     list_input_devices,
 )
+from fantasia_core.engine.eq import default_bands, fx_with_eq
+from fantasia_core.engine.spectrum import spectrum_db
 from fantasia_core.search import SearchService
 from ui import theme
 from ui.grid import ADAPTIVE_LEVELS, FIXED_OPTIONS, GridSpec
@@ -95,7 +99,7 @@ from ui.search_panel import SearchPanel
 from ui.gm_instruments import DRUM_KITS, gm_name
 from ui.editor_dock import EditorDock
 from ui.timeline_view import TimelineView
-from ui.track_header import TrackHeaderPanel
+from ui.track_header import TrackHeader, TrackHeaderPanel
 from ui.transport_bar import TransportBar
 
 _AUDIO_FILTER = "Audio (*.wav *.flac *.aiff *.aif *.ogg *.mp3)"
@@ -1810,6 +1814,7 @@ class MainWindow(QMainWindow):
         self._clip_clipboard: Optional[dict] = None
         self._note_clipboard: list = []
         self._syncing = False
+        self._eq_writing = False
 
         self._play_timer = QTimer(self)
         self._play_timer.setInterval(30)  # ~33 fps playhead updates
@@ -1851,8 +1856,15 @@ class MainWindow(QMainWindow):
         self.header_panel = TrackHeaderPanel()
         self.timeline = TimelineView()
 
+        self._left_col = QWidget()
+        left_l = QVBoxLayout(self._left_col)
+        left_l.setContentsMargins(0, 0, 0, 0)
+        left_l.setSpacing(0)
+        left_l.addWidget(self.header_panel, 1)
+        self.master_header = None  # built in _rebuild_master_header
+
         arrangement = QSplitter(Qt.Horizontal)
-        arrangement.addWidget(self.header_panel)
+        arrangement.addWidget(self._left_col)
         arrangement.addWidget(self.timeline)
         arrangement.setStretchFactor(0, 0)
         arrangement.setStretchFactor(1, 1)
@@ -2096,6 +2108,9 @@ class MainWindow(QMainWindow):
         self.piano.view.split_requested.connect(self._on_pr_split)
         self.piano.view.status.connect(self.statusBar().showMessage)
         self.synth_panel.param_changed.connect(self._on_synth_param)
+        self.editor.eq.bands_changed.connect(self._on_eq_bands)
+        self.editor.eq.status_message.connect(self.statusBar().showMessage)
+        self.editor.btn_eq.clicked.connect(self._on_eq_tab)
         self.timeline.clip_geometry_edited.connect(self._on_clip_geometry)
         self.timeline.import_into_clip_requested.connect(self._on_import_into_clip)
         self.timeline.clip_action_requested.connect(self._on_clip_action)
@@ -2126,6 +2141,10 @@ class MainWindow(QMainWindow):
                 self._tempo_conform_timer.start()
             elif isinstance(cmd, SetTrackAttrCommand) and cmd.attr in ("mute", "solo"):
                 self.header_panel.sync_mute_solo(self.project)
+                if self.master_header is not None:
+                    self.master_header.sync_mute_solo(self.project.master)
+            elif isinstance(cmd, SetTrackFxCommand) and not getattr(self, "_eq_writing", False):
+                self._refresh_eq_curve()
 
     # ---- unsaved-changes tracking ---------------------------------------
     def _set_dirty(self, dirty: bool) -> None:
@@ -2225,6 +2244,8 @@ class MainWindow(QMainWindow):
 
     def _on_tick(self) -> None:
         self.timeline.set_playhead(self.engine.playhead)
+        if self.editor.isVisible() and self.editor.stack.currentIndex() == 2:
+            self._update_eq_spectrum()
         if not self.engine.is_playing:  # reached the end on its own
             self._play_timer.stop()
             self._return_to_start()
@@ -2700,8 +2721,31 @@ class MainWindow(QMainWindow):
 
     def _rebuild_all(self) -> None:
         self.header_panel.rebuild(self.project)
+        self._rebuild_master_header()
         self.timeline.rebuild()
         self._apply_selection_highlight()
+
+    def _wire_track_header(self, header) -> None:  # noqa: ANN001
+        header.clicked.connect(self._on_track_selected)
+        header.renamed.connect(lambda tid, name: self._dispatch_attr(tid, "name", name))
+        header.mute_toggled.connect(lambda tid, on: self._dispatch_attr(tid, "mute", on))
+        header.solo_toggled.connect(lambda tid, on: self._dispatch_attr(tid, "solo", on))
+        header.gain_changed.connect(lambda tid, v: self._dispatch_attr(tid, "gain_db", v))
+        header.pan_changed.connect(lambda tid, v: self._dispatch_attr(tid, "pan", v))
+        header.fx_action.connect(self._on_fx_action)
+
+    def _rebuild_master_header(self) -> None:
+        old = self.master_header
+        header = TrackHeader(self.project.master)
+        self._wire_track_header(header)
+        header.set_selected(self.selected_track_id == MASTER_ID)
+        layout = self._left_col.layout()
+        if old is not None:
+            layout.replaceWidget(old, header)
+            old.deleteLater()
+        else:
+            layout.addWidget(header)
+        self.master_header = header
 
     # ---- editing actions (all via the bus) -------------------------------
     def _on_add_track(self) -> None:
@@ -2710,7 +2754,7 @@ class MainWindow(QMainWindow):
         self._rebuild_all()
 
     def _on_add_clip(self) -> None:
-        if self.selected_track_id is None:
+        if self.selected_track_id is None or self.selected_track_id == MASTER_ID:
             if not self.project.tracks:
                 return
             self.selected_track_id = self.project.tracks[0].id
@@ -2727,6 +2771,9 @@ class MainWindow(QMainWindow):
             self.timeline.rebuild()
             return
         if self.selected_track_id is not None and self.project.tracks:
+            if self.selected_track_id == MASTER_ID:
+                self.statusBar().showMessage("The Master channel cannot be removed")
+                return
             self.bus.dispatch(RemoveTrackCommand(self.selected_track_id))
             self.selected_track_id = (
                 self.project.tracks[0].id if self.project.tracks else None
@@ -2799,6 +2846,8 @@ class MainWindow(QMainWindow):
         )
         if attr in ("mute", "solo"):
             self.header_panel.sync_mute_solo(self.project)
+            if self.master_header is not None:
+                self.master_header.sync_mute_solo(self.project.master)
         if attr == "name" and track_id == self.selected_track_id:
             self._update_target_label()
 
@@ -4149,25 +4198,29 @@ class MainWindow(QMainWindow):
         elif action == "clear_fx":
             self.bus.dispatch(SetTrackFxCommand(track_id, [], label="Clear track FX"))
             self.statusBar().showMessage(f"Cleared FX on {track.name}")
+        elif action == "add_eq":
+            from fantasia_core.document.fx_insert import insert_type
+
+            if not any(insert_type(e) == "eq" for e in track.fx):
+                self.bus.dispatch(AddFxCommand(
+                    track_id, "eq", {"bands": default_bands()}))
+                self.statusBar().showMessage(f"Added 8-band EQ to {track.name}")
+            self.editor.show_eq(list(track.fx), self.project.sample_rate,
+                                "EQ — Master" if getattr(track, "is_master", False)
+                                else f"EQ — {track.name}")
         elif action in _FX_DIALOGS:
             fx_type, title, spec, hint = _FX_DIALOGS[action]
             dlg = _FxDialog(title, spec, hint, self)
             if dlg.exec() != QDialog.Accepted:
                 return
-            entry = {"type": fx_type, "params": dlg.params()}
-            self.bus.dispatch(SetTrackFxCommand(
-                track_id, list(track.fx) + [entry], label=f"Add {fx_type}"))
+            self.bus.dispatch(AddFxCommand(track_id, fx_type, dlg.params()))
             self.statusBar().showMessage(f"Added {title.lower()} to {track.name}")
             if fx_type.startswith("eq_"):   # show what the curve now looks like
                 self.editor.show_eq(list(track.fx), self.project.sample_rate,
                                     f"EQ — {track.name}")
         elif action in self._FX_PRESETS:
             spec = self._FX_PRESETS[action]
-            self.bus.dispatch(
-                SetTrackFxCommand(
-                    track_id, list(track.fx) + [spec], label=f"Add {spec['type']}"
-                )
-            )
+            self.bus.dispatch(AddFxCommand(track_id, spec["type"], spec.get("params") or {}))
             self.statusBar().showMessage(f"Added {spec['type']} to {track.name}")
         else:
             return
@@ -4255,7 +4308,11 @@ class MainWindow(QMainWindow):
 
     def _apply_selection_highlight(self, *, keep_piano: bool = False) -> None:
         self.header_panel.set_selected(self.selected_track_id)
-        self.timeline.set_selected_track(self.selected_track_id)
+        if self.master_header is not None:
+            self.master_header.set_selected(self.selected_track_id == MASTER_ID)
+        self.timeline.set_selected_track(
+            None if self.selected_track_id == MASTER_ID else self.selected_track_id
+        )
         self._update_target_label()
         # Switch the editor to Synth mode for a synth track; else flip back to
         # Piano Roll mode (without forcing the editor open).
@@ -4269,7 +4326,7 @@ class MainWindow(QMainWindow):
             pass  # keep the EQ view up while stepping through tracks
         elif keep_piano:
             self.editor.switch_to_piano_mode()
-        elif track is not None and getattr(track, "is_synth", False):
+        elif track is not None and not getattr(track, "is_master", False) and getattr(track, "is_synth", False):
             self.editor.show_synth(track, reveal=self.editor.is_open())
         else:
             self.editor.switch_to_piano_mode()
@@ -4278,11 +4335,41 @@ class MainWindow(QMainWindow):
         """Keep the EQ plot showing the selected track's filter chain."""
         track = (self.project.track_by_id(self.selected_track_id)
                  if self.selected_track_id else None)
+        self.engine.spectrum_track_id = track.id if track is not None else None
         if track is None:
             self.editor.eq.set_chain([], self.project.sample_rate, "No track selected")
         else:
-            self.editor.eq.set_chain(list(track.fx), self.project.sample_rate,
-                                     f"EQ — {track.name}")
+            title = "EQ — Master" if getattr(track, "is_master", False) else f"EQ — {track.name}"
+            self.editor.eq.set_chain(list(track.fx), self.project.sample_rate, title)
+
+    def _on_eq_tab(self) -> None:
+        self._refresh_eq_curve()
+
+    def _on_eq_bands(self, bands: list, mergeable: bool) -> None:
+        if not self.selected_track_id:
+            return
+        track = self.project.track_by_id(self.selected_track_id)
+        if track is None:
+            return
+        fx = fx_with_eq(track.fx, bands)
+        self._eq_writing = True
+        try:
+            self.bus.dispatch(SetTrackFxCommand(
+                track.id, fx, label="EQ", mergeable=mergeable))
+        finally:
+            self._eq_writing = False
+
+    def _update_eq_spectrum(self) -> None:
+        """FFT the latest tap on the UI thread — never in the audio callback."""
+        tap = getattr(self.engine, "spectrum_tap", None)
+        if tap is None or not self.engine.is_playing:
+            return
+        try:
+            snap = tap.snapshot()
+            freqs, db = spectrum_db(snap, self.project.sample_rate, n_fft=2048)
+            self.editor.eq.set_spectrum(freqs, db)
+        except Exception:  # noqa: BLE001 — analyzer must never disturb playback
+            return
 
     def _on_synth_param(self, track_id: str, key: str, value) -> None:
         self.bus.dispatch(SetTrackSynthParamCommand(track_id, key, value))

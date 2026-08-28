@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui import theme
-from ui.eq_curve import EqCurveView
+from ui.eq_curve import EqEditor
 from ui.piano_roll import PianoRollPanel
 from ui.synth_panel import SynthPanel
 
@@ -98,7 +98,7 @@ class EditorDock(QWidget):
         synth_scroll.viewport().setStyleSheet(f"background: {theme.BG_PANEL};")
         self.stack.setStyleSheet(f"QStackedWidget {{ background: {theme.BG_PANEL}; }}")
         self.piano.setMinimumHeight(60)
-        self.eq = EqCurveView()
+        self.eq = EqEditor()
         self.stack.addWidget(self.piano)         # index 0
         self.stack.addWidget(synth_scroll)       # index 1
         self.stack.addWidget(self.eq)            # index 2

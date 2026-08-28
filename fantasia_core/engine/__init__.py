@@ -8,6 +8,7 @@ from fantasia_core.engine.metronome import render_metronome_block
 from fantasia_core.engine.mixer import render_block, render_track_block
 from fantasia_core.engine.playback import PlaybackEngine
 from fantasia_core.engine.record import Recorder, list_input_devices
+from fantasia_core.engine.spectrum import SpectrumTap
 from fantasia_core.engine.synth import DEFAULT_PATCH, WAVEFORMS, SynthRenderer
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "bounce_track_to_file",
     "FxHost",
     "build_board",
+    "SpectrumTap",
     "MidiRenderer",
     "default_soundfont",
     "SynthRenderer",

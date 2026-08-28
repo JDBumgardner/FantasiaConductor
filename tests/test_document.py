@@ -85,3 +85,21 @@ def test_loop_region_round_trip():
     assert restored.loop_start == 1.5
     assert restored.loop_end == 5.0
     assert restored.loop_bounds() == (1.5, 5.0)
+
+
+def test_fx_inserts_get_stable_ids_on_save_and_load():
+    from fantasia_core.document import FxInsert
+
+    p = Project()
+    t = p.add_track("A")
+    t.fx = [{"type": "reverb", "params": {"wet": 0.3}}]
+    p.master.fx = [p.new_insert("eq", {"bands": []})]
+    restored = project_from_dict(project_to_dict(p))
+    ins = restored.tracks[0].fx[0]
+    assert isinstance(ins, FxInsert)
+    assert ins.id.startswith("fx") and ins.type == "reverb"
+    assert ins.bypassed is False
+    ch, found, idx = restored.find_insert(ins.id)
+    assert ch is restored.tracks[0] and found.id == ins.id and idx == 0
+    master_eq = restored.master.fx[0]
+    assert master_eq.id == p.master.fx[0].id and master_eq.type == "eq"

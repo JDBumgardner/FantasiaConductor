@@ -11,7 +11,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fantasia_core.document.model import Clip, Note, Project, Track
+from fantasia_core.document.fx_insert import as_insert
+from fantasia_core.document.model import MASTER_ID, Clip, Note, Project, Track
 
 FORMAT = "fantasia-project"
 VERSION = 1
@@ -51,7 +52,7 @@ def track_to_dict(track: Track) -> dict[str, Any]:
         "mute": track.mute,
         "solo": track.solo,
         "color": track.color,
-        "fx": [dict(e) for e in track.fx],
+        "fx": [as_insert(e).to_dict() for e in track.fx],
         "instrument": track.instrument,
         "is_drum": track.is_drum,
         "is_synth": track.is_synth,
@@ -65,6 +66,7 @@ def track_to_dict(track: Track) -> dict[str, Any]:
 
 
 def project_to_dict(project: Project) -> dict[str, Any]:
+    project.ensure_inserts()
     return {
         "format": FORMAT,
         "version": VERSION,
@@ -77,6 +79,7 @@ def project_to_dict(project: Project) -> dict[str, Any]:
         "loop_end": float(project.loop_end),
         "next_id": project._next_id,
         "tracks": [track_to_dict(t) for t in project.tracks],
+        "master": track_to_dict(project.master),
     }
 
 
@@ -120,7 +123,7 @@ def track_from_dict(data: dict[str, Any]) -> Track:
         solo=bool(data.get("solo", False)),
         color=data.get("color", "#4a90d9"),
     )
-    track.fx = [dict(e) for e in data.get("fx", [])]
+    track.fx = [as_insert(e) for e in data.get("fx", [])]
     track.instrument = int(data.get("instrument", 0))
     track.is_drum = bool(data.get("is_drum", False))
     track.is_synth = bool(data.get("is_synth", False))
@@ -141,10 +144,15 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         beats_per_bar=int(data.get("beats_per_bar", 4)),
     )
     project.tracks = [track_from_dict(t) for t in data.get("tracks", [])]
+    if "master" in data and isinstance(data["master"], dict):
+        master = track_from_dict(data["master"])
+        master.id = MASTER_ID
+        project.master = master
     project.loop_enabled = bool(data.get("loop_enabled", False))
     project.loop_start = float(data.get("loop_start", 0.0))
     project.loop_end = float(data.get("loop_end", 8.0))
     project._next_id = int(data.get("next_id", 1))
+    project.ensure_inserts()
     return project
 
 

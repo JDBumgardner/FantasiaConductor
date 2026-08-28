@@ -26,7 +26,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from fantasia_core.document.model import Track
+from fantasia_core.document.fx_insert import insert_type
+from fantasia_core.document.model import MASTER_ID, Track
 from ui import theme
 from ui.gm_instruments import DRUM_KITS, GM_FAMILIES, gm_name
 from ui.metrics import RULER_H, TRACK_H
@@ -78,11 +79,12 @@ class TrackHeader(QWidget):
         outer.setContentsMargins(8, 6, 8, 6)
         outer.setSpacing(4)
 
-        self._fx_types = [e.get("type") for e in track.fx]
+        self._fx_types = [insert_type(e) for e in track.fx]
         self._is_drum = getattr(track, "is_drum", False)
         self._is_synth = getattr(track, "is_synth", False)
         self._instrument = getattr(track, "instrument", 0)
         self._plugin = getattr(track, "plugin", "") or ""
+        self._is_master = track.id == MASTER_ID or getattr(track, "is_master", False)
 
         # --- create widgets and set state from the model (no signals yet) ---
         self.name_edit = QLineEdit(track.name)
@@ -92,7 +94,10 @@ class TrackHeader(QWidget):
         self.fx_badge = QLabel()
         self.fx_badge.setStyleSheet(f"color:{theme.CYAN}; font-size:10px; font-weight:600;")
         parts = []
-        if self._is_synth:
+        if self._is_master:
+            parts.append("MASTER")
+            self.setToolTip("Master mix bus — FX here apply to the whole mix")
+        elif self._is_synth:
             parts.append("SYNTH")
             self.setToolTip("Built-in synth")
         elif self._is_drum:
@@ -121,6 +126,12 @@ class TrackHeader(QWidget):
         self.solo_btn.setStyleSheet(_MS_BUTTON_STYLE)
         self.solo_btn.setChecked(track.solo)
         self.solo_btn.setToolTip("Solo")
+        if self._is_master:
+            self.solo_btn.setEnabled(False)
+            self.solo_btn.setToolTip("Solo is per-track; mute the Master to silence the mix")
+            self.setStyleSheet(
+                f"QWidget#trackHeader {{ border-top: 1px solid {theme.CYAN}; }}"
+            )
 
         self.vol = QSlider(Qt.Horizontal)
         self.vol.setRange(-60, 12)  # dB
@@ -202,50 +213,54 @@ class TrackHeader(QWidget):
         menu = QMenu()
         mapping = {}
 
-        synth = menu.addAction("Synth Voice (built-in)")
-        synth.setCheckable(True)
-        synth.setChecked(self._is_synth)
-        mapping[synth] = "toggle_synth"
+        if self._is_master:
+            head = menu.addAction("Master mix bus")
+            head.setEnabled(False)
+            menu.addSeparator()
+        else:
+            synth = menu.addAction("Synth Voice (built-in)")
+            synth.setCheckable(True)
+            synth.setChecked(self._is_synth)
+            mapping[synth] = "toggle_synth"
 
-        drum = menu.addAction("Drum Kit (percussion)")
-        drum.setCheckable(True)
-        drum.setChecked(self._is_drum)
-        mapping[drum] = "toggle_drum"
+            drum = menu.addAction("Drum Kit (percussion)")
+            drum.setCheckable(True)
+            drum.setChecked(self._is_drum)
+            mapping[drum] = "toggle_drum"
 
-        if self._is_drum:  # drum-kit picker
-            kit_menu = menu.addMenu("Drum Kit")
-            for prog, name in DRUM_KITS:
-                act = kit_menu.addAction(name)
-                act.setCheckable(True)
-                act.setChecked(prog == self._instrument)
-                mapping[act] = f"instrument:{prog}"
-        elif not self._is_synth:  # instrument picker (soundfont tracks)
-            inst_menu = menu.addMenu("Instrument")
-            for family, insts in GM_FAMILIES:
-                sub = inst_menu.addMenu(family)
-                for prog, name in insts:
-                    act = sub.addAction(name)
+            if self._is_drum:  # drum-kit picker
+                kit_menu = menu.addMenu("Drum Kit")
+                for prog, name in DRUM_KITS:
+                    act = kit_menu.addAction(name)
                     act.setCheckable(True)
                     act.setChecked(prog == self._instrument)
                     mapping[act] = f"instrument:{prog}"
+            elif not self._is_synth:  # instrument picker (soundfont tracks)
+                inst_menu = menu.addMenu("Instrument")
+                for family, insts in GM_FAMILIES:
+                    sub = inst_menu.addMenu(family)
+                    for prog, name in insts:
+                        act = sub.addAction(name)
+                        act.setCheckable(True)
+                        act.setChecked(prog == self._instrument)
+                        mapping[act] = f"instrument:{prog}"
 
-        # A hosted plugin replaces the built-in engines entirely, so it sits
-        # with them rather than in the FX chain below.
-        plug = menu.addAction("Plugin Instrument…"
-                              + (f"  [{self._plugin}]" if self._plugin else ""))
-        mapping[plug] = "plugin_instrument"
-        if self._plugin:
-            # Editing the patch is the frequent action once a plugin is chosen;
-            # going back through the picker every time is friction.
-            mapping[menu.addAction(f"Open {self._plugin} Interface…")] = "plugin_editor"
+            # A hosted plugin replaces the built-in engines entirely, so it sits
+            # with them rather than in the FX chain below.
+            plug = menu.addAction("Plugin Instrument…"
+                                  + (f"  [{self._plugin}]" if self._plugin else ""))
+            mapping[plug] = "plugin_instrument"
+            if self._plugin:
+                mapping[menu.addAction(f"Open {self._plugin} Interface…")] = "plugin_editor"
 
-        menu.addSeparator()
+            menu.addSeparator()
         if self._fx_types:
             head = menu.addAction("FX: " + ", ".join(self._fx_types))
             head.setEnabled(False)
             menu.addSeparator()
         # Mixing chain, in the order you'd normally use it: EQ -> colour -> dynamics.
         eq = menu.addMenu("EQ")
+        mapping[eq.addAction("Stock EQ (8-band)")] = "add_eq"
         for label, name in [
             ("High-pass 120 Hz  (remove rumble)", "add_highpass"),
             ("Low-pass 1.2 kHz  (darken)", "add_lowpass"),
@@ -276,8 +291,9 @@ class TrackHeader(QWidget):
 
         menu.addSeparator()
         mapping[menu.addAction("Clear FX")] = "clear_fx"
-        menu.addSeparator()
-        mapping[menu.addAction("Remove Track")] = "remove_track"
+        if not self._is_master:
+            menu.addSeparator()
+            mapping[menu.addAction("Remove Track")] = "remove_track"
 
         action = mapping.get(menu.exec(global_pos))
         if action:

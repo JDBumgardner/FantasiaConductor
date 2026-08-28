@@ -10,10 +10,13 @@ Design notes
   tempo rescales clip/note times (``old_bpm / new_bpm``) so the song speeds up
   or slows down; audio is warped to the new clip length. Grid/snap use tempo
   as well.
-* **IDs are stable strings** (``"t1"``, ``"c2"``) from a single monotonic
-  counter on the project. Commands (M2) and the agent (M6) address tracks and
-  clips by these ids, and they must survive save/load — so the counter is part
-  of the serialized form.
+* **IDs are stable strings** (``"t1"``, ``"c2"``, ``"fx12"``) from a single
+  monotonic counter on the project. Commands and the agent address tracks,
+  clips, and FX inserts by these ids, and they must survive save/load — so
+  the counter is part of the serialized form. An FX insert is an
+  :class:`FxInsert` (id, type, bypassed, params) on ``Track.fx``; the
+  numbered EQ *bands* live inside an ``eq`` insert's params, not as their
+  own graph nodes.
 * Audio content is referenced by ``source_path`` and only *loaded* by the
   engine (M3); the model just records where a clip's audio comes from.
 """
@@ -23,7 +26,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from fantasia_core.document.fx_insert import (
+    FxInsert,
+    as_insert,
+    mint_missing_ids,
+)
+
 DEFAULT_SAMPLE_RATE = 44100
+MASTER_ID = "master"
 
 
 @dataclass
@@ -96,7 +106,9 @@ class Track:
     mute: bool = False
     solo: bool = False
     color: str = "#4a90d9"
-    fx: list = field(default_factory=list)  # list of {"type": str, "params": dict}
+    # Ordered insert graph. Each entry is an :class:`FxInsert` (id, type,
+    # bypassed, params). Dicts are coerced on load / command dispatch.
+    fx: list = field(default_factory=list)
     instrument: int = 0  # GM program / soundfont preset for MIDI clips
     is_drum: bool = False  # render MIDI on the GM percussion bank (drum kit)
     is_synth: bool = False  # render MIDI with the built-in subtractive synth
@@ -110,6 +122,29 @@ class Track:
                 return clip
         return None
 
+    def fx_by_id(self, insert_id: str) -> Optional[FxInsert]:
+        for ins in self.fx:
+            if getattr(ins, "id", None) == insert_id or (
+                isinstance(ins, dict) and ins.get("id") == insert_id
+            ):
+                return as_insert(ins)
+        return None
+
+    def fx_index(self, insert_id: str) -> Optional[int]:
+        for i, ins in enumerate(self.fx):
+            ident = getattr(ins, "id", None) or (ins.get("id") if isinstance(ins, dict) else "")
+            if ident == insert_id:
+                return i
+        return None
+
+    @property
+    def is_master(self) -> bool:
+        return self.id == MASTER_ID
+
+
+def _default_master() -> "Track":
+    return Track(id=MASTER_ID, name="Master", color="#ffd76b")
+
 
 @dataclass
 class Project:
@@ -120,6 +155,9 @@ class Project:
     tempo: float = 120.0  # BPM
     beats_per_bar: int = 4
     tracks: list[Track] = field(default_factory=list)
+    # Mix bus: same Track shape (FX, gain, pan, mute) but never holds clips
+    # and is mixed *after* every arrangement track is summed.
+    master: Track = field(default_factory=_default_master)
     loop_enabled: bool = False
     loop_start: float = 0.0
     loop_end: float = 8.0  # 4 bars at the default 120 BPM
@@ -133,7 +171,7 @@ class Project:
 
     # ---- id generation ---------------------------------------------------
     def new_id(self, prefix: str) -> str:
-        """Return a fresh, globally-unique id like ``"t1"`` / ``"c7"``."""
+        """Return a fresh, globally-unique id like ``"t1"`` / ``"c7"`` / ``"fx12"``."""
         ident = f"{prefix}{self._next_id}"
         self._next_id += 1
         return ident
@@ -149,7 +187,12 @@ class Project:
         self.tracks.insert(index, track)
 
     def remove_track(self, track_id: str) -> Optional[int]:
-        """Remove a track by id; return the index it occupied (for undo)."""
+        """Remove a track by id; return the index it occupied (for undo).
+
+        The master channel cannot be removed.
+        """
+        if track_id == MASTER_ID:
+            return None
         for i, track in enumerate(self.tracks):
             if track.id == track_id:
                 del self.tracks[i]
@@ -157,10 +200,18 @@ class Project:
         return None
 
     def track_by_id(self, track_id: str) -> Optional[Track]:
+        if track_id == MASTER_ID or (
+            self.master is not None and track_id == self.master.id
+        ):
+            return self.master
         for track in self.tracks:
             if track.id == track_id:
                 return track
         return None
+
+    def channels(self) -> list[Track]:
+        """Arrangement tracks plus the master bus (master last)."""
+        return [*self.tracks, self.master]
 
     def track_index(self, track_id: str) -> Optional[int]:
         for i, track in enumerate(self.tracks):
@@ -177,7 +228,7 @@ class Project:
         **kwargs,
     ) -> Optional[Clip]:
         track = self.track_by_id(track_id)
-        if track is None:
+        if track is None or getattr(track, "is_master", False):
             return None
         clip = Clip(
             id=self.new_id("c"),
@@ -196,6 +247,33 @@ class Project:
             if clip is not None:
                 return track, clip
         return None, None
+
+    def new_insert(self, kind: str, params: Optional[dict] = None,
+                   bypassed: bool = False) -> FxInsert:
+        """Mint a new insert with a stable id (``fx12``)."""
+        return FxInsert(
+            id=self.new_id("fx"),
+            type=str(kind),
+            params=dict(params or {}),
+            bypassed=bool(bypassed),
+        )
+
+    def ensure_inserts(self, track: Optional[Track] = None) -> None:
+        """Coerce every FX entry to :class:`FxInsert` and fill missing ids."""
+        channels = [track] if track is not None else self.channels()
+        for ch in channels:
+            if ch is None:
+                continue
+            ch.fx = mint_missing_ids(ch.fx, lambda: self.new_id("fx"))
+
+    def find_insert(self, insert_id: str
+                    ) -> tuple[Optional[Track], Optional[FxInsert], Optional[int]]:
+        """Locate an insert on any channel, returning (track, insert, index)."""
+        for track in self.channels():
+            idx = track.fx_index(insert_id)
+            if idx is not None:
+                return track, as_insert(track.fx[idx]), idx
+        return None, None, None
 
     # ---- derived ---------------------------------------------------------
     @property
