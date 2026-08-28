@@ -26,24 +26,30 @@ class PluginRenderer:
         self.sr = sample_rate
         self.tail = tail
         self._cache: Dict[Tuple, np.ndarray] = {}
-        self._states: Dict[str, str] = {}
+        self._states: Dict[tuple, str] = {}
 
     # ---- keys ---------------------------------------------------------
-    def _key(self, clip, plugin: str, state: str) -> Tuple:  # noqa: ANN001
+    def _key(self, clip, plugin: str, state: str, owner: str = "") -> Tuple:  # noqa: ANN001
         notes = tuple((n.pitch, round(n.start, 4), round(n.duration, 4), n.velocity)
                       for n in clip.notes)
         # The state blob can be large; hash it so keys stay small.
         digest = hashlib.sha1((state or "").encode()).hexdigest()[:12]
-        return (plugin, digest, round(clip.duration, 4), notes)
+        return (plugin, owner, digest, round(clip.duration, 4), notes)
 
-    def cached(self, clip, plugin: str, state: str = "") -> Optional[np.ndarray]:  # noqa: ANN001
+    def cached(self, clip, plugin: str, state: str = "",
+               owner: str = "") -> Optional[np.ndarray]:  # noqa: ANN001
         """Audio-callback-safe: the rendered buffer, or None. Never synthesizes."""
-        return self._cache.get(self._key(clip, plugin, state))
+        return self._cache.get(self._key(clip, plugin, state, owner))
 
     # ---- rendering ----------------------------------------------------
-    def render(self, clip, plugin: str, state: str = "") -> np.ndarray:  # noqa: ANN001
-        """Synthesize on a worker/UI thread and cache. Silence if unavailable."""
-        key = self._key(clip, plugin, state)
+    def render(self, clip, plugin: str, state: str = "",
+               owner: str = "") -> np.ndarray:  # noqa: ANN001
+        """Synthesize on a worker/UI thread and cache. Silence if unavailable.
+
+        ``owner`` is the track id: one synth used on several tracks needs an
+        instance each, or they all share whichever patch was applied last.
+        """
+        key = self._key(clip, plugin, state, owner)
         hit = self._cache.get(key)
         if hit is not None:
             return hit
@@ -52,10 +58,10 @@ class PluginRenderer:
         try:
             from fantasia_core import plugins as plg
 
-            inst = plg.load(plugin)
-            if state and self._states.get(plugin) != state:
+            inst = plg.load(plugin, owner=owner or None)
+            if state and self._states.get((plugin, owner)) != state:
                 plg.restore_preset(inst, base64.b64decode(state))
-                self._states[plugin] = state
+                self._states[(plugin, owner)] = state
             audio = plg.render_notes(inst, clip.notes, clip.duration, self.sr,
                                      tail=self.tail)
             if len(audio):
@@ -84,14 +90,15 @@ class PluginRenderer:
                 continue
             state = getattr(track, "plugin_state", "")
             for clip in track.clips:
-                if clip.content_type == "midi" and self.cached(clip, plugin, state) is None:
-                    out.append((clip, plugin, state))
+                if (clip.content_type == "midi"
+                        and self.cached(clip, plugin, state, track.id) is None):
+                    out.append((clip, plugin, state, track.id))
         return out
 
     def warm(self, project) -> None:  # noqa: ANN001
         """Render everything now. Blocks — prefer :meth:`pending` in the UI."""
-        for clip, plugin, state in self.pending(project):
-            self.render(clip, plugin, state)
+        for clip, plugin, state, owner in self.pending(project):
+            self.render(clip, plugin, state, owner)
 
     def invalidate(self, plugin: Optional[str] = None) -> None:
         if plugin is None:
@@ -100,12 +107,13 @@ class PluginRenderer:
         else:
             for k in [k for k in self._cache if k[0] == plugin]:
                 del self._cache[k]
-            self._states.pop(plugin, None)
+            for k in [k for k in self._states if k[0] == plugin]:
+                del self._states[k]
 
 
-def capture_state(plugin_name: str) -> str:
-    """The plugin's current state as base64, for saving on the track."""
+def capture_state(plugin_name: str, owner: Optional[str] = None) -> str:
+    """A track's plugin state as base64, for saving with the project."""
     from fantasia_core import plugins as plg
 
-    data = plg.preset_bytes(plg.load(plugin_name))
+    data = plg.preset_bytes(plg.load(plugin_name, owner=owner))
     return base64.b64encode(data).decode() if data else ""

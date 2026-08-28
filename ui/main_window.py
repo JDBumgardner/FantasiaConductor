@@ -2690,9 +2690,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Plugin tracks ready", 4000)
             self.timeline.viewport().update()
             return
-        clip, plugin, state = queue.pop(0)
+        clip, plugin, state, owner = queue.pop(0)
         try:
-            self.plugin_renderer.render(clip, plugin, state)
+            self.plugin_renderer.render(clip, plugin, state, owner)
         except Exception:  # noqa: BLE001 — one bad clip must not stall the rest
             pass
         if len(queue) % 5 == 0 and queue:
@@ -3666,15 +3666,15 @@ class MainWindow(QMainWindow):
         """
         from fantasia_core.engine.plugin_render import capture_state
 
-        try:
-            state = capture_state(plugin_name)
-        except Exception:  # noqa: BLE001
-            return 0
         hit = 0
         for track in self.project.tracks:
             if getattr(track, "plugin", "") != plugin_name:
                 continue
-            if getattr(track, "plugin_state", "") != state:
+            try:
+                state = capture_state(plugin_name, track.id)
+            except Exception:  # noqa: BLE001
+                continue
+            if state and getattr(track, "plugin_state", "") != state:
                 self.bus.dispatch(SetTrackAttrCommand(track.id, "plugin_state", state))
             hit += 1
         if hit:
@@ -3699,7 +3699,7 @@ class MainWindow(QMainWindow):
         from fantasia_core.engine.plugin_render import capture_state
 
         try:
-            plugin = plg.load(name)
+            plugin = plg.load(name, owner=track.id)
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(f"Could not load {name}: {exc}", 8000)
             return
@@ -3712,7 +3712,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"{name}: {exc}", 8000)
             return
         try:
-            state = capture_state(name)
+            state = capture_state(name, track.id)
         except Exception:  # noqa: BLE001
             state = ""
         if state and state != getattr(track, "plugin_state", ""):
@@ -4408,8 +4408,31 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Loaded demo arrangement — press Space to play")
 
     # ---- file ------------------------------------------------------------
+    @staticmethod
+    def _tidy_plugin_names(project) -> int:  # noqa: ANN001
+        """Collapse plugin paths to the plugin's name.
+
+        Tracks used to be given deliberately different spellings of one path
+        ("…/VST3/./Vital.vst3", "…/VST3//Vital.vst3") to get an instance each.
+        Instances are keyed by track now, so the spelling is free to be readable
+        — and each track keeps its own patch, which is stored on the track.
+        """
+        from fantasia_core import plugins as plg
+
+        fixed = 0
+        for track in getattr(project, "tracks", []):
+            name = getattr(track, "plugin", "")
+            if not name:
+                continue
+            tidy = plg.display_name(name)
+            if tidy and tidy != name:
+                track.plugin = tidy
+                fixed += 1
+        return fixed
+
     def _load_project(self, project: Project, path: Optional[str]) -> None:
         self._on_stop()
+        self._tidy_plugin_names(project)
         self.project = project
         self._current_path = path
         self.bus.set_project(project)

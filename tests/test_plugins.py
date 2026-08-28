@@ -179,3 +179,67 @@ def test_a_huge_step_count_is_not_a_choice():
 def test_choice_threshold_is_a_count_a_human_could_pick_from():
     p = _Plugin({"a": _Param("X", discrete=True, steps=plugins._MAX_CHOICE_STEPS + 1)})
     assert plugins.describe(p)[0].get("type") is None
+
+
+# ---- one plugin, many tracks --------------------------------------------
+def test_path_spellings_resolve_to_one_plugin(monkeypatch, tmp_path):
+    """Tracks were given deliberately different spellings of one path to get an
+    instance each. The spelling should not decide identity."""
+    vst = tmp_path / "Vital.vst3"
+    vst.mkdir()
+    variants = [str(vst), f"{tmp_path}/./Vital.vst3", f"{tmp_path}//Vital.vst3",
+                f"{tmp_path}/././Vital.vst3"]
+    assert len({plugins.resolve(v) for v in variants}) == 1
+
+
+def test_display_name_is_the_plugin_not_the_path(tmp_path):
+    vst = tmp_path / "Vital.vst3"
+    vst.mkdir()
+    assert plugins.display_name(f"{tmp_path}/./Vital.vst3") == "Vital"
+
+
+def test_each_owner_gets_its_own_instance(monkeypatch, tmp_path):
+    """A kick and a pad on the same synth cannot be the same object."""
+    vst = tmp_path / "Synth.vst3"
+    vst.mkdir()
+    made = []
+
+    class _Fake:
+        def __init__(self, path):
+            made.append(path)
+
+    monkeypatch.setattr(plugins, "available", lambda: True)
+    import sys
+    import types
+    fake_pb = types.SimpleNamespace(load_plugin=lambda p: _Fake(p))
+    monkeypatch.setitem(sys.modules, "pedalboard", fake_pb)
+    plugins.unload()
+
+    a = plugins.load(str(vst), owner="t1")
+    b = plugins.load(str(vst), owner="t2")
+    again = plugins.load(str(vst), owner="t1")
+    assert a is not b
+    assert a is again
+    assert len(made) == 2
+    plugins.unload()
+
+
+def test_unload_can_target_one_owner(monkeypatch, tmp_path):
+    vst = tmp_path / "Synth.vst3"
+    vst.mkdir()
+
+    class _Fake:
+        def __init__(self, path):
+            pass
+
+    import sys
+    import types
+    monkeypatch.setattr(plugins, "available", lambda: True)
+    monkeypatch.setitem(sys.modules, "pedalboard",
+                        types.SimpleNamespace(load_plugin=lambda p: _Fake(p)))
+    plugins.unload()
+    a = plugins.load(str(vst), owner="t1")
+    plugins.load(str(vst), owner="t2")
+    plugins.unload(str(vst), owner="t2")
+    assert plugins.load(str(vst), owner="t1") is a       # t1 survived
+    plugins.unload()

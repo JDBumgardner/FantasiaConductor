@@ -115,7 +115,8 @@ def render_track_block(
         if clip.content_type == "midi":
             plug = getattr(track, "plugin", "")
             if plug and plugin_renderer is not None:
-                data = plugin_renderer.cached(clip, plug, getattr(track, "plugin_state", ""))
+                data = plugin_renderer.cached(clip, plug,
+                                              getattr(track, "plugin_state", ""), track.id)
             elif getattr(track, "is_synth", False) and synth_renderer is not None:
                 data = synth_renderer.cached(clip, getattr(track, "synth", None) or {})
             elif midi_renderer is not None:

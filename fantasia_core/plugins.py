@@ -101,36 +101,69 @@ def scan(refresh: bool = False) -> List[PluginInfo]:
 # show_editor insists on the main thread regardless. So every call here has to
 # come from the same thread; in the app that is the UI thread, and the agent's
 # plugin tools marshal onto it rather than running on their worker.
-_LOADED: Dict[str, object] = {}
+#
+# Instances are keyed by (plugin file, owner). One synth on several tracks needs
+# a separate instance per track or they share one patch — a kick and a pad
+# cannot be the same object. Vital costs 224MB for the first instance and very
+# little after that (11 of them measured 465MB total), because the wavetables
+# and code are shared, so this is affordable.
+_LOADED: Dict[tuple, object] = {}
 
 
-def load(path_or_name: str):
-    """Load a plugin by path, or by (case-insensitive) name from the scan."""
+def resolve(path_or_name: str) -> str:
+    """The canonical file for a plugin, from a path or an installed name.
+
+    Paths are normalised, so "…/VST3/./Vital.vst3" and "…/VST3//Vital.vst3" are
+    recognised as the same plugin rather than as several.
+    """
+    raw = str(path_or_name)
+    # realpath rather than normpath: normpath keeps a leading "//", which POSIX
+    # reserves, so "//Library/…" would not match "/Library/…".
+    if os.path.exists(raw):
+        return os.path.realpath(raw)
+    hit = next((p for p in scan()
+                if p.name.lower() == raw.lower() or p.slug == raw.lower()), None)
+    if hit is None:
+        names = ", ".join(p.name for p in scan()[:8]) or "none found"
+        raise FileNotFoundError(f"no plugin named {raw!r}; installed: {names}")
+    return os.path.realpath(hit.path)
+
+
+def display_name(path_or_name: str) -> str:
+    """A readable name for a plugin path, for showing on a track."""
+    try:
+        return pathlib.Path(resolve(path_or_name)).stem
+    except Exception:  # noqa: BLE001
+        return str(path_or_name)
+
+
+def load(path_or_name: str, owner: Optional[str] = None):
+    """Load a plugin. ``owner`` (a track id) gets its own instance and patch."""
     if not available():
         raise RuntimeError("plugin hosting needs pedalboard (pip install pedalboard)")
     import pedalboard
 
-    key = str(path_or_name)
-    if key in _LOADED:
-        return _LOADED[key]
-    path = key
-    if not os.path.exists(path):
-        hit = next((p for p in scan()
-                    if p.name.lower() == key.lower() or p.slug == key.lower()), None)
-        if hit is None:
-            names = ", ".join(p.name for p in scan()[:8]) or "none found"
-            raise FileNotFoundError(f"no plugin named {key!r}; installed: {names}")
-        path = hit.path
-    plugin = pedalboard.load_plugin(path)
-    _LOADED[key] = plugin
-    return plugin
+    path = resolve(path_or_name)
+    key = (path, owner)
+    if key not in _LOADED:
+        _LOADED[key] = pedalboard.load_plugin(path)
+    return _LOADED[key]
 
 
-def unload(path_or_name: Optional[str] = None) -> None:
-    if path_or_name is None:
+def unload(path_or_name: Optional[str] = None, owner: Optional[str] = None) -> None:
+    """Drop instances. With no arguments, drop them all."""
+    if path_or_name is None and owner is None:
         _LOADED.clear()
-    else:
-        _LOADED.pop(str(path_or_name), None)
+        return
+    path = None
+    if path_or_name is not None:
+        try:
+            path = resolve(path_or_name)
+        except Exception:  # noqa: BLE001
+            path = str(path_or_name)
+    for k in [k for k in _LOADED
+              if (path is None or k[0] == path) and (owner is None or k[1] == owner)]:
+        del _LOADED[k]
 
 
 # --- parameters ---------------------------------------------------------

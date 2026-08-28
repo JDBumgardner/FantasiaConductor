@@ -28,7 +28,11 @@ class _Note:
 
 
 class _Track:
-    def __init__(self, clips, plugin="", state=""):
+    _n = 0
+
+    def __init__(self, clips, plugin="", state="", tid=None):
+        _Track._n += 1
+        self.id = tid or f"t{_Track._n}"
         self.clips, self.plugin, self.plugin_state = clips, plugin, state
 
 
@@ -48,7 +52,7 @@ def fake_plugin(monkeypatch):
 
     import fantasia_core.plugins as plg
 
-    monkeypatch.setattr(plg, "load", lambda name: f"<{name}>")
+    monkeypatch.setattr(plg, "load", lambda name, owner=None: f"<{name}:{owner}>")
     monkeypatch.setattr(plg, "render_notes", render_notes)
     monkeypatch.setattr(plg, "restore_preset",
                         lambda p, d: calls["restore"].append(d) or True)
@@ -119,7 +123,7 @@ def test_a_missing_plugin_yields_silence_not_a_crash(monkeypatch):
     and play."""
     import fantasia_core.plugins as plg
 
-    monkeypatch.setattr(plg, "load", lambda name: (_ for _ in ()).throw(
+    monkeypatch.setattr(plg, "load", lambda name, owner=None: (_ for _ in ()).throw(
         FileNotFoundError("no such plugin")))
     r = PluginRenderer(1000)
     buf = r.render(_Clip([_Note(60, 0, 1)], duration=2.0), "Nope")
@@ -151,17 +155,18 @@ def test_pending_lists_only_what_is_not_rendered(fake_plugin):
     the caller needs to know what is left rather than blocking on all of it."""
     r = PluginRenderer(1000)
     a, b = _Clip([_Note(60, 0, 1)], cid="a"), _Clip([_Note(62, 0, 1)], cid="b")
-    proj = _Project([_Track([a, b], plugin="Vital")])
+    track = _Track([a, b], plugin="Vital")
+    proj = _Project([track])
     assert len(r.pending(proj)) == 2
-    r.render(a, "Vital")
-    assert [c.id for c, _p, _s in r.pending(proj)] == ["b"]
+    r.render(a, "Vital", "", track.id)
+    assert [row[0].id for row in r.pending(proj)] == ["b"]
 
 
 def test_pending_ignores_tracks_without_a_plugin(fake_plugin):
     r = PluginRenderer(1000)
     proj = _Project([_Track([_Clip([_Note(60, 0, 1)], cid="a")]),
                      _Track([_Clip([_Note(60, 0, 1)], cid="b")], plugin="Vital")])
-    assert [c.id for c, _p, _s in r.pending(proj)] == ["b"]
+    assert [row[0].id for row in r.pending(proj)] == ["b"]
 
 
 def test_pending_reflects_a_changed_patch(fake_plugin):
@@ -169,7 +174,7 @@ def test_pending_reflects_a_changed_patch(fake_plugin):
     r = PluginRenderer(1000)
     clip = _Clip([_Note(60, 0, 1)])
     track = _Track([clip], plugin="Vital", state="AAAA")
-    r.render(clip, "Vital", "AAAA")
+    r.render(clip, "Vital", "AAAA", track.id)
     assert r.pending(_Project([track])) == []
     track.plugin_state = "BBBB"
     assert len(r.pending(_Project([track]))) == 1
@@ -181,3 +186,26 @@ def test_warm_still_renders_everything(fake_plugin):
                              _Clip([_Note(62, 0, 1)], cid="b")], plugin="Vital")])
     r.warm(proj)
     assert r.pending(proj) == []
+
+
+def test_each_track_gets_its_own_instance_and_patch(fake_plugin):
+    """One synth on several tracks must not share a patch — a kick and a pad
+    cannot be the same object. The owner is part of the cache key."""
+    r = PluginRenderer(1000)
+    clip = _Clip([_Note(60, 0, 1)])
+    kick, pad = "a2ljay1wYXRjaA==", "cGFkLXBhdGNo"      # real base64: a patch blob, not a label
+    r.render(clip, "Vital", kick, owner="t1")
+    r.render(clip, "Vital", pad, owner="t2")
+    assert fake_plugin["render"] == 2
+    assert r.cached(clip, "Vital", kick, "t1") is not None
+    assert r.cached(clip, "Vital", kick, "t2") is None
+
+
+def test_state_is_restored_per_track(fake_plugin):
+    r = PluginRenderer(1000)
+    clip = _Clip([_Note(60, 0, 1)])
+    import base64
+    a, b = base64.b64encode(b"one").decode(), base64.b64encode(b"two").decode()
+    r.render(clip, "Vital", a, owner="t1")
+    r.render(clip, "Vital", b, owner="t2")
+    assert fake_plugin["restore"] == [b"one", b"two"]
