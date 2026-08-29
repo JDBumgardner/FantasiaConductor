@@ -217,15 +217,27 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
-def test_spectrum_polyline_matches_the_per_pixel_reference(qapp):
+@pytest.fixture()
+def plot(qapp):
+    """Destroyed after each test: a live widget keeps focus, which made the
+    track-header rename test fail depending on ordering."""
+    from ui.eq_curve import _EqPlot
+
+    w = _EqPlot()
+    w.resize(820, 300)
+    yield w
+    w.close()
+    w.deleteLater()
+    qapp.processEvents()
+
+
+def test_spectrum_polyline_matches_the_per_pixel_reference(plot):
     """The path is built with array maths now; it must trace the same curve
     the per-pixel loop did."""
     import numpy as np
     from PySide6.QtCore import QRectF
-    from ui.eq_curve import F_MAX, F_MIN, _SPEC_DB_HI, _SPEC_DB_LO, _EqPlot, _plot_rect
+    from ui.eq_curve import F_MAX, F_MIN, _SPEC_DB_HI, _SPEC_DB_LO, _plot_rect
 
-    plot = _EqPlot()
-    plot.resize(820, 300)
     freqs = np.fft.rfftfreq(2048, 1 / 44100)
     rng = np.random.default_rng(7)
     db = rng.uniform(-60.0, 0.0, len(freqs))
@@ -251,10 +263,6 @@ def test_spectrum_polyline_matches_the_per_pixel_reference(qapp):
         assert gy == pytest.approx(wy, abs=1e-6)
 
 
-def test_spectrum_clears_without_a_path(qapp):
-    from ui.eq_curve import _EqPlot
-
-    plot = _EqPlot()
-    plot.resize(820, 300)
+def test_spectrum_clears_without_a_path(plot):
     plot.set_spectrum(None, None)
     assert plot._spec_path is None

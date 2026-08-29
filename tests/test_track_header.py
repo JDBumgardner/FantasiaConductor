@@ -22,8 +22,19 @@ def _header(qapp):  # noqa: ARG001
     track = Project().add_track("Drums")
     header = TrackHeader(track)
     header.show()
+    header.activateWindow()
     QApplication.processEvents()
     return header
+
+
+def _focused(header):
+    """Whether the name field holds focus *within its own window*.
+
+    ``hasFocus()`` also requires that window to be the active one, which in a
+    headless run depends on whatever else Qt has shown — so asserting it
+    directly fails intermittently under load.
+    """
+    return header.focusWidget() is header.name_edit
 
 
 def test_name_starts_read_only(qapp):
@@ -40,7 +51,7 @@ def test_single_click_does_not_rename(qapp):
     QApplication.processEvents()
     assert header.name_edit.isReadOnly()
     assert selected == [header.track_id]
-    assert not header.name_edit.hasFocus()
+    assert not _focused(header)
 
 
 def test_double_click_starts_rename(qapp):
@@ -48,7 +59,7 @@ def test_double_click_starts_rename(qapp):
     QTest.mouseDClick(header.name_edit, Qt.LeftButton)
     QApplication.processEvents()
     assert not header.name_edit.isReadOnly()
-    assert header.name_edit.hasFocus()
+    assert _focused(header)
 
 
 def test_escape_cancels_rename(qapp):

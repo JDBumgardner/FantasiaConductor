@@ -35,7 +35,7 @@
   "percent_params": "Send sqrt(target fraction): the DISPLAY percent is the raw value squared, so 0.6928 -> '48%'. An earlier note here said to send the fraction itself; that lands on target^2 (0.42 -> '17.64%'). A 'NN%' string also works on the VST3 build and is REQUIRED for reverb_size.",
   "stepped_or_scaled": "transpose, unison voices, tempo divisions and filter cutoff all need raw 0-1; their text forms were misparsed by large factors.",
   "time_params": "reverb_decay_time misparsed BOTH forms. Set by trial and read back.",
-  "envelope_times": "Two observed behaviours. TEXT-parsed: value maps linearly to seconds over 0-32s, so send seconds/32. RAW: value is the 0-1 parameter and the curve is exponential \u2014 raw 0.02 -> 5us, 0.25 -> 0.125s, 0.30 -> 0.259s, 0.33 -> 0.379s, 0.36 -> 0.537s, 0.44 -> 1.2s, 0.67 -> 6.4s. Probe to find which one you are in.",
+  "envelope_times": "time = 32 * raw^4, so send (seconds/32)**0.25. Measured across nine points: raw 0.1->0.0032s, 0.3->0.259s, 0.5->2.0s, 0.7->7.68s, 1.0->32.0s. An earlier note here said 'seconds/32' (linear) \u2014 following it, a 0.22s decay was sent as 0.0069 and produced 7.1e-08 seconds, i.e. every note became an inaudible click. TEXT IS ALSO WRONG: '0.25 secs' sets 8 seconds (x32).",
   "THE_BIG_CAVEAT": "set_plugin_param's value handling depends on the LOADED PATCH, not just the parameter. envelope_1_decay took 0.0375 as text and gave 1.20s on the default patch; the identical call on Physical Tension was taken as RAW and gave 2 nanoseconds \u2014 silent. There is no way to know in advance. ALWAYS read back the echoed 'value', and probe two or three points before trusting a mapping.",
   "envelope_and_time_law": {
    "solved_2026_08_25": "Envelope/LFO times follow an exact 4th-power law, which is what made the earlier guesses look contradictory. seconds = (json_value)**4 for the field inside the preset JSON, and seconds = 32*(raw)**4 for the 0-1 parameter. So json_value = 2.3784 * raw.",
@@ -55,7 +55,8 @@
    ],
    "how_to_enumerate": "Load the plugin, walk raw_value over i/(num_steps-1) and read string_value; the index is i."
   },
-  "output_level": "Vital is much quieter than the built-in synth at init. 'volume' raw 0.92 reads '+2.5dB' and gets a track into the same range; prefer that over +20dB of track gain."
+  "output_level": "Vital is much quieter than the built-in synth at init. 'volume' raw 0.92 reads '+2.5dB' and gets a track into the same range; prefer that over +20dB of track gain.",
+  "filter_cutoff_ceiling": "filter_1_cutoff spans roughly -52..76 semitones over raw 0..1, so its HIGHEST setting is about 659 Hz. It can only darken. Anything playing above the bass register wants filter_1_switch 0.0; a lowpass FX insert on the track is the way to shape brightness. raw 0.70 = 72 Hz, which silences a mid-range part."
  },
  "measured": [
   {
@@ -146,7 +147,7 @@
     "sent": "88 semitones",
     "got": "11212 semitones"
    },
-   "note": "raw 0.4062 = 0 semitones"
+   "note": "raw 0->1 spans about -52..76 semitones, i.e. max ~659 Hz. Cannot open a mid-range part up; bypass the filter instead."
   },
   {
    "key": "delay_tempo",
@@ -200,15 +201,17 @@
   },
   {
    "key": "envelope_1_attack",
-   "send": 0.0375,
-   "got": "1.20001 secs",
-   "note": "seconds/32; sending 0.72 gave 23.04 secs"
+   "send": 0.3536,
+   "got": "0.5 secs",
+   "note": "time = 32*raw^4; send (seconds/32)**0.25. Verified 2026-08-28.",
+   "old_note_was_wrong": "said seconds/32 (linear); that yields ~1e-7s"
   },
   {
    "key": "envelope_1_release",
-   "send": 0.05,
-   "got": "1.60002 secs",
-   "note": "seconds/32"
+   "send": 0.3536,
+   "got": "0.5 secs",
+   "note": "time = 32*raw^4; send (seconds/32)**0.25. Verified 2026-08-28.",
+   "old_note_was_wrong": "said seconds/32 (linear); that yields ~1e-7s"
   },
   {
    "key": "oscillator_1_unison_voices",
