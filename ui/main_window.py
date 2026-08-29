@@ -19,7 +19,7 @@ from typing import Optional
 import numpy as np
 
 from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QCursor, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -55,9 +55,11 @@ from fantasia_core.commands import (
     AddFxCommand,
     AddTrackCommand,
     CommandBus,
+    ConnectFxCommand,
     DuplicateClipsCommand,
     MakeMidiClipCommand,
     RemoveClipCommand,
+    RemoveFxCommand,
     RemoveTrackCommand,
     SetClipAttrCommand,
     SetClipGeometryCommand,
@@ -98,6 +100,7 @@ from ui.agent_panel import AgentPanel
 from ui.search_panel import SearchPanel
 from ui.gm_instruments import DRUM_KITS, gm_name
 from ui.editor_dock import EditorDock
+from ui.hotkeys import HotkeysDialog
 from ui.timeline_view import TimelineView
 from ui.track_header import TrackHeader, TrackHeaderPanel
 from ui.transport_bar import TransportBar
@@ -1933,6 +1936,9 @@ class MainWindow(QMainWindow):
         file_menu.addActions([self.act_import, self.act_import_midi, self.act_demo])
         file_menu.addSeparator()
         file_menu.addAction(self.act_export)
+        self.act_quit = QAction("&Quit", self, shortcut=QKeySequence.Quit)
+        file_menu.addSeparator()
+        file_menu.addAction(self.act_quit)
 
         edit_menu = menubar.addMenu("&Edit")
         self.act_undo = QAction("Undo", self, shortcut=QKeySequence.Undo)
@@ -1941,25 +1947,36 @@ class MainWindow(QMainWindow):
         self.act_redo.setEnabled(False)
         edit_menu.addActions([self.act_undo, self.act_redo])
         edit_menu.addSeparator()
+        self.act_cut = QAction("Cu&t", self, shortcut=QKeySequence.Cut)
+        self.act_copy = QAction("&Copy", self, shortcut=QKeySequence.Copy)
+        self.act_paste = QAction("&Paste", self, shortcut=QKeySequence.Paste)
+        self.act_select_all = QAction("Select &All", self, shortcut=QKeySequence.SelectAll)
+        edit_menu.addActions([self.act_cut, self.act_copy, self.act_paste, self.act_select_all])
+        edit_menu.addSeparator()
         self.act_add_track = QAction("Add &Track", self, shortcut="Ctrl+T")
         self.act_add_clip = QAction("Add &Clip", self, shortcut="Ctrl+K")
         self.act_split = QAction("Split at &Playhead", self, shortcut="Ctrl+E")
         self.act_delete = QAction("&Delete", self, shortcut=QKeySequence.Delete)
         self.act_duplicate = QAction("D&uplicate Clips", self, shortcut="Ctrl+D")
         self.act_duplicate.setToolTip("Duplicate selected clips right after the selection")
+        self.act_rename_track = QAction("Rename &Track", self, shortcut="F2")
         edit_menu.addActions(
             [self.act_add_track, self.act_add_clip, self.act_split,
-             self.act_duplicate, self.act_delete]
+             self.act_duplicate, self.act_rename_track, self.act_delete]
         )
 
         transport_menu = menubar.addMenu("&Transport")
         self.act_play = QAction("Play/Pause", self, shortcut=Qt.Key_Space)
-        self.act_stop = QAction("Stop", self)
-        transport_menu.addActions([self.act_play, self.act_stop])
+        self.act_stop = QAction("Stop", self, shortcut="Shift+Space")
+        self.act_go_start = QAction("Go to &Start", self, shortcut="Home")
+        self.act_go_end = QAction("Go to &End", self, shortcut="End")
+        transport_menu.addActions(
+            [self.act_play, self.act_stop, self.act_go_start, self.act_go_end]
+        )
         self.act_loop = QAction("&Loop", self, shortcut="Ctrl+L", checkable=True)
         self.act_loop.setToolTip("Toggle arrangement loop — with clips selected, set the loop to them")
         transport_menu.addAction(self.act_loop)
-        self.act_metronome = QAction("&Metronome", self, checkable=True)
+        self.act_metronome = QAction("&Metronome", self, shortcut="Ctrl+M", checkable=True)
         self.act_metronome.setChecked(False)
         transport_menu.addAction(self.act_metronome)
         self.act_record = QAction("● Record", self, shortcut="Ctrl+R")
@@ -2004,18 +2021,25 @@ class MainWindow(QMainWindow):
         view_menu = menubar.addMenu("&View")
         self.act_zoom_in = QAction("Zoom &In", self, shortcut=QKeySequence.ZoomIn)
         self.act_zoom_out = QAction("Zoom &Out", self, shortcut=QKeySequence.ZoomOut)
-        view_menu.addActions([self.act_zoom_in, self.act_zoom_out])
+        self.act_zoom_fit = QAction("Zoom to &Fit", self, shortcut="Ctrl+0")
+        view_menu.addActions([self.act_zoom_in, self.act_zoom_out, self.act_zoom_fit])
         self.act_toggle_editor = QAction("Toggle &Editor", self)
         self.act_toggle_editor.setShortcut(QKeySequence("Shift+E"))
         self.act_toggle_editor.setShortcutContext(Qt.ApplicationShortcut)
         self.act_toggle_editor.setToolTip(
-            "Show or hide the detail view (Piano Roll / Synth / EQ)")
+            "Cycle the bottom panel: Piano Roll → Signal Chain → Graph → Off (Shift+E)")
         view_menu.addAction(self.act_toggle_editor)
+        self.act_focus_agent = QAction("Focus &Agent", self, shortcut="Ctrl+Shift+A")
+        self.act_focus_search = QAction("Focus Sound &Search", self, shortcut="Ctrl+F")
+        view_menu.addActions([self.act_focus_agent, self.act_focus_search])
         self._build_grid_actions()
         self.menu_grid = view_menu.addMenu("&Grid")
         self._fill_grid_menu(self.menu_grid)
         self.grid_context_menu = QMenu("Grid", self)
         self._fill_grid_menu(self.grid_context_menu)
+        view_menu.addSeparator()
+        self.act_hotkeys = QAction("&Hotkeys…", self, shortcut="F1")
+        view_menu.addAction(self.act_hotkeys)
 
         toolbar = self.addToolBar("Main")
         toolbar.setMovable(False)
@@ -2047,20 +2071,32 @@ class MainWindow(QMainWindow):
         self.act_import_midi.triggered.connect(self._on_import_midi)
         self.act_demo.triggered.connect(self._on_load_demo)
         self.act_export.triggered.connect(self._on_export)
+        self.act_quit.triggered.connect(self.close)
         self.act_split.triggered.connect(self._on_split_selected)
         self.act_undo.triggered.connect(self._undo)
         self.act_redo.triggered.connect(self._redo)
+        self.act_cut.triggered.connect(self._on_cut_clip)
+        self.act_copy.triggered.connect(self._on_copy_clip)
+        self.act_paste.triggered.connect(self._on_paste_clip)
+        self.act_select_all.triggered.connect(self._on_select_all)
         self.act_add_track.triggered.connect(self._on_add_track)
         self.act_add_clip.triggered.connect(self._on_add_clip)
         self.act_delete.triggered.connect(self._on_delete)
         self.act_duplicate.triggered.connect(self._on_duplicate_clips)
+        self.act_rename_track.triggered.connect(self._on_rename_track)
         self.act_loop.triggered.connect(self._on_loop_hotkey)
         self.act_play.triggered.connect(self._toggle_play)
         self.act_stop.triggered.connect(self._on_stop)
+        self.act_go_start.triggered.connect(self._on_go_to_start)
+        self.act_go_end.triggered.connect(self._on_go_to_end)
         self.act_metronome.toggled.connect(self._on_metronome_toggled)
         self.act_zoom_in.triggered.connect(self.timeline.zoom_in)
         self.act_zoom_out.triggered.connect(self.timeline.zoom_out)
+        self.act_zoom_fit.triggered.connect(self._on_zoom_fit)
         self.act_toggle_editor.triggered.connect(self._toggle_editor)
+        self.act_focus_agent.triggered.connect(self._on_focus_agent)
+        self.act_focus_search.triggered.connect(self._on_focus_search)
+        self.act_hotkeys.triggered.connect(self._on_hotkeys)
 
         self.transport.play_requested.connect(self._toggle_play)
         self.transport.stop_requested.connect(self._on_stop)
@@ -2075,6 +2111,7 @@ class MainWindow(QMainWindow):
         self.header_panel.renamed.connect(
             lambda tid, name: self._dispatch_attr(tid, "name", name)
         )
+        self.header_panel.track_step_requested.connect(self._step_track)
         self.header_panel.mute_toggled.connect(
             lambda tid, on: self._dispatch_attr(tid, "mute", on)
         )
@@ -2094,7 +2131,9 @@ class MainWindow(QMainWindow):
         self.timeline.clip_double_clicked.connect(self._open_piano_roll)
         self.timeline.delete_requested.connect(self._on_delete)
         self.timeline.copy_requested.connect(self._on_copy_clip)
+        self.timeline.cut_requested.connect(self._on_cut_clip)
         self.timeline.paste_requested.connect(self._on_paste_clip)
+        self.timeline.track_step_requested.connect(self._step_track)
         self.timeline.duplicate_requested.connect(self._on_duplicate_clips)
         self.timeline.loop_toggle_requested.connect(self._on_loop_hotkey)
         self.timeline.loop_enabled_changed.connect(self._set_loop_enabled)
@@ -2111,6 +2150,16 @@ class MainWindow(QMainWindow):
         self.editor.eq.bands_changed.connect(self._on_eq_bands)
         self.editor.eq.status_message.connect(self.statusBar().showMessage)
         self.editor.btn_eq.clicked.connect(self._on_eq_tab)
+        self.editor.btn_chain.clicked.connect(self._refresh_signal_views)
+        self.editor.btn_graph.clicked.connect(self._refresh_signal_views)
+        self.editor.chain.add_requested.connect(self._popup_fx_menu)
+        self.editor.chain.remove_requested.connect(self._on_chain_remove)
+        self.editor.chain.device_activated.connect(self._on_device_activated)
+        self.editor.graph.add_requested.connect(self._popup_fx_menu)
+        self.editor.graph.remove_requested.connect(self._on_chain_remove)
+        self.editor.graph.connect_requested.connect(self._on_fx_connect)
+        self.editor.graph.disconnect_requested.connect(self._on_fx_disconnect)
+        self.editor.graph.device_activated.connect(self._on_device_activated)
         self.timeline.clip_geometry_edited.connect(self._on_clip_geometry)
         self.timeline.import_into_clip_requested.connect(self._on_import_into_clip)
         self.timeline.clip_action_requested.connect(self._on_clip_action)
@@ -2145,6 +2194,8 @@ class MainWindow(QMainWindow):
                     self.master_header.sync_mute_solo(self.project.master)
             elif isinstance(cmd, SetTrackFxCommand) and not getattr(self, "_eq_writing", False):
                 self._refresh_eq_curve()
+        if self.editor.is_chain_open() or self.editor.is_graph_open():
+            self._refresh_signal_views()
 
     # ---- unsaved-changes tracking ---------------------------------------
     def _set_dirty(self, dirty: bool) -> None:
@@ -2231,6 +2282,39 @@ class MainWindow(QMainWindow):
         self.timeline.set_playhead(self.timeline.start_position)
         self.engine.set_playhead_seconds(self.timeline.start_position)
 
+    def _on_go_to_start(self) -> None:
+        if self._focus_is_text():
+            return
+        self.timeline.start_position = 0.0
+        self.timeline.set_playhead(0.0)
+        self.engine.set_playhead_seconds(0.0)
+
+    def _on_go_to_end(self) -> None:
+        if self._focus_is_text():
+            return
+        t = max(0.0, float(self.project.duration()))
+        self.timeline.locate(t)
+        if not self.engine.is_playing:
+            self.engine.set_playhead_seconds(self.timeline.playhead)
+
+    def _on_zoom_fit(self) -> None:
+        dur = max(float(self.project.duration()), 4.0)
+        vw = max(self.timeline.viewport().width() - 24, 80)
+        self.timeline.set_pps(vw / dur)
+
+    def _on_focus_agent(self) -> None:
+        self.agent_panel.show()
+        self.agent_panel.raise_()
+        self.agent_panel.input.setFocus()
+
+    def _on_focus_search(self) -> None:
+        self.search_panel.show()
+        self.search_panel.raise_()
+        self.search_panel.input.setFocus()
+
+    def _on_hotkeys(self) -> None:
+        HotkeysDialog(self).exec()
+
     def _on_stop(self) -> None:
         self.engine.stop()
         self._play_timer.stop()
@@ -2271,9 +2355,10 @@ class MainWindow(QMainWindow):
         # spinboxes are not typing — they used to steal this shortcut.
         if isinstance(QApplication.focusWidget(), (QLineEdit, QPlainTextEdit, QTextEdit)):
             return
-        if self.editor.is_open():
+        nxt = self.editor.next_cycle_action()
+        if nxt == "off":
             self.editor.collapse()
-        else:
+        elif nxt == "piano":
             clip_id = self._editing_clip_id or self.timeline.selected_clip_id()
             if clip_id:
                 _, clip = self.project.find_clip(clip_id)
@@ -2285,7 +2370,12 @@ class MainWindow(QMainWindow):
             else:
                 self.editor.show_piano_roll()
                 self._sync_piano_playhead(self.timeline.playhead)
-        # Arrangement keeps focus so the next Shift+E is not lost to a combo.
+        elif nxt == "chain":
+            track = self.project.track_by_id(self.selected_track_id) if self.selected_track_id else None
+            self.editor.show_chain(track)
+        elif nxt == "graph":
+            track = self.project.track_by_id(self.selected_track_id) if self.selected_track_id else None
+            self.editor.show_graph(track)
         self.timeline.setFocus(Qt.OtherFocusReason)
 
     def _playback_start_seconds(self) -> float:
@@ -2335,6 +2425,10 @@ class MainWindow(QMainWindow):
                     return
                 if event.key() == Qt.Key_0:
                     self._toggle_selected_tracks("mute")
+                    event.accept()
+                    return
+                if event.key() in (Qt.Key_Up, Qt.Key_Down):
+                    self._step_track(-1 if event.key() == Qt.Key_Up else 1)
                     event.accept()
                     return
         super().keyPressEvent(event)
@@ -3031,7 +3125,32 @@ class MainWindow(QMainWindow):
             pass
 
     # ---- copy / paste ---------------------------------------------------
+    def _try_text_edit(self, method: str) -> bool:
+        """Route standard edit keys to the focused field instead of clips."""
+        widget = QApplication.focusWidget()
+        if widget is None:
+            return False
+        if isinstance(widget, QLineEdit):
+            getattr(widget, method)()
+            return True
+        if isinstance(widget, (QPlainTextEdit, QTextEdit)):
+            if method in ("cut", "paste") and widget.isReadOnly():
+                return False
+            getattr(widget, method)()
+            return True
+        return False
+
+    def _piano_has_focus(self) -> bool:
+        fw = QApplication.focusWidget()
+        view = self.piano.view
+        return fw is not None and (fw is view or view.isAncestorOf(fw))
+
     def _on_copy_clip(self) -> None:
+        if self._try_text_edit("copy"):
+            return
+        if self._piano_has_focus():
+            self._on_pr_copy()
+            return
         cid = self.timeline.selected_clip_id()
         if cid is None:
             self.statusBar().showMessage("Select a clip to copy")
@@ -3049,7 +3168,24 @@ class MainWindow(QMainWindow):
         }
         self.statusBar().showMessage(f"Copied clip '{clip.name}'")
 
+    def _on_cut_clip(self) -> None:
+        if self._try_text_edit("cut"):
+            return
+        if self._piano_has_focus():
+            self._on_pr_cut()
+            return
+        if not self.timeline.selected_clip_ids():
+            self.statusBar().showMessage("Select a clip to cut")
+            return
+        self._on_copy_clip()
+        self._on_delete()
+
     def _on_paste_clip(self) -> None:
+        if self._try_text_edit("paste"):
+            return
+        if self._piano_has_focus():
+            self._on_pr_paste()
+            return
         cb = self._clip_clipboard
         if not cb:
             self.statusBar().showMessage("Nothing to paste")
@@ -3072,6 +3208,42 @@ class MainWindow(QMainWindow):
         self._warm()
         self.timeline.rebuild()
         self.statusBar().showMessage(f"Pasted clip at {start:.2f}s")
+
+    def _on_select_all(self) -> None:
+        if self._try_text_edit("selectAll"):
+            return
+        if self._piano_has_focus():
+            self.piano.view.select_all_notes()
+            return
+        self.timeline.select_all_clips()
+
+    def _on_rename_track(self) -> None:
+        widget = QApplication.focusWidget()
+        renaming = (
+            isinstance(widget, QLineEdit) and widget.objectName() == "trackNameEdit"
+        )
+        if self._focus_is_text() and not renaming:
+            return
+        tid = self.selected_track_id
+        if tid == MASTER_ID and self.master_header is not None:
+            self.master_header.begin_rename()
+            return
+        if tid is not None:
+            self.header_panel.begin_rename(tid)
+
+    def _step_track(self, delta: int) -> None:
+        if self._focus_is_text():
+            return
+        channels = self.project.channels()
+        if not channels:
+            return
+        ids = [t.id for t in channels]
+        cur = self.selected_track_id
+        if cur not in ids:
+            idx = 0 if delta >= 0 else len(ids) - 1
+        else:
+            idx = max(0, min(len(ids) - 1, ids.index(cur) + int(delta)))
+        self._set_selected_track(ids[idx])
 
     def _on_pr_copy(self) -> None:
         notes = self.piano.view.selected_notes()
@@ -4322,7 +4494,9 @@ class MainWindow(QMainWindow):
             else None
         )
         self._refresh_eq_curve()
-        if self.editor.stack.currentIndex() == 2:
+        if self.editor.is_chain_open() or self.editor.is_graph_open():
+            self._refresh_signal_views()
+        elif self.editor.stack.currentIndex() == 2:
             pass  # keep the EQ view up while stepping through tracks
         elif keep_piano:
             self.editor.switch_to_piano_mode()
@@ -4341,6 +4515,83 @@ class MainWindow(QMainWindow):
         else:
             title = "EQ — Master" if getattr(track, "is_master", False) else f"EQ — {track.name}"
             self.editor.eq.set_chain(list(track.fx), self.project.sample_rate, title)
+
+    def _refresh_signal_views(self) -> None:
+        track = (self.project.track_by_id(self.selected_track_id)
+                 if self.selected_track_id else None)
+        self.editor.chain.set_track(track)
+        self.editor.graph.set_track(track)
+
+    def _on_chain_remove(self, insert_id: str) -> None:
+        if not self.selected_track_id or not insert_id:
+            return
+        self.bus.dispatch(RemoveFxCommand(self.selected_track_id, insert_id))
+        self._refresh_signal_views()
+
+    def _on_fx_connect(self, src: str, dst: str) -> None:
+        if not self.selected_track_id:
+            return
+        self.bus.dispatch(ConnectFxCommand(self.selected_track_id, src, dst, True))
+        self._refresh_signal_views()
+
+    def _on_fx_disconnect(self, src: str, dst: str) -> None:
+        if not self.selected_track_id:
+            return
+        self.bus.dispatch(ConnectFxCommand(self.selected_track_id, src, dst, False))
+        self._refresh_signal_views()
+
+    def _on_device_activated(self, insert_id: str, kind: str) -> None:
+        track = (self.project.track_by_id(self.selected_track_id)
+                 if self.selected_track_id else None)
+        if track is None:
+            return
+        if kind in ("instrument",) and getattr(track, "is_synth", False):
+            self.editor.show_synth(track, reveal=True)
+            return
+        if kind == "eq" or insert_id:
+            from fantasia_core.document.fx_insert import insert_type as _itype
+            spec = next((e for e in track.fx if getattr(e, "id", None) == insert_id), None)
+            if spec is not None and _itype(spec) == "eq":
+                self.editor.show_eq(list(track.fx), self.project.sample_rate,
+                                    f"EQ — {track.name}")
+
+    def _popup_fx_menu(self) -> None:
+        if not self.selected_track_id:
+            return
+        from fantasia_core.document.fx_insert import STOCK_FX
+
+        menu = QMenu(self)
+        for kind, label in STOCK_FX:
+            act = menu.addAction(label)
+            act.setData(("stock", kind))
+        try:
+            from fantasia_core import plugins
+            hosted = plugins.scan()
+        except Exception:  # noqa: BLE001
+            hosted = []
+        if hosted:
+            sub = menu.addMenu("Hosted plugins")
+            for info in hosted:
+                act = sub.addAction(f"{info.name}  ({info.format})")
+                act.setData(("vst", getattr(info, "path", ""), info.name))
+        chosen = menu.exec(QCursor.pos())
+        if chosen is None:
+            return
+        data = chosen.data()
+        if not data:
+            return
+        if data[0] == "stock":
+            kind = data[1]
+            params = {}
+            if kind == "eq":
+                params = {"bands": default_bands()}
+            self.bus.dispatch(AddFxCommand(self.selected_track_id, kind, params))
+        elif data[0] == "vst":
+            _, path, name = data
+            self.bus.dispatch(AddFxCommand(
+                self.selected_track_id, "vst", {"path": path, "name": name}))
+        self._refresh_signal_views()
+        self._refresh_eq_curve()
 
     def _on_eq_tab(self) -> None:
         self._refresh_eq_curve()

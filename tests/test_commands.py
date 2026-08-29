@@ -282,3 +282,23 @@ def test_add_bypass_move_remove_fx():
     assert t.fx == []
     bus.redo()
     assert t.fx[0].id == a.insert_id
+
+
+def test_remove_fx_reconnects_explicit_wires():
+    from fantasia_core.commands import AddFxCommand, ConnectFxCommand, RemoveFxCommand
+    from fantasia_core.document.fx_insert import SOURCE, OUT, serial_wires
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    a = bus.dispatch(AddFxCommand(t.id, "reverb"))
+    b = bus.dispatch(AddFxCommand(t.id, "delay"))
+    c = bus.dispatch(AddFxCommand(t.id, "gain"))
+    t.fx_wires = serial_wires(t.fx)
+    bus.dispatch(RemoveFxCommand(t.id, b.insert_id))
+    keys = {(w.src, w.dst) for w in t.fx_wires}
+    assert (a.insert_id, c.insert_id) in keys
+    assert not any(b.insert_id in (w.src, w.dst) for w in t.fx_wires)
+    bus.dispatch(ConnectFxCommand(t.id, SOURCE, a.insert_id, True))  # already present
+    bus.dispatch(ConnectFxCommand(t.id, a.insert_id, OUT, False))
+    # disconnect a→out (if present); graph still has a→c→out
+    assert any(w.dst == OUT for w in t.fx_wires)

@@ -5,7 +5,18 @@ from __future__ import annotations
 from typing import Optional
 
 from fantasia_core.commands.base import _UNSET, Command
-from fantasia_core.document.fx_insert import copy_insert, insert_id
+from fantasia_core.document.fx_insert import (
+    connect_wire,
+    copy_insert,
+    copy_wires,
+    disconnect_wire,
+    insert_id,
+    is_serial,
+    rewire_remove,
+    sanitize_wires,
+    serial_wires,
+    splice_before_out,
+)
 
 
 class AddTrackCommand(Command):
@@ -110,6 +121,7 @@ class SetTrackFxCommand(Command):
         self.track_id = track_id
         self.fx_list = _copy_fx(fx_list)
         self._before = _UNSET
+        self._before_wires = _UNSET
         self.label = label
         self.mergeable = mergeable
 
@@ -119,15 +131,22 @@ class SetTrackFxCommand(Command):
             return
         if self._before is _UNSET:
             self._before = _copy_fx(track.fx)
+            self._before_wires = copy_wires(getattr(track, "fx_wires", None))
         track.fx = _copy_fx(self.fx_list)
         project.ensure_inserts(track)
         # Capture minted ids so redo does not issue a fresh identity.
         self.fx_list = _copy_fx(track.fx)
+        if not track.fx:
+            track.fx_wires = []
+        else:
+            track.fx_wires = sanitize_wires(track.fx, getattr(track, "fx_wires", None) or [])
 
     def undo(self, project) -> None:  # noqa: ANN001
         track = project.track_by_id(self.track_id)
         if track is not None and self._before is not _UNSET:
             track.fx = _copy_fx(self._before)
+            if self._before_wires is not _UNSET:
+                track.fx_wires = copy_wires(self._before_wires)
 
     def merge_key(self):
         if not self.mergeable:
@@ -155,6 +174,7 @@ class AddFxCommand(Command):
             self.params["bands"] = [dict(b) for b in bands]
         self.bypassed = bool(bypassed)
         self._insert = None
+        self._wires_before = _UNSET
         self.label = f"Add {self.kind}"
 
     def do(self, project) -> None:  # noqa: ANN001
@@ -163,7 +183,11 @@ class AddFxCommand(Command):
             return
         if self._insert is None:
             self._insert = project.new_insert(self.kind, self.params, self.bypassed)
+        if self._wires_before is _UNSET:
+            self._wires_before = copy_wires(getattr(track, "fx_wires", None))
         track.fx = list(track.fx) + [copy_insert(self._insert)]
+        if self._wires_before:
+            track.fx_wires = splice_before_out(self._wires_before, self._insert.id)
 
     def undo(self, project) -> None:  # noqa: ANN001
         track = project.track_by_id(self.track_id)
@@ -171,6 +195,8 @@ class AddFxCommand(Command):
             return
         iid = self._insert.id
         track.fx = [e for e in track.fx if insert_id(e) != iid]
+        if self._wires_before is not _UNSET:
+            track.fx_wires = copy_wires(self._wires_before)
 
     @property
     def insert_id(self) -> str:
@@ -226,6 +252,7 @@ class MoveFxCommand(Command):
         self.insert_id = insert_id
         self.index = int(index)
         self._before = _UNSET
+        self._wires_before = _UNSET
         self.label = "Move FX"
 
     def do(self, project) -> None:  # noqa: ANN001
@@ -237,11 +264,14 @@ class MoveFxCommand(Command):
             return
         if self._before is _UNSET:
             self._before = src
+            self._wires_before = copy_wires(getattr(track, "fx_wires", None))
         chain = list(track.fx)
         item = chain.pop(src)
         dest = max(0, min(self.index, len(chain)))
         chain.insert(dest, item)
         track.fx = chain
+        if getattr(track, "fx_wires", None) and is_serial(chain, self._wires_before):
+            track.fx_wires = serial_wires(chain)
 
     def undo(self, project) -> None:  # noqa: ANN001
         if self._before is _UNSET:
@@ -257,6 +287,8 @@ class MoveFxCommand(Command):
         dest = max(0, min(int(self._before), len(chain)))
         chain.insert(dest, item)
         track.fx = chain
+        if self._wires_before is not _UNSET:
+            track.fx_wires = copy_wires(self._wires_before)
 
 
 class RemoveFxCommand(Command):
@@ -267,6 +299,7 @@ class RemoveFxCommand(Command):
         self.insert_id = insert_id
         self._index: Optional[int] = None
         self._insert = None
+        self._wires_before = _UNSET
         self.label = "Remove FX"
 
     def do(self, project) -> None:  # noqa: ANN001
@@ -279,6 +312,10 @@ class RemoveFxCommand(Command):
         if self._insert is None:
             self._index = idx
             self._insert = copy_insert(track.fx[idx])
+        if self._wires_before is _UNSET:
+            self._wires_before = copy_wires(getattr(track, "fx_wires", None))
+        if getattr(track, "fx_wires", None):
+            track.fx_wires = rewire_remove(track.fx_wires, self.insert_id)
         track.fx = [e for e in track.fx if insert_id(e) != self.insert_id]
 
     def undo(self, project) -> None:  # noqa: ANN001
@@ -288,6 +325,40 @@ class RemoveFxCommand(Command):
         chain = list(track.fx)
         chain.insert(max(0, min(self._index, len(chain))), copy_insert(self._insert))
         track.fx = chain
+        if self._wires_before is not _UNSET:
+            track.fx_wires = copy_wires(self._wires_before)
+
+
+class ConnectFxCommand(Command):
+    """Add or remove one directed wire. Materializes implicit serial wires first."""
+
+    def __init__(self, track_id: str, src: str, dst: str, connect: bool = True) -> None:
+        self.track_id = track_id
+        self.src = str(src)
+        self.dst = str(dst)
+        self.connect = bool(connect)
+        self._before = _UNSET
+        self.label = "Connect FX" if self.connect else "Disconnect FX"
+
+    def do(self, project) -> None:  # noqa: ANN001
+        track = project.track_by_id(self.track_id)
+        if track is None:
+            return
+        if self._before is _UNSET:
+            self._before = copy_wires(getattr(track, "fx_wires", None))
+        current = list(track.fx_wires) or serial_wires(track.fx)
+        if self.connect:
+            nxt = connect_wire(current, self.src, self.dst)
+            if nxt is None:
+                return
+            track.fx_wires = nxt
+        else:
+            track.fx_wires = disconnect_wire(current, self.src, self.dst)
+
+    def undo(self, project) -> None:  # noqa: ANN001
+        track = project.track_by_id(self.track_id)
+        if track is not None and self._before is not _UNSET:
+            track.fx_wires = copy_wires(self._before)
 
 
 class SetTrackSynthParamCommand(Command):

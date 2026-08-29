@@ -115,3 +115,38 @@ def test_closing_an_already_closed_panel_is_harmless(panel):
     dock.close_panel()
     dock.close_panel()
     assert not dock.isVisible()
+
+
+def test_shift_e_cycle_order(panel):
+    from ui.editor_dock import MODE_CHAIN, MODE_GRAPH, MODE_PIANO
+
+    dock, _ = panel
+    assert dock.next_cycle_action() == "piano"
+    dock.show_piano_roll()
+    assert dock.stack.currentIndex() == MODE_PIANO
+    assert dock.next_cycle_action() == "chain"
+    dock.show_chain()
+    assert dock.stack.currentIndex() == MODE_CHAIN
+    assert dock.is_chain_open()
+    assert dock.next_cycle_action() == "graph"
+    dock.show_graph()
+    assert dock.stack.currentIndex() == MODE_GRAPH
+    assert dock.next_cycle_action() == "off"
+    dock.collapse()
+    assert not dock.is_open()
+    assert dock.next_cycle_action() == "piano"
+
+
+def test_signal_chain_and_graph_follow_the_track(panel):
+    from fantasia_core.document import Project
+    from fantasia_core.document.fx_insert import SOURCE
+
+    dock, _ = panel
+    p = Project()
+    t = p.add_track("Lead")
+    t.fx = [p.new_insert("reverb"), p.new_insert("delay")]
+    dock.show_chain(t)
+    assert "Lead" in dock.chain._title.text()
+    dock.show_graph(t)
+    assert SOURCE in dock.graph.view._nodes
+    assert "Lead" in dock.graph._title.text()

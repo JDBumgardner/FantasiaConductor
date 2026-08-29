@@ -14,9 +14,11 @@ Design notes
   monotonic counter on the project. Commands and the agent address tracks,
   clips, and FX inserts by these ids, and they must survive save/load — so
   the counter is part of the serialized form. An FX insert is an
-  :class:`FxInsert` (id, type, bypassed, params) on ``Track.fx``; the
-  numbered EQ *bands* live inside an ``eq`` insert's params, not as their
-  own graph nodes.
+  :class:`FxInsert` (id, type, bypassed, params) on ``Track.fx``. Optional
+  :class:`FxWire` entries on ``Track.fx_wires`` describe a directed graph
+  (branching and merging); an empty wire list is the implicit serial chain
+  ``in → fx[0] → … → out``. The numbered EQ *bands* live inside an ``eq``
+  insert's params, not as their own graph nodes.
 * Audio content is referenced by ``source_path`` and only *loaded* by the
   engine (M3); the model just records where a clip's audio comes from.
 """
@@ -28,8 +30,10 @@ from typing import List, Optional
 
 from fantasia_core.document.fx_insert import (
     FxInsert,
+    FxWire,
     as_insert,
     mint_missing_ids,
+    sanitize_wires,
 )
 
 DEFAULT_SAMPLE_RATE = 44100
@@ -106,9 +110,10 @@ class Track:
     mute: bool = False
     solo: bool = False
     color: str = "#4a90d9"
-    # Ordered insert graph. Each entry is an :class:`FxInsert` (id, type,
-    # bypassed, params). Dicts are coerced on load / command dispatch.
+    # Ordered insert *nodes*. Topology lives in ``fx_wires``; an empty wire
+    # list means the implicit serial graph in → fx[0] → … → out.
     fx: list = field(default_factory=list)
+    fx_wires: list = field(default_factory=list)  # list of :class:`FxWire`
     instrument: int = 0  # GM program / soundfont preset for MIDI clips
     is_drum: bool = False  # render MIDI on the GM percussion bank (drum kit)
     is_synth: bool = False  # render MIDI with the built-in subtractive synth
@@ -265,6 +270,7 @@ class Project:
             if ch is None:
                 continue
             ch.fx = mint_missing_ids(ch.fx, lambda: self.new_id("fx"))
+            ch.fx_wires = sanitize_wires(ch.fx, getattr(ch, "fx_wires", None) or [])
 
     def find_insert(self, insert_id: str
                     ) -> tuple[Optional[Track], Optional[FxInsert], Optional[int]]:

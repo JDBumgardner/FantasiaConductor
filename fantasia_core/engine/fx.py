@@ -102,6 +102,12 @@ def _make(spec: dict):
         if kind == "gain":
             return pb.Gain(gain_db=p.get("gain", 0.0))
 
+        if kind == "vst":
+            path = p.get("path") or p.get("name")
+            if not path:
+                return None
+            return pb.load_plugin(str(path))
+
         # Stock 8-band EQ: always eight filters so toggling a band is a
         # parameter poke, not a graph rebuild (see FxHost + eq.struct_sig).
         if kind == "eq":
@@ -205,13 +211,21 @@ class FxHost:
     """Caches a Pedalboard per track and processes stereo blocks statefully."""
 
     def __init__(self) -> None:
-        self._cache: Dict[str, Tuple[tuple, object]] = {}  # track_id -> (struct, board)
+        self._cache: Dict[str, Tuple[tuple, object]] = {}  # track_id -> (struct, board|dag)
+        self._dag_plugins: Dict[str, dict] = {}  # track_id -> {insert_id: plugin}
+        self._dag_bufs: Dict[str, dict] = {}
 
     def process(self, track, audio: np.ndarray, sr: int) -> np.ndarray:  # noqa: ANN001
         specs = getattr(track, "fx", None) or []
         if not specs or pb is None:
             return audio
-        sig = struct_sig(specs)
+        from fantasia_core.document.fx_insert import effective_wires, is_serial
+
+        wires = getattr(track, "fx_wires", None) or []
+        sig = struct_sig(specs, wires)
+        if not is_serial(specs, wires):
+            return self._process_dag(track, audio, sr, specs, wires, sig)
+
         entry = self._cache.get(track.id)
         if entry is None or entry[0] != sig:
             board = build_board(specs)
@@ -225,14 +239,13 @@ class FxHost:
                 self._cache[track.id] = (sig, board)
         if board is None:
             return audio
+        return self._run(board, audio, sr)
 
+    def _run(self, board, audio: np.ndarray, sr: int) -> np.ndarray:  # noqa: ANN001
         try:
             out = board(audio.T.astype(np.float32), sr, reset=False).T
         except Exception:  # noqa: BLE001
             return audio
-
-        # Streaming plugins return equal length, but clamp defensively so the
-        # caller's fixed-size mix buffer is never mismatched.
         n = len(audio)
         if len(out) < n:
             pad = np.zeros((n - len(out), out.shape[1]), dtype=np.float32)
@@ -240,3 +253,70 @@ class FxHost:
         elif len(out) > n:
             out = out[:n]
         return out
+
+    def _process_dag(self, track, audio, sr, specs, wires, sig) -> np.ndarray:  # noqa: ANN001
+        """Branch/merge graph: mix on join, copy on split. Off the serial board."""
+        from fantasia_core.document.fx_insert import (
+            OUT, SOURCE, as_dict, as_insert, effective_wires, insert_id,
+            topo_order,
+        )
+
+        entry = self._cache.get(track.id)
+        plugins = self._dag_plugins.get(track.id)
+        if entry is None or entry[0] != sig or plugins is None:
+            plugins = {}
+            for spec in specs:
+                d = as_dict(spec)
+                if not d.get("type") or d.get("bypassed"):
+                    continue
+                nid = d.get("id") or d.get("type")
+                plug = _make(d)
+                if plug is not None:
+                    plugins[nid] = plug
+            self._dag_plugins[track.id] = plugins
+            self._cache[track.id] = (sig, "dag")
+        else:
+            try:
+                for spec in specs:
+                    d = as_dict(spec)
+                    nid = d.get("id") or d.get("type")
+                    if nid in plugins and not d.get("bypassed"):
+                        _sync_one(plugins[nid], d)
+            except Exception:  # noqa: BLE001
+                self._cache.pop(track.id, None)
+                return self._process_dag(track, audio, sr, specs, wires, sig)
+
+        graph = effective_wires(specs, wires)
+        order = topo_order(specs, wires)
+        bufs: dict = {SOURCE: audio}
+        for spec in specs:
+            nid = insert_id(spec) or as_dict(spec).get("type")
+            incoming = [w.src for w in graph if w.dst == nid]
+            mixed = self._mix_inputs(audio, bufs, incoming)
+            d = as_dict(spec)
+            plug = plugins.get(nid)
+            if d.get("bypassed") or plug is None:
+                bufs[nid] = mixed
+                continue
+            try:
+                bufs[nid] = self._run(plug, mixed, sr)
+            except Exception:  # noqa: BLE001
+                bufs[nid] = mixed
+        outgoing = [w.src for w in graph if w.dst == OUT]
+        if not outgoing:
+            return audio
+        return self._mix_inputs(audio, bufs, outgoing)
+
+    def _mix_inputs(self, audio: np.ndarray, bufs: dict, srcs: list) -> np.ndarray:
+        if not srcs:
+            return np.zeros_like(audio)
+        acc = None
+        for src in srcs:
+            block = bufs.get(src)
+            if block is None:
+                continue
+            if acc is None:
+                acc = np.array(block, dtype=np.float32, copy=True)
+            else:
+                acc += block
+        return acc if acc is not None else np.zeros_like(audio)

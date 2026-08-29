@@ -88,9 +88,16 @@ class TrackHeader(QWidget):
 
         # --- create widgets and set state from the model (no signals yet) ---
         self.name_edit = QLineEdit(track.name)
+        self.name_edit.setObjectName("trackNameEdit")
         self.name_edit.setFrame(False)
+        self.name_edit.setReadOnly(True)
+        self.name_edit.setFocusPolicy(Qt.NoFocus)
+        self.name_edit.setCursor(Qt.ArrowCursor)
+        self.name_edit.setToolTip("Double-click or press F2 to rename")
         self.name_edit.setStyleSheet(
             f"color:{theme.FG_BRIGHT}; background:transparent; font-weight:700; font-size:12px;")
+        self._renaming = False
+        self._name_before_edit = track.name
         self.fx_badge = QLabel()
         self.fx_badge.setStyleSheet(f"color:{theme.CYAN}; font-size:10px; font-weight:600;")
         parts = []
@@ -161,9 +168,7 @@ class TrackHeader(QWidget):
         outer.addLayout(controls)
 
         # --- connect signals last, so setup above never emits ---
-        self.name_edit.editingFinished.connect(
-            lambda: self.renamed.emit(self.track_id, self.name_edit.text())
-        )
+        self.name_edit.editingFinished.connect(self._on_name_editing_finished)
         self.mute_btn.toggled.connect(
             lambda on: self.mute_toggled.emit(self.track_id, on)
         )
@@ -199,8 +204,51 @@ class TrackHeader(QWidget):
         for child in self.findChildren(QWidget):
             child.installEventFilter(self)
 
+    def begin_rename(self) -> None:
+        """Enter in-place rename (double-click on the name, or F2)."""
+        if self._renaming:
+            self.name_edit.setFocus()
+            self.name_edit.selectAll()
+            return
+        self._name_before_edit = self.name_edit.text()
+        self._renaming = True
+        self.name_edit.setReadOnly(False)
+        self.name_edit.setFocusPolicy(Qt.StrongFocus)
+        self.name_edit.setCursor(Qt.IBeamCursor)
+        self.name_edit.setFocus()
+        self.name_edit.selectAll()
+
+    def _end_rename(self, commit: bool) -> None:
+        if not self._renaming:
+            return
+        self._renaming = False
+        text = self.name_edit.text().strip() or self._name_before_edit
+        if not commit:
+            text = self._name_before_edit
+        self.name_edit.blockSignals(True)
+        self.name_edit.setText(text)
+        self.name_edit.setReadOnly(True)
+        self.name_edit.setFocusPolicy(Qt.NoFocus)
+        self.name_edit.setCursor(Qt.ArrowCursor)
+        self.name_edit.deselect()
+        self.name_edit.blockSignals(False)
+        self.name_edit.clearFocus()
+        if commit:
+            self.renamed.emit(self.track_id, text)
+
+    def _on_name_editing_finished(self) -> None:
+        self._end_rename(commit=True)
+
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         et = event.type()
+        if obj is self.name_edit and et == QEvent.MouseButtonDblClick:
+            self.clicked.emit(self.track_id)
+            self.begin_rename()
+            return True
+        if obj is self.name_edit and et == QEvent.KeyPress:
+            if event.key() == Qt.Key_Escape:
+                self._end_rename(commit=False)
+                return True
         if et == QEvent.MouseButtonPress:
             self.clicked.emit(self.track_id)
         elif et == QEvent.ContextMenu:
@@ -312,6 +360,7 @@ class TrackHeaderPanel(QScrollArea):
     gain_changed = Signal(str, float)
     pan_changed = Signal(str, float)
     fx_action = Signal(str, str)
+    track_step_requested = Signal(int)  # -1 previous, +1 next
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -375,6 +424,22 @@ class TrackHeaderPanel(QScrollArea):
     def set_selected(self, track_id: Optional[str]) -> None:
         for tid, header in self._headers.items():
             header.set_selected(tid == track_id)
+
+    def begin_rename(self, track_id: str) -> bool:
+        header = self._headers.get(track_id)
+        if header is None:
+            return False
+        header.begin_rename()
+        return True
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() in (Qt.Key_Up, Qt.Key_Down) and not (
+            event.modifiers() & Qt.ControlModifier
+        ):
+            self.track_step_requested.emit(-1 if event.key() == Qt.Key_Up else 1)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def sync_mute_solo(self, project) -> None:  # noqa: ANN001
         for track in project.tracks:

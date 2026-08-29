@@ -359,7 +359,9 @@ class TimelineView(QGraphicsView):
     clip_double_clicked = Signal(str)  # clip_id (open editor)
     delete_requested = Signal()  # Delete/Backspace while the timeline is focused
     copy_requested = Signal()  # Ctrl+C
+    cut_requested = Signal()  # Ctrl+X
     paste_requested = Signal()  # Ctrl+V
+    track_step_requested = Signal(int)  # -1 previous, +1 next
     duplicate_requested = Signal()  # Ctrl+D
     loop_toggle_requested = Signal()  # Ctrl+L
     loop_region_changed = Signal(float, float)
@@ -559,6 +561,9 @@ class TimelineView(QGraphicsView):
             if cid in wanted:
                 item.setSelected(True)
 
+    def select_all_clips(self) -> None:
+        self.select_clips(self._clip_items.keys())
+
     def selection_time_span(self) -> Optional[tuple[float, float]]:
         items = [i for i in self._scene.selectedItems() if isinstance(i, ClipItem)]
         if not items:
@@ -599,6 +604,10 @@ class TimelineView(QGraphicsView):
                 self.copy_requested.emit()
                 event.accept()
                 return
+            if event.key() == Qt.Key_X:
+                self.cut_requested.emit()
+                event.accept()
+                return
             if event.key() == Qt.Key_V:
                 self.paste_requested.emit()
                 event.accept()
@@ -610,6 +619,10 @@ class TimelineView(QGraphicsView):
                 return
             if event.key() == Qt.Key_0:
                 self.mute_requested.emit()
+                event.accept()
+                return
+            if event.key() in (Qt.Key_Up, Qt.Key_Down):
+                self.track_step_requested.emit(-1 if event.key() == Qt.Key_Up else 1)
                 event.accept()
                 return
             if event.key() in (Qt.Key_Left, Qt.Key_Right) and not self.selected_clip_ids():

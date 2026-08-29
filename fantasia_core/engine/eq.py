@@ -241,13 +241,13 @@ def expand_eq_specs(specs: Iterable) -> List[dict]:
     return out
 
 
-def struct_sig(specs: Sequence) -> tuple:
-    """Identity of the *graph* (plugin types / bypass), not of the knob values.
+def struct_sig(specs: Sequence, wires: Optional[Sequence] = None) -> tuple:
+    """Identity of the *graph* (plugin types / bypass / wires), not knob values.
 
     FxHost uses this to decide "rebuild the board" vs "poke parameters".
-    Band type changes and bypass rebuild; dragging freq/gain/Q does not.
+    Band type changes, bypass, and topology rebuild; dragging freq/gain/Q does not.
     """
-    from fantasia_core.document.fx_insert import as_dict
+    from fantasia_core.document.fx_insert import as_dict, copy_wires, is_serial
 
     rows = []
     for spec in specs or []:
@@ -262,7 +262,10 @@ def struct_sig(specs: Sequence) -> tuple:
                 normalize_band(b)["type"] for b in bands[:MAX_BANDS]
             )))
         else:
-            rows.append((kind,))
+            rows.append((kind, spec.get("id") or ""))
+    stored = copy_wires(wires)
+    if stored and not is_serial(specs, stored):
+        rows.append(("wires", tuple(sorted((w.src, w.dst) for w in stored))))
     return tuple(rows)
 
 

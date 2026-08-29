@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fantasia_core.document.fx_insert import as_insert
+from fantasia_core.document.fx_insert import as_insert, as_wire, copy_wires
 from fantasia_core.document.model import MASTER_ID, Clip, Note, Project, Track
 
 FORMAT = "fantasia-project"
@@ -53,6 +53,7 @@ def track_to_dict(track: Track) -> dict[str, Any]:
         "solo": track.solo,
         "color": track.color,
         "fx": [as_insert(e).to_dict() for e in track.fx],
+        "fx_wires": [as_wire(w).to_dict() for w in (getattr(track, "fx_wires", None) or [])],
         "instrument": track.instrument,
         "is_drum": track.is_drum,
         "is_synth": track.is_synth,
@@ -124,6 +125,7 @@ def track_from_dict(data: dict[str, Any]) -> Track:
         color=data.get("color", "#4a90d9"),
     )
     track.fx = [as_insert(e) for e in data.get("fx", [])]
+    track.fx_wires = copy_wires(data.get("fx_wires") or [])
     track.instrument = int(data.get("instrument", 0))
     track.is_drum = bool(data.get("is_drum", False))
     track.is_synth = bool(data.get("is_synth", False))
