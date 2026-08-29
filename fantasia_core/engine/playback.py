@@ -13,10 +13,13 @@ from __future__ import annotations
 
 from typing import Optional
 
+from time import perf_counter
+
 import numpy as np
 
 from fantasia_core.engine.fx import FxHost
 from fantasia_core.engine.metronome import make_click_bank, mix_metronome
+from fantasia_core.engine import dropouts as drop
 from fantasia_core.engine.mixer import render_block
 from fantasia_core.engine.spectrum import SpectrumTap
 
@@ -147,6 +150,8 @@ class PlaybackEngine:
         self._stream = None
         self.output_device = None  # None = system default; else sounddevice index
         self._underruns = 0
+        self.dropouts = drop.DropoutLog()
+        self._stats = drop.BlockStats()
         self._fx_host = FxHost()  # persistent per-track FX state for smooth tails
         self.midi_renderer = None  # set by the app; audio callback only reads its cache
         self.synth_renderer = None
@@ -211,17 +216,27 @@ class PlaybackEngine:
         """
         return self._underruns
 
+    # Flag a block once it has used this much of its deadline: not yet a
+    # dropout, but the margin that produces one when anything else lands.
+    DROPOUT_WARN_FRACTION = 0.5
+
     def _callback(self, outdata, frames, time_info, status) -> None:  # noqa: ANN001
-        if status and getattr(status, "output_underflow", False):
+        t_start = perf_counter()
+        underflow = bool(status and getattr(status, "output_underflow", False))
+        if underflow:
             self._underruns += 1
         if not self._playing:
             outdata.fill(0.0)
+            if underflow:
+                self.dropouts.record(t_start, self._cursor / self.sr, 0.0,
+                                     frames / self.sr * 1000.0, drop.UNDERFLOW)
             return
         # Stamp this block against the clock before rendering, so the playhead
         # can be interpolated between callbacks instead of jumping per block.
         self._block_start = self._cursor
         self._block_frames = frames
         self._block_dac = float(getattr(time_info, "outputBufferDacTime", 0.0) or 0.0)
+        self._stats.misses = 0
         loop_on = bool(self.loop or getattr(self.project, "loop_enabled", False))
         lo_f = hi_f = 0
         if loop_on:
@@ -240,6 +255,7 @@ class PlaybackEngine:
                 warp_compute=False,
                 spectrum_tap=self.spectrum_tap,
                 spectrum_track_id=self.spectrum_track_id,
+                stats=self._stats,
             )
             if self.metronome_enabled:
                 mix_metronome(
@@ -253,6 +269,23 @@ class PlaybackEngine:
         if written < frames:
             outdata[written:].fill(0.0)
         self._cursor = new_cursor
+
+        # Record why this block was bad, if it was. Ordered so a real underflow
+        # is never relabelled as merely slow.
+        budget_ms = frames / self.sr * 1000.0
+        elapsed_ms = (perf_counter() - t_start) * 1000.0
+        misses = self._stats.misses
+        if underflow:
+            kind = drop.UNDERFLOW
+        elif misses:
+            kind = drop.STARVED
+        elif elapsed_ms > budget_ms * self.DROPOUT_WARN_FRACTION:
+            kind = drop.SLOW
+        else:
+            kind = None
+        if kind is not None:
+            self.dropouts.record(t_start, self._block_start / self.sr,
+                                 elapsed_ms, budget_ms, kind, misses)
 
         if not loop_on:
             end = self._end_frame()
@@ -314,8 +347,21 @@ class PlaybackEngine:
                     refresh_devices()
                     if not self._try_open(None):
                         return False
+        # Timestamps are measured from here, so "clusters at transport start"
+        # is answerable rather than a hunch.
+        self._underruns = 0
+        self.dropouts.reset()
+        self.dropouts.mark_start(perf_counter())
         self._playing = True
         return True
+
+    def playback_health(self, limit: int = 20) -> dict:
+        """What went wrong since play() was last pressed."""
+        return {"underruns": self._underruns,
+                "block_frames": self.block,
+                "budget_ms": round(self.block / self.sr * 1000.0, 1),
+                **self.dropouts.summary(),
+                "recent": self.dropouts.snapshot(limit)}
 
     def refresh_devices(self) -> bool:
         """Re-read the OS device list (only when stopped). Returns True if done."""

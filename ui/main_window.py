@@ -3745,6 +3745,8 @@ class MainWindow(QMainWindow):
                 holder["result"] = self._agent_prep_sing_melody(args)
             elif name == "_add_vocal":
                 holder["result"] = self._agent_add_vocal(args)
+            elif name == "playback_health":
+                holder["result"] = self._agent_playback_health(args)
             elif name == "_proj_save_project":
                 holder["result"] = self._agent_save_project(args)
             elif name == "_proj_open_project":
@@ -3961,6 +3963,15 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"{name} patch saved with the project", 5000)
         else:
             self.statusBar().showMessage(f"{name} closed", 3000)
+
+    def _agent_playback_health(self, args: dict):
+        """UI thread: read what the audio callback flagged."""
+        eng = getattr(self, "engine", None)
+        if eng is None or not hasattr(eng, "playback_health"):
+            return {"error": "no playback engine"}
+        out = eng.playback_health(int(args.get("limit", 20) or 20))
+        out["playing"] = bool(eng.is_playing)
+        return out
 
     def _agent_save_project(self, args: dict):
         """UI thread: write the document to disk, like File > Save."""

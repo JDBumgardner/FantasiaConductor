@@ -98,6 +98,7 @@ def render_track_block(
     track, pool, start_frame: int, num_frames: int, sr: int, midi_renderer=None, synth_renderer=None,
     plugin_renderer=None,
     warp_compute: bool = True,
+    stats=None,
 ) -> np.ndarray:  # noqa: ANN001
     """Render one track's clips (pre-FX, pre-track-gain/pan) as ``(num_frames, 2)``.
 
@@ -128,6 +129,10 @@ def render_track_block(
             else:
                 continue
             if data is None:  # not yet rendered (warming pending) → silent
+                # A silent clip is heard as a gap even though the callback met
+                # its deadline, so it is counted separately from a dropout.
+                if stats is not None:
+                    stats.misses += 1
                 continue
             src0 = 0
         else:
@@ -168,6 +173,7 @@ def render_block(
     warp_compute: bool = True,
     spectrum_tap=None, spectrum_track_id=None,
     apply_master: bool = True,
+    stats=None,
 ) -> np.ndarray:  # noqa: ANN001
     """Render one stereo block of the full mix as ``float32`` ``(num_frames, 2)``."""
     out = np.zeros((num_frames, 2), dtype=np.float32)
@@ -180,6 +186,7 @@ def render_block(
             track, pool, start_frame, num_frames, sr, midi_renderer, synth_renderer,
             plugin_renderer,
             warp_compute=warp_compute,
+            stats=stats,
         )
         if spectrum_tap is not None and spectrum_track_id == track.id:
             spectrum_tap.write(tb)

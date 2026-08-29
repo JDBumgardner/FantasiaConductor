@@ -210,6 +210,14 @@ class AgentTools:
                  "track_id": {"type": "string"}, "insert_id": {"type": "string"},
                  "index": {"type": "integer"}},
                  "required": ["track_id", "insert_id", "index"]}},
+            {"name": "playback_health", "description": (
+                "Why playback stuttered. Returns the blocks the audio callback flagged since "
+                "play was last pressed: underflows (the block was late), starved blocks (a clip "
+                "was silent because its audio had not been rendered yet), and slow blocks (the "
+                "callback used over half its deadline). Includes how many landed within 2s of "
+                "transport start, which is the usual shape of a stutter when a track begins."),
+             "input_schema": {"type": "object", "properties": {
+                 "limit": {"type": "integer", "description": "how many recent blocks (default 20)"}}}},
             {"name": "get_fx_routing", "description": (
                 "Read a track's FX routing as a list of {src, dst} wires. Node ids are insert ids "
                 "plus the sentinels 'in' (the track's audio/instrument) and 'out' (the fader). "
