@@ -92,7 +92,12 @@ class TrackHeader(QWidget):
         self.fx_badge = QLabel()
         self.fx_badge.setStyleSheet(f"color:{theme.CYAN}; font-size:10px; font-weight:600;")
         parts = []
-        if self._is_synth:
+        if self._plugin:
+            # A plugin track has no GM program, so the instrument name shown
+            # here would be meaningless — name the plugin instead.
+            parts.append(self._plugin)
+            self.setToolTip(self._plugin)
+        elif self._is_synth:
             parts.append("SYNTH")
             self.setToolTip("Built-in synth")
         elif self._is_drum:
