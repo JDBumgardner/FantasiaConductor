@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from fantasia_core.document.model import Project  # noqa: E402
 from ui.main_window import export_default_filename  # noqa: E402
-from ui.track_header import TrackHeader  # noqa: E402
+from ui.track_header import TrackHeader, TrackHeaderPanel  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -91,11 +91,49 @@ def test_enter_commits_rename(qapp):
 def test_header_has_fader_readouts_and_meter(qapp):
     header = _header(qapp)
     assert header.fader_db.text() == "+0"
+    assert header.pan_db.text() == "C"
     assert header.out_db.text() == "—  —"
     header.set_meter(0.5, playing=True)
     assert "−6" in header.out_db.text() or "-6" in header.out_db.text()
     header.reset_meter()
     assert header.out_db.text() == "—  —"
+
+
+def test_current_gain_readout_holds_across_fast_ticks(qapp):
+    header = _header(qapp)
+    header.set_meter(0.5, playing=True)
+    first = header.out_db.text()
+    header.set_meter(1.0, playing=True)
+    # The current number is held; max may rise. Current half (-6) stays.
+    assert first.split()[0] == header.out_db.text().split()[0]
+
+
+def test_typed_gain_and_pan_commit(qapp):
+    header = _header(qapp)
+    gains = []
+    pans = []
+    header.gain_changed.connect(lambda _tid, v: gains.append(v))
+    header.pan_changed.connect(lambda _tid, v: pans.append(v))
+    assert header._commit_gain("-12")
+    assert header.vol.value() == -12
+    assert gains[-1] == -12.0
+    assert header._commit_pan("25R")
+    assert header.pan_db.text() == "25R"
+    assert pans[-1] == pytest.approx(0.25)
+
+
+def test_header_panel_selects_multiple_tracks(qapp):
+    p = Project()
+    a = p.add_track("A")
+    b = p.add_track("B")
+    panel = TrackHeaderPanel()
+    panel.rebuild(p)
+    panel.set_selected([a.id, b.id])
+    assert panel._headers[a.id]._selected
+    assert panel._headers[b.id]._selected
+    panel.set_selected(a.id)
+    assert panel._headers[a.id]._selected
+    assert not panel._headers[b.id]._selected
 
 
 def test_export_default_filename_prefers_saved_project():

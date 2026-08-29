@@ -67,7 +67,24 @@ def test_shift_click_keeps_multiple_midi_clips_selected(qapp):  # noqa: ARG001
     assert set(view.selected_clip_ids()) == {a.id, b.id}
 
 
-def test_clicking_a_midi_clip_locates_the_playhead(qapp):  # noqa: ARG001
+def test_clicking_unselected_midi_clip_locates_to_start(qapp):  # noqa: ARG001
+    view = TimelineView()
+    p = Project()
+    t = p.add_track("A")
+    clip = p.add_clip(t.id, 1.0, 2.0, "a", content_type="midi")
+    view.set_project(p)
+    view.rebuild()
+    view.resize(900, 280)
+    view.show()
+    QApplication.processEvents()
+    view.start_position = 0.0
+    view.playhead = 0.0
+    item = _clip_items(view)[clip.id]
+    _click_clip(view, item)
+    assert abs(view.start_position - clip.start) < 1e-6
+
+
+def test_clicking_selected_midi_clip_locates_to_click(qapp):  # noqa: ARG001
     view = TimelineView()
     p = Project()
     t = p.add_track("A")
@@ -77,9 +94,9 @@ def test_clicking_a_midi_clip_locates_the_playhead(qapp):  # noqa: ARG001
     view.resize(900, 280)
     view.show()
     QApplication.processEvents()
-    view.start_position = 0.0
-    view.playhead = 0.0
     item = _clip_items(view)[clip.id]
+    _click_clip(view, item)
+    view.start_position = 0.0
     _click_clip(view, item)
     assert clip.start < view.start_position < clip.end
     assert abs(view.start_position - view.snap(view.start_position)) < 1e-6

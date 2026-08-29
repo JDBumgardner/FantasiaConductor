@@ -37,6 +37,8 @@ BG_PANEL = "#14162a"     # panels, headers, docks
 BG_ELEVATED = "#1b1e38"  # inputs, menus, elevated controls
 BG_HOVER = "#262a4d"
 BG_SELECTED = "#2a2f57"
+# Track-header selection: brighter than the panel so the row reads as armed.
+HEADER_SELECTED = "#24366a"
 BORDER = "#2a2e52"
 BORDER_SOFT = "#20233f"
 
@@ -49,6 +51,7 @@ FG_BRIGHT = "#eef1ff"
 MAGENTA = "#ff2e97"
 PINK = "#ff6ac1"
 CYAN = "#25e6d5"
+HEADER_SELECTED_EDGE = CYAN  # luminance + hue; not a red/green pair
 BLUE = "#5a8bff"
 PURPLE = "#b46bff"
 GREEN = "#4ff2a6"

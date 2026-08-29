@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from fantasia_core.engine import DEFAULT_PATCH, WAVEFORMS
 from ui import theme
+from ui.numeric_popup import bind_double_click_edit, parse_number
 
 _WAVE_LABELS = {"sine": "SIN", "saw": "SAW", "square": "SQR", "triangle": "TRI"}
 
@@ -208,7 +209,25 @@ class SynthPanel(QWidget):
         self._sliders[key] = slider
         self._value_labels[key] = vlabel
         slider.valueChanged.connect(lambda v, k=key: self._on_slider(k, v))
+        bind_double_click_edit(
+            slider,
+            getter=lambda k=key: self._value_labels[k].text(),
+            commit=lambda text, k=key: self._commit_typed(k, text),
+        )
+        bind_double_click_edit(
+            vlabel,
+            getter=lambda k=key: self._value_labels[k].text(),
+            commit=lambda text, k=key: self._commit_typed(k, text),
+        )
         return col
+
+    def _commit_typed(self, key: str, text: str) -> bool:
+        value = parse_number(text)
+        if value is None:
+            return False
+        _, _, lo, hi, _ = self._specs[key]
+        self._sliders[key].setValue(self._to_slider(key, max(lo, min(hi, value))))
+        return True
 
     def _to_value(self, key: str, sval: int) -> float:
         _, _, lo, hi, _ = self._specs[key]

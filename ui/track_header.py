@@ -34,6 +34,16 @@ from fantasia_core.document.model import MASTER_ID, Track
 from ui import theme
 from ui.gm_instruments import DRUM_KITS, GM_FAMILIES, gm_name
 from ui.metrics import RULER_H, TRACK_H
+from ui.numeric_popup import (
+    bind_double_click_edit,
+    format_pan,
+    parse_number,
+    parse_pan,
+)
+
+_OUT_IDLE = f"color:{theme.FG_DIM}; font-size:11px; font-weight:700;"
+_OUT_LIVE = f"color:{theme.CYAN}; font-size:11px; font-weight:700;"
+_READOUT_EVERY = 8  # ~240ms at the 30ms playhead tick — readable, cheap
 
 _FADER_STYLE = (
     f"QSlider#gainFader::groove:horizontal {{"
@@ -194,9 +204,6 @@ class TrackHeader(QWidget):
         if self._is_master:
             self.solo_btn.setEnabled(False)
             self.solo_btn.setToolTip("Solo is per-track; mute the Master to silence the mix")
-            self.setStyleSheet(
-                f"QWidget#trackHeader {{ border-top: 1px solid {theme.CYAN}; }}"
-            )
 
         self.vol = QSlider(Qt.Horizontal)
         self.vol.setObjectName("gainFader")
@@ -207,22 +214,33 @@ class TrackHeader(QWidget):
         self.meter = LevelMeter()
         self._meter_amp = 0.0
         self._meter_max = 0.0
+        self._readout_amp = 0.0
+        self._readout_age = 0
+        self._out_live = False
         self.fader_db = QLabel(self._fmt_set(track.gain_db))
-        self.fader_db.setFixedWidth(34)
+        self.fader_db.setFixedWidth(36)
         self.fader_db.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.fader_db.setStyleSheet(
-            f"color:{theme.FG_BRIGHT}; font-size:10px; font-weight:700;")
+            f"color:{theme.FG_BRIGHT}; font-size:11px; font-weight:700;")
         self.out_db = QLabel("—  —")
-        self.out_db.setFixedWidth(52)
+        self.out_db.setFixedWidth(68)
         self.out_db.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.out_db.setStyleSheet(f"color:{theme.FG_DIM}; font-size:9px;")
+        self.out_db.setStyleSheet(_OUT_IDLE)
         self.out_db.setToolTip("Current / max output (dBFS) while playing")
 
         self.pan = QSlider(Qt.Horizontal)
         self.pan.setRange(-100, 100)
         self.pan.setValue(int(track.pan * 100))
         self.pan.setFixedWidth(56)
-        self.pan.setToolTip("Pan (L/R)")
+        self.pan.setToolTip("Pan (L/R) — double-click to type 2L / 3R / C")
+        self.pan_db = QLabel(format_pan(track.pan))
+        self.pan_db.setFixedWidth(28)
+        self.pan_db.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.pan_db.setStyleSheet(
+            f"color:{theme.FG_BRIGHT}; font-size:11px; font-weight:700;")
+        self.pan_db.setToolTip("Pan — 2L / 3R / C")
+        self._apply_header_chrome()
+        self._bind_typein()
 
         # --- lay out ---
         name_row = QHBoxLayout()
@@ -257,6 +275,7 @@ class TrackHeader(QWidget):
         controls.addLayout(readouts)
         controls.addWidget(QLabel("Pan"))
         controls.addWidget(self.pan)
+        controls.addWidget(self.pan_db)
         outer.addLayout(controls)
 
         # --- connect signals last, so setup above never emits ---
@@ -268,9 +287,31 @@ class TrackHeader(QWidget):
             lambda on: self.solo_toggled.emit(self.track_id, on)
         )
         self.vol.valueChanged.connect(self._on_vol_changed)
-        self.pan.valueChanged.connect(
-            lambda v: self.pan_changed.emit(self.track_id, v / 100.0)
-        )
+        self.pan.valueChanged.connect(self._on_pan_changed)
+
+    def _bind_typein(self) -> None:
+        bind_double_click_edit(
+            self.vol, getter=lambda: self.fader_db.text(), commit=self._commit_gain)
+        bind_double_click_edit(
+            self.fader_db, getter=lambda: self.fader_db.text(), commit=self._commit_gain)
+        bind_double_click_edit(
+            self.pan, getter=lambda: self.pan_db.text(), commit=self._commit_pan)
+        bind_double_click_edit(
+            self.pan_db, getter=lambda: self.pan_db.text(), commit=self._commit_pan)
+
+    def _commit_gain(self, text: str) -> bool:
+        value = parse_number(text)
+        if value is None:
+            return False
+        self.vol.setValue(int(round(max(-60.0, min(12.0, value)))))
+        return True
+
+    def _commit_pan(self, text: str) -> bool:
+        value = parse_pan(text)
+        if value is None:
+            return False
+        self.pan.setValue(int(round(value * 100.0)))
+        return True
 
     def _fmt_set(self, db: float) -> str:
         return f"{db:+.0f}"
@@ -284,6 +325,10 @@ class TrackHeader(QWidget):
         self.fader_db.setText(self._fmt_set(float(v)))
         self.gain_changed.emit(self.track_id, float(v))
 
+    def _on_pan_changed(self, v: int) -> None:
+        self.pan_db.setText(format_pan(v / 100.0))
+        self.pan_changed.emit(self.track_id, v / 100.0)
+
     def set_meter(self, amp: float, playing: bool) -> None:
         """``amp`` is linear peak for this tick. Decays visually when quiet."""
         if not playing:
@@ -292,22 +337,54 @@ class TrackHeader(QWidget):
         self._meter_amp = max(float(amp), self._meter_amp * 0.72)
         self._meter_max = max(self._meter_max, float(amp))
         self.meter.set_levels(self._meter_amp, self._meter_max)
-        self.out_db.setText(
-            f"{self._fmt_out(amp_to_db(self._meter_amp))}  "
+        # The bar follows the audio; the current number is held so a human
+        # can read it. setText only when the string actually changes.
+        if self._readout_age <= 0:
+            self._readout_amp = self._meter_amp
+            self._readout_age = _READOUT_EVERY
+        else:
+            self._readout_age -= 1
+        text = (
+            f"{self._fmt_out(amp_to_db(self._readout_amp))}  "
             f"{self._fmt_out(amp_to_db(self._meter_max))}"
         )
-        self.out_db.setStyleSheet(f"color:{theme.CYAN}; font-size:9px;")
+        if self.out_db.text() != text:
+            self.out_db.setText(text)
+        if not self._out_live:
+            self._out_live = True
+            self.out_db.setStyleSheet(_OUT_LIVE)
 
     def reset_meter(self) -> None:
         self._meter_amp = 0.0
         self._meter_max = 0.0
+        self._readout_amp = 0.0
+        self._readout_age = 0
         self.meter.set_levels(0.0, 0.0)
-        self.out_db.setText("—  —")
-        self.out_db.setStyleSheet(f"color:{theme.FG_DIM}; font-size:9px;")
+        if self.out_db.text() != "—  —":
+            self.out_db.setText("—  —")
+        if self._out_live:
+            self._out_live = False
+            self.out_db.setStyleSheet(_OUT_IDLE)
+
+    def _apply_header_chrome(self) -> None:
+        extra = f" border-top: 1px solid {theme.CYAN};" if self._is_master else ""
+        if self._selected:
+            self.setStyleSheet(
+                f"QWidget#trackHeader {{ background:{theme.HEADER_SELECTED};"
+                f" border-bottom: 1px solid {theme.HEADER_SELECTED_EDGE};"
+                f" border-left: 3px solid {theme.HEADER_SELECTED_EDGE};{extra} }}"
+            )
+        else:
+            self.setStyleSheet(
+                f"QWidget#trackHeader {{ background:{theme.BG_PANEL};"
+                f" border-bottom: 1px solid {theme.LANE_DIVIDER_CSS};"
+                f" border-left: 3px solid transparent;{extra} }}"
+            )
 
     def set_selected(self, selected: bool) -> None:
         self._selected = selected
         self.setProperty("selected", selected)
+        self._apply_header_chrome()
         self.style().unpolish(self)
         self.style().polish(self)
 
@@ -373,7 +450,12 @@ class TrackHeader(QWidget):
                 self._end_rename(commit=False)
                 return True
         if et == QEvent.MouseButtonPress:
-            self.clicked.emit(self.track_id)
+            # Clicking M/S/fader/pan on an already-selected header must not
+            # collapse a multi-select. Name / swatch / empty chrome still select.
+            if obj in (self, self.name_edit) or obj is getattr(self, "_swatch", None):
+                self.clicked.emit(self.track_id)
+            elif not self._selected:
+                self.clicked.emit(self.track_id)
         elif et == QEvent.ContextMenu:
             self._show_fx_menu(event.globalPos())
             return True  # consume; show the FX menu instead
@@ -552,9 +634,14 @@ class TrackHeaderPanel(QScrollArea):
         n = len(project.tracks)
         self._content.setMinimumHeight(RULER_H + n * TRACK_H + TRACK_H + 24)
 
-    def set_selected(self, track_id: Optional[str]) -> None:
+    def set_selected(self, track_ids) -> None:  # noqa: ANN001
+        """``track_ids`` is one id or an iterable of ids."""
+        if isinstance(track_ids, str) or track_ids is None:
+            wanted = {track_ids} if track_ids else set()
+        else:
+            wanted = {tid for tid in track_ids if tid}
         for tid, header in self._headers.items():
-            header.set_selected(tid == track_id)
+            header.set_selected(tid in wanted)
 
     def begin_rename(self, track_id: str) -> bool:
         header = self._headers.get(track_id)

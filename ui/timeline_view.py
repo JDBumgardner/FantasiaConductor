@@ -429,6 +429,7 @@ class TimelineView(QGraphicsView):
         self._project: Optional[Project] = None
         self.audio_pool = None  # set via set_audio_pool(); used to draw waveforms
         self.selected_track_id: Optional[str] = None
+        self.selected_track_ids: set[str] = set()
         self.pps = PPS_DEFAULT
         self.grid = GridSpec()
         self.playhead = 0.0
@@ -456,7 +457,11 @@ class TimelineView(QGraphicsView):
         self.viewport().update()
 
     def set_selected_track(self, track_id: Optional[str]) -> None:
-        self.selected_track_id = track_id
+        self.set_selected_tracks([track_id] if track_id else [])
+
+    def set_selected_tracks(self, track_ids) -> None:  # noqa: ANN001
+        self.selected_track_ids = {tid for tid in track_ids if tid}
+        self.selected_track_id = next(iter(self.selected_track_ids), None)
         self.viewport().update()  # repaint lane tint
 
     def track_row(self, clip_id: str) -> int:
@@ -775,7 +780,13 @@ class TimelineView(QGraphicsView):
                 clip_item.setSelected(True)
                 event.accept()
                 return
-            self.locate(max(0.0, scene_pos.x() / self.pps))
+            already = clip_item.isSelected()
+            if clip_item.clip.is_midi and not already:
+                # Newly selected MIDI clip: locate at the clip start.
+                # An already-selected clip still locates to the click (below).
+                self.locate(float(clip_item.clip.start))
+            else:
+                self.locate(max(0.0, scene_pos.x() / self.pps))
         if event.button() == Qt.LeftButton and not isinstance(clip_item, ClipItem):
             # Empty-lane press: wait to see if this is a drag (interval select)
             # or a click (locate playhead). Do not locate until release.
@@ -873,8 +884,8 @@ class TimelineView(QGraphicsView):
         n = len(self._project.tracks)
         for i in range(n):
             y0 = RULER_H + i * TRACK_H
-            if self._project.tracks[i].id == self.selected_track_id:
-                color = QColor(theme.BG_SELECTED)
+            if self._project.tracks[i].id in self.selected_track_ids:
+                color = QColor(theme.HEADER_SELECTED)
             else:
                 color = _lane_color(i)
             painter.fillRect(QRectF(rect.left(), y0, rect.width(), TRACK_H), color)

@@ -110,6 +110,7 @@ from ui.editor_dock import EditorDock
 from ui.hotkeys import HotkeysDialog
 from ui.metrics import RULER_H, TRACK_H
 from ui.timeline_view import TimelineView
+from ui.numeric_popup import solo_selection_states
 from ui.track_header import TrackHeader, TrackHeaderPanel
 from ui.transport_bar import TransportBar
 
@@ -133,9 +134,10 @@ QMenuBar {{ background: {theme.BG_PANEL}; color: {theme.FG}; border-bottom: 1px 
 QMenuBar::item {{ background: transparent; padding: 5px 10px; }}
 QMenuBar::item:selected {{ background: {theme.BG_HOVER}; color: {theme.FG_BRIGHT}; }}
 
-QWidget#trackHeader {{ background: {theme.BG_PANEL}; border-bottom: 1px solid {theme.LANE_DIVIDER_CSS}; }}
-QWidget#trackHeader[selected="true"] {{ background: {theme.BG_SELECTED};
-    border-left: 3px solid {theme.ACCENT}; }}
+QWidget#trackHeader {{ background: {theme.BG_PANEL}; border-bottom: 1px solid {theme.LANE_DIVIDER_CSS};
+    border-left: 3px solid transparent; }}
+QWidget#trackHeader[selected="true"] {{ background: {theme.HEADER_SELECTED};
+    border-left: 3px solid {theme.HEADER_SELECTED_EDGE}; }}
 QLineEdit {{ background: transparent; color: {theme.FG_BRIGHT}; font-weight: 600; }}
 QLabel {{ color: {theme.FG}; }}
 QPushButton {{ background: {theme.BG_ELEVATED}; color: {theme.FG}; border: 1px solid {theme.BORDER};
@@ -1836,7 +1838,10 @@ class MainWindow(QMainWindow):
             port=int(os.environ.get("FANTASIA_BRIDGE_PORT", DEFAULT_PORT)))
         self._bridge_ok = self.bridge.start()  # False if another instance owns the port
 
-        self.selected_track_id: Optional[str] = self.project.tracks[0].id
+        self._multi_selecting = False
+        self.selected_track_ids: list[str] = []
+        self._selected_track_id: Optional[str] = None
+        self.selected_track_id = self.project.tracks[0].id
         self._current_path: Optional[str] = None
         self._project_label = "Untitled"
         self._dirty = False
@@ -1868,6 +1873,7 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self._target_label)
 
         self._rebuild_all()
+        self._sync_tempo_display()
         self._refresh_history_actions()
         self.statusBar().showMessage("Ready — M3 (audio). File ▸ Load Demo Arrangement to test.")
         if not self.midi.available():
@@ -2154,7 +2160,7 @@ class MainWindow(QMainWindow):
         self.transport.metronome_toggled.connect(self._on_metronome_toggled)
         self.transport.tempo_changed.connect(self._on_tempo_changed)
         self.timeline.grid_menu_requested.connect(self._on_grid_menu)
-        self.timeline.solo_requested.connect(lambda: self._toggle_selected_tracks("solo"))
+        self.timeline.solo_requested.connect(self._apply_solo_selection)
         self.timeline.mute_requested.connect(lambda: self._toggle_selected_tracks("mute"))
 
         self.header_panel.header_clicked.connect(self._on_track_selected)
@@ -2165,9 +2171,7 @@ class MainWindow(QMainWindow):
         self.header_panel.mute_toggled.connect(
             lambda tid, on: self._dispatch_attr(tid, "mute", on)
         )
-        self.header_panel.solo_toggled.connect(
-            lambda tid, on: self._dispatch_attr(tid, "solo", on)
-        )
+        self.header_panel.solo_toggled.connect(self._on_solo_clicked)
         self.header_panel.gain_changed.connect(
             lambda tid, v: self._dispatch_attr(tid, "gain_db", v)
         )
@@ -2294,12 +2298,17 @@ class MainWindow(QMainWindow):
         self._after_history_change()
 
     def _after_history_change(self) -> None:
-        if self.selected_track_id is not None and (
-            self.project.track_by_id(self.selected_track_id) is None
-        ):
-            self.selected_track_id = (
-                self.project.tracks[0].id if self.project.tracks else None
-            )
+        alive = {t.id for t in self.project.tracks}
+        alive.add(MASTER_ID)
+        kept = [tid for tid in self.selected_track_ids if tid in alive]
+        if not kept:
+            kept = [self.project.tracks[0].id] if self.project.tracks else []
+        self._multi_selecting = True
+        try:
+            self.selected_track_ids = kept
+            self._selected_track_id = kept[-1] if kept else None
+        finally:
+            self._multi_selecting = False
         self.pool.preload(self.project)
         self._warm()  # re-cache MIDI after undo/redo of note/convert edits
         self._rebuild_all()
@@ -2538,8 +2547,9 @@ class MainWindow(QMainWindow):
 
     def _target_track_ids(self) -> list[str]:
         ids: list[str] = []
-        if self.selected_track_id:
-            ids.append(self.selected_track_id)
+        for tid in self.selected_track_ids or ([self.selected_track_id] if self.selected_track_id else []):
+            if tid and tid not in ids:
+                ids.append(tid)
         for clip_id in self.timeline.selected_clip_ids():
             track, _ = self.project.find_clip(clip_id)
             if track is not None and track.id not in ids:
@@ -2547,6 +2557,9 @@ class MainWindow(QMainWindow):
         return ids
 
     def _toggle_selected_tracks(self, attr: str) -> None:
+        if attr == "solo":
+            self._apply_solo_selection()
+            return
         tracks = [self.project.track_by_id(tid) for tid in self._target_track_ids()]
         tracks = [t for t in tracks if t is not None]
         if not tracks:
@@ -2555,6 +2568,22 @@ class MainWindow(QMainWindow):
         for track in tracks:
             if bool(getattr(track, attr)) != turn_on:
                 self._dispatch_attr(track.id, attr, turn_on)
+
+    def _on_solo_clicked(self, track_id: str, _on: bool) -> None:
+        if track_id == MASTER_ID:
+            return
+        if track_id not in self.selected_track_ids:
+            self._set_selected_track(track_id)
+        self._apply_solo_selection()
+
+    def _apply_solo_selection(self) -> None:
+        arrangement = [t.id for t in self.project.tracks]
+        selected = [tid for tid in self._target_track_ids() if tid in arrangement]
+        soloed = {t.id for t in self.project.tracks if t.solo}
+        for tid, on in solo_selection_states(arrangement, selected, soloed).items():
+            track = self.project.track_by_id(tid)
+            if track is not None and bool(track.solo) != bool(on):
+                self._dispatch_attr(tid, "solo", on)
 
     def _focus_is_text(self) -> bool:
         widget = QApplication.focusWidget()
@@ -2567,7 +2596,7 @@ class MainWindow(QMainWindow):
             mods = event.modifiers()
             if not (mods & Qt.ControlModifier):
                 if event.key() == Qt.Key_S:
-                    self._toggle_selected_tracks("solo")
+                    self._apply_solo_selection()
                     event.accept()
                     return
                 if event.key() == Qt.Key_0:
@@ -2742,6 +2771,7 @@ class MainWindow(QMainWindow):
         """Reflect the model's tempo in the transport + grid (after load / undo /
         agent edit) without re-triggering a tempo change."""
         self.transport.set_tempo(self.project.tempo)
+        self.transport.set_time_signature(self.project.beats_per_bar)
         self.timeline.viewport().update()
 
     # ---- audio output device --------------------------------------------
@@ -3010,7 +3040,7 @@ class MainWindow(QMainWindow):
         header.clicked.connect(self._on_track_selected)
         header.renamed.connect(lambda tid, name: self._dispatch_attr(tid, "name", name))
         header.mute_toggled.connect(lambda tid, on: self._dispatch_attr(tid, "mute", on))
-        header.solo_toggled.connect(lambda tid, on: self._dispatch_attr(tid, "solo", on))
+        header.solo_toggled.connect(self._on_solo_clicked)
         header.gain_changed.connect(lambda tid, v: self._dispatch_attr(tid, "gain_db", v))
         header.pan_changed.connect(lambda tid, v: self._dispatch_attr(tid, "pan", v))
         header.fx_action.connect(self._on_fx_action)
@@ -3222,7 +3252,16 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 "Can't join — an unselected MIDI clip sits in the gap, or the clips aren't on one track")
             return
-        self._warm()
+        # Only the new spanning clip is uncached. A full _warm() would
+        # resynthesize every MIDI clip in the project on the UI thread.
+        track = midi[0][0]
+        joined = cmd.created_clip
+        if getattr(track, "plugin", ""):
+            self._warm()
+        elif getattr(track, "is_synth", False):
+            self.synth_engine.render(joined, getattr(track, "synth", None) or {})
+        else:
+            self.midi.render(joined, track.instrument, getattr(track, "is_drum", False))
         self.timeline.rebuild()
         self.timeline.select_clips([cmd.created_clip.id])
         self.statusBar().showMessage(
@@ -4914,8 +4953,19 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Exported {count} stems → {folder}")
 
     # ---- selection -------------------------------------------------------
+    @property
+    def selected_track_id(self) -> Optional[str]:
+        return self._selected_track_id
+
+    @selected_track_id.setter
+    def selected_track_id(self, value: Optional[str]) -> None:
+        self._selected_track_id = value
+        if not getattr(self, "_multi_selecting", False):
+            self.selected_track_ids = [value] if value else []
+
     def _on_track_selected(self, track_id: str) -> None:
-        self._set_selected_track(track_id)
+        additive = bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
+        self._set_selected_track(track_id, additive=additive)
         if not self._focus_is_text():
             self.timeline.setFocus(Qt.OtherFocusReason)
 
@@ -4925,24 +4975,39 @@ class MainWindow(QMainWindow):
         follow_piano = self.editor.is_piano_open()
         track, clip = self.project.find_clip(clip_id)
         if track is not None:
+            additive = bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
             self._set_selected_track(
                 track.id,
+                additive=additive,
                 keep_piano=follow_piano and clip is not None and clip.is_midi,
             )
         if follow_piano and clip is not None and clip.is_midi:
             self._open_piano_roll(clip_id, reveal=False)
 
-    def _set_selected_track(self, track_id: Optional[str], *, keep_piano: bool = False) -> None:
-        self.selected_track_id = track_id
+    def _set_selected_track(
+        self, track_id: Optional[str], *, additive: bool = False, keep_piano: bool = False,
+    ) -> None:
+        if additive and track_id and track_id != MASTER_ID:
+            self._multi_selecting = True
+            try:
+                current = [tid for tid in self.selected_track_ids if tid and tid != MASTER_ID]
+                if track_id not in current:
+                    current.append(track_id)
+                self._selected_track_id = track_id
+                self.selected_track_ids = current
+            finally:
+                self._multi_selecting = False
+        else:
+            self.selected_track_id = track_id
         self._apply_selection_highlight(keep_piano=keep_piano)
 
     def _apply_selection_highlight(self, *, keep_piano: bool = False) -> None:
-        self.header_panel.set_selected(self.selected_track_id)
+        ids = list(self.selected_track_ids)
+        self.header_panel.set_selected(ids)
         if self.master_header is not None:
             self.master_header.set_selected(self.selected_track_id == MASTER_ID)
-        self.timeline.set_selected_track(
-            None if self.selected_track_id == MASTER_ID else self.selected_track_id
-        )
+        arrangement = [tid for tid in ids if tid != MASTER_ID]
+        self.timeline.set_selected_tracks(arrangement)
         self._update_target_label()
         track = (
             self.project.track_by_id(self.selected_track_id)
@@ -5135,7 +5200,17 @@ class MainWindow(QMainWindow):
             if self.selected_track_id
             else None
         )
-        self._target_label.setText(f"Target: {track.name}   " if track else "Target: —   ")
+        names = []
+        for tid in self.selected_track_ids:
+            t = self.project.track_by_id(tid)
+            if t is not None:
+                names.append(t.name)
+        if len(names) > 1:
+            self._target_label.setText(f"Target: {', '.join(names)}   ")
+        elif track is not None:
+            self._target_label.setText(f"Target: {track.name}   ")
+        else:
+            self._target_label.setText("Target: —   ")
 
     # ---- import / demo ---------------------------------------------------
     def _on_import(self) -> None:
