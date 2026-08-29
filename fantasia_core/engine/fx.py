@@ -288,9 +288,19 @@ class FxHost:
 
         graph = effective_wires(specs, wires)
         order = topo_order(specs, wires)
-        bufs: dict = {SOURCE: audio}
+        # Walk the topological order, not the list order. A node whose input
+        # has not been computed yet mixes from nothing and yields silence, so
+        # processing the list as written silences the whole graph whenever an
+        # insert sits earlier in the signal path than in the list — which is
+        # what happens the moment one is added to the head of a chain.
+        by_id = {}
         for spec in specs:
-            nid = insert_id(spec) or as_dict(spec).get("type")
+            by_id.setdefault(insert_id(spec) or as_dict(spec).get("type"), spec)
+        bufs: dict = {SOURCE: audio}
+        for nid in order:
+            spec = by_id.get(nid)
+            if spec is None:
+                continue
             incoming = [w.src for w in graph if w.dst == nid]
             mixed = self._mix_inputs(audio, bufs, incoming)
             d = as_dict(spec)

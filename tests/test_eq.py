@@ -275,3 +275,53 @@ def test_spectrum_polyline_traces_the_reference_curve(plot):
 def test_spectrum_clears_without_a_path(plot):
     plot.set_spectrum(None, None)
     assert plot._spec_path is None
+
+
+# ---- FX graph is processed in dependency order --------------------------
+def _insert(kind, ident, **params):
+    from fantasia_core.document.fx_insert import as_insert
+
+    return as_insert({"id": ident, "type": kind, "params": params})
+
+
+def test_dag_processes_in_topological_order_not_list_order():
+    """A node placed at the head of the signal path but last in the insert
+    list must still be processed first. Walking the list order made every
+    downstream node mix from a buffer that did not exist yet, and the whole
+    graph came out silent."""
+    import numpy as np
+    from types import SimpleNamespace as NS
+
+    from fantasia_core.document.fx_insert import OUT, SOURCE, as_wire
+    from fantasia_core.engine.fx import FxHost
+
+    pb = pytest.importorskip("pedalboard")  # noqa: F841
+
+    # listed out of order on purpose: the gain that feeds everything is last
+    specs = [_insert("lowpass", "fx2", cutoff=8000),
+             _insert("gain", "fx1", gain=0.0)]
+    wires = [as_wire(w) for w in ({"src": SOURCE, "dst": "fx1"},
+                                  {"src": "fx1", "dst": "fx2"},
+                                  {"src": "fx2", "dst": OUT})]
+    track = NS(id="t1", fx=specs, fx_wires=wires)
+    audio = (np.random.rand(2048, 2).astype(np.float32) - 0.5) * 0.4
+    out = FxHost().process(track, audio, 44100)
+    assert np.abs(out).max() > 1e-4, "graph produced silence"
+    assert np.isfinite(out).all()
+
+
+def test_dag_still_correct_when_the_list_order_already_matches():
+    import numpy as np
+    from types import SimpleNamespace as NS
+
+    from fantasia_core.document.fx_insert import OUT, SOURCE, as_wire
+    from fantasia_core.engine.fx import FxHost
+
+    pytest.importorskip("pedalboard")
+    specs = [_insert("gain", "fx1", gain=0.0), _insert("lowpass", "fx2", cutoff=8000)]
+    wires = [as_wire(w) for w in ({"src": SOURCE, "dst": "fx1"},
+                                  {"src": "fx1", "dst": "fx2"},
+                                  {"src": "fx2", "dst": OUT})]
+    audio = (np.random.rand(2048, 2).astype(np.float32) - 0.5) * 0.4
+    out = FxHost().process(NS(id="t2", fx=specs, fx_wires=wires), audio, 44100)
+    assert np.abs(out).max() > 1e-4
