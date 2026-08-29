@@ -58,10 +58,12 @@ class PluginRenderer:
         try:
             from fantasia_core import plugins as plg
 
-            inst = plg.load(plugin, owner=owner or None)
-            if state and self._states.get((plugin, owner)) != state:
+            inst, slot = plg.instance_for(plugin, owner or None)
+            # Memoised against the slot, not the track: the shared instance
+            # holds one patch at a time, so what matters is what is in it now.
+            if state and self._states.get((plugin, slot)) != state:
                 plg.restore_preset(inst, base64.b64decode(state))
-                self._states[(plugin, owner)] = state
+                self._states[(plugin, slot)] = state
             audio = plg.render_notes(inst, clip.notes, clip.duration, self.sr,
                                      tail=self.tail)
             if len(audio):
@@ -100,6 +102,10 @@ class PluginRenderer:
         for clip, plugin, state, owner in self.pending(project):
             self.render(clip, plugin, state, owner)
 
+    def forget_patches(self) -> None:
+        """Forget which patch each instance holds, without dropping audio."""
+        self._states.clear()
+
     def invalidate(self, plugin: Optional[str] = None,
                    owner: Optional[str] = None) -> None:
         """Drop cached audio. Narrow it with ``owner`` when one track changed.
@@ -117,6 +123,37 @@ class PluginRenderer:
                       if (plugin is None or k[0] == plugin)
                       and (owner is None or k[1] == owner)]:
                 del store[k]
+
+
+def reset(renderer: "PluginRenderer") -> int:
+    """Drop every track-owned instance. Call when a different song is loaded.
+
+    Track ids restart at ``t1`` in every project, so song B's ``t3`` collides
+    with song A's ``t3``. Reusing the instance mostly self-corrects, because a
+    differing saved patch is restored before the render — but a track whose
+    patch has not been saved yet restores nothing and would inherit the sound of
+    an unrelated track from the previous song.
+    """
+    from fantasia_core import plugins as plg
+
+    owned = list(plg.owners())
+    for owner in owned:
+        renderer.invalidate(owner=owner)
+    # The shared instance survives, but whatever patch is in it belongs to the
+    # old song — forget it so the next render loads the right one.
+    renderer.forget_patches()
+    return plg.prune(set())
+
+
+def prune(project, renderer: "PluginRenderer") -> int:  # noqa: ANN001
+    """Drop instances and cached audio for tracks that no longer exist."""
+    from fantasia_core import plugins as plg
+
+    keep = {t.id for t in getattr(project, "tracks", [])}
+    for owner in list(plg.owners()):
+        if owner not in keep:
+            renderer.invalidate(owner=owner)
+    return plg.prune(keep)
 
 
 def capture_state(plugin_name: str, owner: Optional[str] = None) -> str:

@@ -166,6 +166,50 @@ def unload(path_or_name: Optional[str] = None, owner: Optional[str] = None) -> N
         del _LOADED[k]
 
 
+# The one instance every track renders through, with its patch swapped in.
+# Not a track id, so it never collides with one and prune() keeps it.
+RENDER_OWNER = "\0render"
+
+
+def instance_for(path_or_name: str, owner: Optional[str] = None):
+    """The instance a render should go through, and the slot it occupies.
+
+    A track whose editor is open owns a dedicated instance the user may be
+    turning knobs on; render through that one so what is heard matches what is
+    shown. Everything else renders through one shared instance with the track's
+    patch swapped in first.
+
+    Swapping costs 6-38ms against a ~210ms render, and the render queue is
+    grouped by track, so a song swaps once per track rather than once per clip.
+    Holding an instance per track instead costs ~160MB each.
+    """
+    path = resolve(path_or_name)
+    if owner is not None and (path, owner) in _LOADED:
+        return _LOADED[(path, owner)], owner
+    return load(path, owner=RENDER_OWNER), RENDER_OWNER
+
+
+def owners() -> set:
+    """Track ids that currently hold an instance."""
+    return {k[1] for k in _LOADED if k[1] is not None and k[1] != RENDER_OWNER}
+
+
+def prune(keep: set) -> int:
+    """Free instances whose owning track is gone. Returns how many were freed.
+
+    Instances are held here rather than on the Track because the document model
+    is plain serialisable data — it is written to JSON, snapshotted for undo and
+    copied when a track is duplicated, none of which a live plugin handle
+    survives. The lifetime still has to follow the track, so this reconciles the
+    two: ownership by id, swept when the project changes.
+    """
+    dead = [k for k in _LOADED
+            if k[1] is not None and k[1] != RENDER_OWNER and k[1] not in keep]
+    for k in dead:
+        del _LOADED[k]
+    return len(dead)
+
+
 # --- parameters ---------------------------------------------------------
 def _params(plugin) -> Dict[str, object]:
     try:
