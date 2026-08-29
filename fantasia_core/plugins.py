@@ -171,7 +171,30 @@ def unload(path_or_name: Optional[str] = None, owner: Optional[str] = None) -> N
 RENDER_OWNER = "\0render"
 
 
-def instance_for(path_or_name: str, owner: Optional[str] = None):
+def render_slot(index: int = 0) -> str:
+    """The slot a render worker uses. Workers may not share one instance —
+    pedalboard's process call is not re-entrant — so each gets its own."""
+    return RENDER_OWNER if index <= 0 else f"{RENDER_OWNER}-{index}"
+
+
+def preload_slots(path_or_name: str, count: int) -> int:
+    """Load the instances a worker pool will need. MUST run on the main thread.
+
+    pedalboard refuses to construct a plugin from any other thread, so a worker
+    that finds no instance cannot make one: it raises, the render is swallowed,
+    and the track is simply silent with nothing to say why.
+    """
+    made = 0
+    for i in range(max(1, count)):
+        slot = render_slot(i)
+        if (resolve(path_or_name), slot) not in _LOADED:
+            load(path_or_name, owner=slot)
+            made += 1
+    return made
+
+
+def instance_for(path_or_name: str, owner: Optional[str] = None,
+                 slot: Optional[str] = None):
     """The instance a render should go through, and the slot it occupies.
 
     A track whose editor is open owns a dedicated instance the user may be
@@ -186,7 +209,8 @@ def instance_for(path_or_name: str, owner: Optional[str] = None):
     path = resolve(path_or_name)
     if owner is not None and (path, owner) in _LOADED:
         return _LOADED[(path, owner)], owner
-    return load(path, owner=RENDER_OWNER), RENDER_OWNER
+    want = slot or RENDER_OWNER
+    return load(path, owner=want), want
 
 
 def is_resident(path_or_name: str) -> bool:

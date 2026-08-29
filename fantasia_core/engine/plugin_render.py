@@ -27,6 +27,8 @@ class PluginRenderer:
         self.tail = tail
         self._cache: Dict[Tuple, np.ndarray] = {}
         self._states: Dict[tuple, str] = {}
+        self.last_error = ""      # why the most recent render produced silence
+        self.errors = 0
 
     # ---- keys ---------------------------------------------------------
     def _key(self, clip, plugin: str, state: str, owner: str = "") -> Tuple:  # noqa: ANN001
@@ -43,7 +45,8 @@ class PluginRenderer:
 
     # ---- rendering ----------------------------------------------------
     def render(self, clip, plugin: str, state: str = "",
-               owner: str = "", off_main_thread: bool = False) -> np.ndarray:  # noqa: ANN001
+               owner: str = "", off_main_thread: bool = False,
+               slot: Optional[str] = None) -> np.ndarray:  # noqa: ANN001
         """Synthesize on a worker/UI thread and cache. Silence if unavailable.
 
         ``owner`` is the track id: one synth used on several tracks needs an
@@ -58,7 +61,7 @@ class PluginRenderer:
         try:
             from fantasia_core import plugins as plg
 
-            inst, slot = plg.instance_for(plugin, owner or None)
+            inst, slot = plg.instance_for(plugin, owner or None, slot=slot)
             # Memoised against the slot, not the track: the shared instance
             # holds one patch at a time, so what matters is what is in it now.
             if state and self._states.get((plugin, slot)) != state:
@@ -74,8 +77,12 @@ class PluginRenderer:
                 buf = np.zeros((max(frames, take), 2), dtype=np.float32)
                 buf[:take] = audio[:take, :2]
                 buf = buf[:frames] if frames else buf
-        except Exception:  # noqa: BLE001 — a missing plugin must not kill playback
-            pass
+        except Exception as exc:  # noqa: BLE001 — must not kill playback
+            # Returning silence keeps playback alive, but a silent track with
+            # no record of why is indistinguishable from a mixing mistake, and
+            # cost an afternoon once. Keep the reason.
+            self.last_error = f"{getattr(clip, 'name', '?')}: {exc!r}"[:200]
+            self.errors += 1
         self._cache[key] = buf
         return buf
 

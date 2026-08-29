@@ -40,6 +40,7 @@ class RenderService:
         self._lock = threading.Lock()
         self._queued: set = set()          # keys in flight, so a re-queue is free
         self._done = 0
+        self._errors: list = []
         self._submitted = 0
         self._seq = 0                      # tie-break, and keeps tuples comparable
 
@@ -49,9 +50,26 @@ class RenderService:
             return
         self._stop.clear()
         for i in range(self.n_workers):
-            t = threading.Thread(target=self._run, name=f"render-{i}", daemon=True)
+            t = threading.Thread(target=self._run, args=(i,), name=f"render-{i}",
+                                 daemon=True)
             t.start()
             self._threads.append(t)
+
+    def prepare(self, plugins) -> int:
+        """Load each worker's instance. Call from the main thread only.
+
+        Workers cannot construct a plugin themselves, so anything not loaded
+        here fails in the worker and leaves a silent track behind.
+        """
+        from fantasia_core import plugins as plg
+
+        made = 0
+        for name in {p for p in plugins if p}:
+            try:
+                made += plg.preload_slots(name, self.n_workers)
+            except Exception as exc:  # noqa: BLE001
+                self._errors.append(f"preload {name}: {exc!r}"[:200])
+        return made
 
     def stop(self, timeout: float = 2.0) -> None:
         self._stop.set()
@@ -105,7 +123,8 @@ class RenderService:
     def stats(self) -> dict:
         with self._lock:
             return {"workers": self.n_workers, "pending": len(self._queued),
-                    "submitted": self._submitted, "done": self._done}
+                    "submitted": self._submitted, "done": self._done,
+                    "failed": len(self._errors), "errors": self._errors[-5:]}
 
     # ---- internals -------------------------------------------------------
     @staticmethod
@@ -113,7 +132,14 @@ class RenderService:
         clip, plugin, state, owner = row
         return (getattr(clip, "id", id(clip)), plugin, owner)
 
-    def _run(self) -> None:
+    def _run(self, index: int = 0) -> None:
+        slot = None
+        try:
+            from fantasia_core import plugins as plg
+
+            slot = plg.render_slot(index)
+        except Exception:  # noqa: BLE001
+            pass
         while not self._stop.is_set():
             try:
                 _prio, _seq, row = self._q.get(timeout=0.2)
@@ -124,9 +150,14 @@ class RenderService:
                 break
             clip, plugin, state, owner = row
             try:
-                self.renderer.render(clip, plugin, state, owner, off_main_thread=True)
-            except Exception:  # noqa: BLE001 — one bad clip must not kill a worker
-                pass
+                self.renderer.render(clip, plugin, state, owner,
+                                     off_main_thread=True, slot=slot)
+            except Exception as exc:  # noqa: BLE001 — one bad clip must not kill a worker
+                # Recorded rather than swallowed: a worker that silently fails
+                # produces a track that is simply inaudible, with nothing
+                # anywhere to say why.
+                with self._lock:
+                    self._errors.append(f"{getattr(clip, 'name', '?')}: {exc!r}"[:200])
             finally:
                 with self._lock:
                     self._queued.discard(self._key(row))

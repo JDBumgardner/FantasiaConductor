@@ -2808,6 +2808,9 @@ class MainWindow(QMainWindow):
         pending = self.plugin_renderer.pending(project, from_time=self.timeline.playhead)
         if not pending:
             return
+        # Workers cannot construct a plugin; that has to happen here, on the
+        # thread that owns them.
+        svc.prepare({row[1] for row in pending})
         svc.clear()                           # re-prioritise around the playhead
         svc.submit(pending)
         self.statusBar().showMessage(f"Rendering {len(pending)} plugin clip(s)…")
