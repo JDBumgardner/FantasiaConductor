@@ -59,6 +59,7 @@ from fantasia_core.commands import (
     CommandBus,
     ConnectFxCommand,
     DuplicateClipsCommand,
+    JoinMidiClipsCommand,
     MakeMidiClipCommand,
     RemoveClipCommand,
     RemoveFxCommand,
@@ -70,6 +71,7 @@ from fantasia_core.commands import (
     SetTempoCommand,
     SetTrackAttrCommand,
     SetTrackFxCommand,
+    SetTrackSynthCommand,
     SetTrackSynthParamCommand,
     SplitClipCommand,
 )
@@ -81,9 +83,12 @@ from fantasia_core.document import (
     default_drum_pattern,
     default_midi_pattern,
 )
+from fantasia_core.document.fx_insert import copy_insert
+from fantasia_core.document.fx_params import apply_param
 from fantasia_core.document.serialize import load_project, save_project
 from fantasia_core.engine import (
     AudioPool,
+    DEFAULT_PATCH,
     MidiRenderer,
     PlaybackEngine,
     Recorder,
@@ -103,7 +108,9 @@ from ui.search_panel import SearchPanel
 from ui.gm_instruments import DRUM_KITS, gm_name
 from ui.editor_dock import EditorDock
 from ui.hotkeys import HotkeysDialog
+from ui.metrics import RULER_H, TRACK_H
 from ui.timeline_view import TimelineView
+from ui.numeric_popup import solo_selection_states
 from ui.track_header import TrackHeader, TrackHeaderPanel
 from ui.transport_bar import TransportBar
 
@@ -127,9 +134,10 @@ QMenuBar {{ background: {theme.BG_PANEL}; color: {theme.FG}; border-bottom: 1px 
 QMenuBar::item {{ background: transparent; padding: 5px 10px; }}
 QMenuBar::item:selected {{ background: {theme.BG_HOVER}; color: {theme.FG_BRIGHT}; }}
 
-QWidget#trackHeader {{ background: {theme.BG_PANEL}; border-bottom: 1px solid {theme.BORDER_SOFT}; }}
-QWidget#trackHeader[selected="true"] {{ background: {theme.BG_SELECTED};
-    border-left: 3px solid {theme.ACCENT}; }}
+QWidget#trackHeader {{ background: {theme.BG_PANEL}; border-bottom: 1px solid {theme.LANE_DIVIDER_CSS};
+    border-left: 3px solid transparent; }}
+QWidget#trackHeader[selected="true"] {{ background: {theme.HEADER_SELECTED};
+    border-left: 3px solid {theme.HEADER_SELECTED_EDGE}; }}
 QLineEdit {{ background: transparent; color: {theme.FG_BRIGHT}; font-weight: 600; }}
 QLabel {{ color: {theme.FG}; }}
 QPushButton {{ background: {theme.BG_ELEVATED}; color: {theme.FG}; border: 1px solid {theme.BORDER};
@@ -163,6 +171,13 @@ QTextEdit, QListWidget {{ background: {theme.TIMELINE_BG}; color: {theme.FG};
     selection-color: #12030c; }}
 QListWidget::item:selected {{ background: {theme.BG_SELECTED}; color: {theme.FG_BRIGHT}; }}
 QListWidget::item:alternate {{ background: {theme.BG_PANEL}; }}
+
+QTreeWidget {{ background: {theme.BG_DEEP}; color: {theme.FG_BRIGHT};
+    alternate-background-color: {theme.BG_ELEVATED};
+    border: 1px solid {theme.BORDER}; }}
+QTreeWidget::item {{ color: {theme.FG_BRIGHT}; }}
+QTreeWidget::item:alternate {{ background: {theme.BG_ELEVATED}; color: {theme.FG_BRIGHT}; }}
+QTreeWidget::item:selected {{ background: {theme.BUTTON_CHECKED}; color: {theme.BUTTON_CHECKED_FG}; }}
 
 QComboBox, QSpinBox, QDoubleSpinBox {{ background: {theme.BG_ELEVATED}; color: {theme.FG};
     border: 1px solid {theme.BORDER}; border-radius: 4px; padding: 2px 6px; }}
@@ -476,6 +491,16 @@ class _ExportDialog(QDialog):
 
 
 _CONTINUOUS_ATTRS = {"gain_db", "pan"}
+
+
+def export_default_filename(saved_path: Optional[str], project_name: str, ext: str) -> str:
+    """Suggested mix filename: saved project stem, else the project name."""
+    if saved_path:
+        stem = os.path.splitext(os.path.basename(saved_path))[0].strip()
+        if stem:
+            return f"{stem}.{ext}"
+    name = (project_name or "mix").strip() or "mix"
+    return f"{name}.{ext}"
 
 
 class _TranscribeWorker(QThread):
@@ -1758,7 +1783,9 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(_STYLESHEET)
 
         self.project = Project(name="Untitled")
-        self.project.add_track("Track 1")  # one-time setup (not undoable)
+        track = self.project.add_track("Track 1")  # one-time setup (not undoable)
+        track.is_synth = True
+        track.synth = dict(DEFAULT_PATCH)
         self.bus = CommandBus(self.project)
         self.pool = AudioPool(self.project.sample_rate)
         self.midi = MidiRenderer(default_soundfont(), self.project.sample_rate)
@@ -1811,7 +1838,10 @@ class MainWindow(QMainWindow):
             port=int(os.environ.get("FANTASIA_BRIDGE_PORT", DEFAULT_PORT)))
         self._bridge_ok = self.bridge.start()  # False if another instance owns the port
 
-        self.selected_track_id: Optional[str] = self.project.tracks[0].id
+        self._multi_selecting = False
+        self.selected_track_ids: list[str] = []
+        self._selected_track_id: Optional[str] = None
+        self.selected_track_id = self.project.tracks[0].id
         self._current_path: Optional[str] = None
         self._project_label = "Untitled"
         self._dirty = False
@@ -1821,11 +1851,17 @@ class MainWindow(QMainWindow):
         self._note_clipboard: list = []
         self._syncing = False
         self._eq_writing = False
+        self._lane_menu_time: Optional[float] = None
 
         self.render_progress.connect(self._on_render_progress_ui)
         self._play_timer = QTimer(self)
         self._play_timer.setInterval(30)  # ~33 fps playhead updates
         self._play_timer.timeout.connect(self._on_tick)
+        self._note_warm_timer = QTimer(self)
+        self._note_warm_timer.setSingleShot(True)
+        self._note_warm_timer.setInterval(90)
+        self._note_warm_timer.timeout.connect(self._flush_note_warm)
+        self._pending_note_clip_id: Optional[str] = None
 
         self._build_central()
         self._build_actions()
@@ -1837,6 +1873,7 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self._target_label)
 
         self._rebuild_all()
+        self._sync_tempo_display()
         self._refresh_history_actions()
         self.statusBar().showMessage("Ready — M3 (audio). File ▸ Load Demo Arrangement to test.")
         if not self.midi.available():
@@ -1959,13 +1996,20 @@ class MainWindow(QMainWindow):
         edit_menu.addSeparator()
         self.act_add_track = QAction("Add &Track", self, shortcut="Ctrl+T")
         self.act_add_clip = QAction("Add &Clip", self, shortcut="Ctrl+K")
+        self.act_add_midi_clip = QAction("Add MIDI Clip", self, shortcut="Shift+M")
+        self.act_add_midi_clip.setToolTip(
+            "MIDI clip on the selected timeline interval, or 4 bars at the playhead")
         self.act_split = QAction("Split at &Playhead", self, shortcut="Ctrl+E")
+        self.act_join_midi = QAction("&Join MIDI Clips", self, shortcut="Ctrl+J")
+        self.act_join_midi.setToolTip(
+            "Join selected MIDI clips on the same track, spanning any gaps")
         self.act_delete = QAction("&Delete", self, shortcut=QKeySequence.Delete)
         self.act_duplicate = QAction("D&uplicate Clips", self, shortcut="Ctrl+D")
         self.act_duplicate.setToolTip("Duplicate selected clips right after the selection")
         self.act_rename_track = QAction("Rename &Track", self, shortcut="F2")
         edit_menu.addActions(
-            [self.act_add_track, self.act_add_clip, self.act_split,
+            [self.act_add_track, self.act_add_clip, self.act_add_midi_clip,
+             self.act_split, self.act_join_midi,
              self.act_duplicate, self.act_rename_track, self.act_delete]
         )
 
@@ -2030,6 +2074,9 @@ class MainWindow(QMainWindow):
         self.act_toggle_editor = QAction("Toggle &Editor", self)
         self.act_toggle_editor.setShortcut(QKeySequence("Shift+E"))
         self.act_toggle_editor.setShortcutContext(Qt.ApplicationShortcut)
+        self.act_add_midi_clip.setShortcutContext(Qt.ApplicationShortcut)
+        self.act_join_midi.setShortcutContext(Qt.ApplicationShortcut)
+        self.act_split.setShortcutContext(Qt.ApplicationShortcut)
         self.act_toggle_editor.setToolTip(
             "Cycle the bottom panel: Piano Roll → Signal Chain → Graph → Off (Shift+E)")
         view_menu.addAction(self.act_toggle_editor)
@@ -2038,9 +2085,11 @@ class MainWindow(QMainWindow):
         view_menu.addActions([self.act_focus_agent, self.act_focus_search])
         self._build_grid_actions()
         self.menu_grid = view_menu.addMenu("&Grid")
-        self._fill_grid_menu(self.menu_grid)
+        self.menu_grid.aboutToShow.connect(
+            lambda: self._populate_grid_menu(self.menu_grid))
         self.grid_context_menu = QMenu("Grid", self)
-        self._fill_grid_menu(self.grid_context_menu)
+        self.grid_context_menu.aboutToShow.connect(
+            lambda: self._populate_grid_menu(self.grid_context_menu, include_midi=True))
         view_menu.addSeparator()
         self.act_hotkeys = QAction("&Hotkeys…", self, shortcut="F1")
         view_menu.addAction(self.act_hotkeys)
@@ -2056,7 +2105,8 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addActions([self.act_zoom_in, self.act_zoom_out])
         self.menu_grid_toolbar = QMenu("Grid", self)
-        self._fill_grid_menu(self.menu_grid_toolbar)
+        self.menu_grid_toolbar.aboutToShow.connect(
+            lambda: self._populate_grid_menu(self.menu_grid_toolbar))
         grid_btn = QToolButton()
         grid_btn.setText("Grid")
         grid_btn.setToolTip("Arrangement grid + snap interval")
@@ -2087,6 +2137,7 @@ class MainWindow(QMainWindow):
         self.act_add_clip.triggered.connect(self._on_add_clip)
         self.act_delete.triggered.connect(self._on_delete)
         self.act_duplicate.triggered.connect(self._on_duplicate_clips)
+        self.act_join_midi.triggered.connect(self._on_join_midi_clips)
         self.act_rename_track.triggered.connect(self._on_rename_track)
         self.act_loop.triggered.connect(self._on_loop_hotkey)
         self.act_play.triggered.connect(self._toggle_play)
@@ -2101,6 +2152,7 @@ class MainWindow(QMainWindow):
         self.act_focus_agent.triggered.connect(self._on_focus_agent)
         self.act_focus_search.triggered.connect(self._on_focus_search)
         self.act_hotkeys.triggered.connect(self._on_hotkeys)
+        self.act_add_midi_clip.triggered.connect(self._on_add_midi_clip)
 
         self.transport.play_requested.connect(self._toggle_play)
         self.transport.stop_requested.connect(self._on_stop)
@@ -2108,7 +2160,7 @@ class MainWindow(QMainWindow):
         self.transport.metronome_toggled.connect(self._on_metronome_toggled)
         self.transport.tempo_changed.connect(self._on_tempo_changed)
         self.timeline.grid_menu_requested.connect(self._on_grid_menu)
-        self.timeline.solo_requested.connect(lambda: self._toggle_selected_tracks("solo"))
+        self.timeline.solo_requested.connect(self._apply_solo_selection)
         self.timeline.mute_requested.connect(lambda: self._toggle_selected_tracks("mute"))
 
         self.header_panel.header_clicked.connect(self._on_track_selected)
@@ -2119,9 +2171,7 @@ class MainWindow(QMainWindow):
         self.header_panel.mute_toggled.connect(
             lambda tid, on: self._dispatch_attr(tid, "mute", on)
         )
-        self.header_panel.solo_toggled.connect(
-            lambda tid, on: self._dispatch_attr(tid, "solo", on)
-        )
+        self.header_panel.solo_toggled.connect(self._on_solo_clicked)
         self.header_panel.gain_changed.connect(
             lambda tid, v: self._dispatch_attr(tid, "gain_db", v)
         )
@@ -2164,6 +2214,7 @@ class MainWindow(QMainWindow):
         self.editor.graph.connect_requested.connect(self._on_fx_connect)
         self.editor.graph.disconnect_requested.connect(self._on_fx_disconnect)
         self.editor.graph.device_activated.connect(self._on_device_activated)
+        self.editor.graph.param_changed.connect(self._on_graph_param)
         self.timeline.clip_geometry_edited.connect(self._on_clip_geometry)
         self.timeline.import_into_clip_requested.connect(self._on_import_into_clip)
         self.timeline.clip_action_requested.connect(self._on_clip_action)
@@ -2200,7 +2251,12 @@ class MainWindow(QMainWindow):
             elif isinstance(cmd, SetTrackFxCommand) and not getattr(self, "_eq_writing", False):
                 self._refresh_eq_curve()
         if self.editor.is_chain_open() or self.editor.is_graph_open():
-            self._refresh_signal_views()
+            if not getattr(self, "_graph_writing", False):
+                self._refresh_signal_views()
+            elif self.editor.is_chain_open():
+                track = (self.project.track_by_id(self.selected_track_id)
+                         if self.selected_track_id else None)
+                self.editor.chain.set_track(track)
 
     # ---- unsaved-changes tracking ---------------------------------------
     def _set_dirty(self, dirty: bool) -> None:
@@ -2242,20 +2298,26 @@ class MainWindow(QMainWindow):
         self._after_history_change()
 
     def _after_history_change(self) -> None:
-        if self.selected_track_id is not None and (
-            self.project.track_by_id(self.selected_track_id) is None
-        ):
-            self.selected_track_id = (
-                self.project.tracks[0].id if self.project.tracks else None
-            )
+        alive = {t.id for t in self.project.tracks}
+        alive.add(MASTER_ID)
+        kept = [tid for tid in self.selected_track_ids if tid in alive]
+        if not kept:
+            kept = [self.project.tracks[0].id] if self.project.tracks else []
+        self._multi_selecting = True
+        try:
+            self.selected_track_ids = kept
+            self._selected_track_id = kept[-1] if kept else None
+        finally:
+            self._multi_selecting = False
         self.pool.preload(self.project)
         self._warm()  # re-cache MIDI after undo/redo of note/convert edits
         self._rebuild_all()
         self._sync_tempo_display()  # undo/redo of a tempo change updates the display
         self._conform_locked_clips()  # reconform tempo-locked clips (no-op if unchanged)
         if self._editing_clip_id is not None:  # keep the piano roll in sync
-            _, clip = self.project.find_clip(self._editing_clip_id)
-            self.piano.reload(clip)
+            track, clip = self.project.find_clip(self._editing_clip_id)
+            if clip is not None:
+                self.piano.reload(clip, color=self._resolved_clip_color(clip, track))
 
     # ---- transport / playback -------------------------------------------
     def _toggle_play(self) -> None:
@@ -2343,6 +2405,7 @@ class MainWindow(QMainWindow):
             self._play_timer.start()
             # Re-queue from the playhead: what is about to sound goes first.
             self._queue_plugin_render(self.project)
+            self.transport.set_playback_state(True, in_tail=False)
             self.statusBar().showMessage(
                 "Playing" if ready else "Playing — some clips are still rendering")
         else:
@@ -2358,6 +2421,10 @@ class MainWindow(QMainWindow):
         self.timeline.playback_active = False
         self.timeline.set_playhead(self.timeline.start_position)
         self.engine.set_playhead_seconds(self.timeline.start_position)
+        self.transport.set_playback_state(False)
+        self.header_panel.reset_meters()
+        if self.master_header is not None:
+            self.master_header.reset_meter()
 
     def _on_go_to_start(self) -> None:
         if self._focus_is_text():
@@ -2407,6 +2474,14 @@ class MainWindow(QMainWindow):
 
     def _on_tick(self) -> None:
         self.timeline.set_playhead(self.engine.playhead)
+        playing = bool(self.engine.is_playing)
+        body = float(self.project.duration)
+        in_tail = playing and body > 0 and self.engine.playhead >= body - 1e-4
+        self.transport.set_playback_state(playing, in_tail=in_tail)
+        peaks = self.engine.level_tap.consume()
+        self.header_panel.set_meters(peaks, playing)
+        if self.master_header is not None:
+            self.master_header.set_meter(float(peaks.get(MASTER_ID, 0.0)), playing)
         # The analyzer runs at a third of the playhead's rate. A spectrum does
         # not need 33fps, and each frame costs a few milliseconds of Qt
         # rasterising two antialiased fills over the whole plot.
@@ -2414,7 +2489,7 @@ class MainWindow(QMainWindow):
         if (self.editor.isVisible() and self.editor.stack.currentIndex() == 2
                 and self._eq_tick % self.EQ_ANALYZER_EVERY == 0):
             self._update_eq_spectrum()
-        if not self.engine.is_playing:  # reached the end on its own
+        if not playing:  # reached the end on its own
             self._play_timer.stop()
             self._return_to_start()
             self.statusBar().showMessage("Stopped")
@@ -2463,20 +2538,18 @@ class MainWindow(QMainWindow):
         self.timeline.setFocus(Qt.OtherFocusReason)
 
     def _playback_start_seconds(self) -> float:
-        """Play from the selected MIDI clip's start; otherwise the locator."""
-        starts: list[float] = []
-        for clip_id in self.timeline.selected_clip_ids():
-            _, clip = self.project.find_clip(clip_id)
-            if clip is not None and clip.is_midi:
-                starts.append(float(clip.start))
-        if starts:
-            return min(starts)
+        """Play from the edited MIDI clip when the piano roll has focus."""
+        if self._piano_has_focus() and self._editing_clip_id:
+            _, clip = self.project.find_clip(self._editing_clip_id)
+            if clip is not None:
+                return float(clip.start)
         return float(self.timeline.start_position)
 
     def _target_track_ids(self) -> list[str]:
         ids: list[str] = []
-        if self.selected_track_id:
-            ids.append(self.selected_track_id)
+        for tid in self.selected_track_ids or ([self.selected_track_id] if self.selected_track_id else []):
+            if tid and tid not in ids:
+                ids.append(tid)
         for clip_id in self.timeline.selected_clip_ids():
             track, _ = self.project.find_clip(clip_id)
             if track is not None and track.id not in ids:
@@ -2484,6 +2557,9 @@ class MainWindow(QMainWindow):
         return ids
 
     def _toggle_selected_tracks(self, attr: str) -> None:
+        if attr == "solo":
+            self._apply_solo_selection()
+            return
         tracks = [self.project.track_by_id(tid) for tid in self._target_track_ids()]
         tracks = [t for t in tracks if t is not None]
         if not tracks:
@@ -2492,6 +2568,22 @@ class MainWindow(QMainWindow):
         for track in tracks:
             if bool(getattr(track, attr)) != turn_on:
                 self._dispatch_attr(track.id, attr, turn_on)
+
+    def _on_solo_clicked(self, track_id: str, _on: bool) -> None:
+        if track_id == MASTER_ID:
+            return
+        if track_id not in self.selected_track_ids:
+            self._set_selected_track(track_id)
+        self._apply_solo_selection()
+
+    def _apply_solo_selection(self) -> None:
+        arrangement = [t.id for t in self.project.tracks]
+        selected = [tid for tid in self._target_track_ids() if tid in arrangement]
+        soloed = {t.id for t in self.project.tracks if t.solo}
+        for tid, on in solo_selection_states(arrangement, selected, soloed).items():
+            track = self.project.track_by_id(tid)
+            if track is not None and bool(track.solo) != bool(on):
+                self._dispatch_attr(tid, "solo", on)
 
     def _focus_is_text(self) -> bool:
         widget = QApplication.focusWidget()
@@ -2504,7 +2596,7 @@ class MainWindow(QMainWindow):
             mods = event.modifiers()
             if not (mods & Qt.ControlModifier):
                 if event.key() == Qt.Key_S:
-                    self._toggle_selected_tracks("solo")
+                    self._apply_solo_selection()
                     event.accept()
                     return
                 if event.key() == Qt.Key_0:
@@ -2569,7 +2661,11 @@ class MainWindow(QMainWindow):
         self.timeline.rebuild()
         self.timeline.select_clips(cmd.created_ids)
         n = len(cmd.created_ids)
-        self.statusBar().showMessage(f"Duplicated {n} clip(s)")
+        if n < len(ids):
+            self.statusBar().showMessage(
+                f"Duplicated {n} clip(s) — skipped MIDI that would overlap")
+        else:
+            self.statusBar().showMessage(f"Duplicated {n} clip(s)")
 
     def _on_metronome_toggled(self, on: bool) -> None:
         self.engine.metronome_enabled = on
@@ -2664,8 +2760,9 @@ class MainWindow(QMainWindow):
                         pass
         self._warm()
         if self._editing_clip_id is not None:
-            _, clip = self.project.find_clip(self._editing_clip_id)
-            self.piano.reload(clip)
+            track, clip = self.project.find_clip(self._editing_clip_id)
+            if clip is not None:
+                self.piano.reload(clip, color=self._resolved_clip_color(clip, track))
         if changed:
             self.pool.preload(self.project)
             self.timeline.rebuild()
@@ -2674,6 +2771,7 @@ class MainWindow(QMainWindow):
         """Reflect the model's tempo in the transport + grid (after load / undo /
         agent edit) without re-triggering a tempo change."""
         self.transport.set_tempo(self.project.tempo)
+        self.transport.set_time_signature(self.project.beats_per_bar)
         self.timeline.viewport().update()
 
     # ---- audio output device --------------------------------------------
@@ -2942,7 +3040,7 @@ class MainWindow(QMainWindow):
         header.clicked.connect(self._on_track_selected)
         header.renamed.connect(lambda tid, name: self._dispatch_attr(tid, "name", name))
         header.mute_toggled.connect(lambda tid, on: self._dispatch_attr(tid, "mute", on))
-        header.solo_toggled.connect(lambda tid, on: self._dispatch_attr(tid, "solo", on))
+        header.solo_toggled.connect(self._on_solo_clicked)
         header.gain_changed.connect(lambda tid, v: self._dispatch_attr(tid, "gain_db", v))
         header.pan_changed.connect(lambda tid, v: self._dispatch_attr(tid, "pan", v))
         header.fx_action.connect(self._on_fx_action)
@@ -3006,7 +3104,8 @@ class MainWindow(QMainWindow):
             self._grid_actions[f"adaptive:{key}"] = act
 
         for name, key in FIXED_OPTIONS:
-            act = QAction(name, self, checkable=True)
+            label = "Grid Off" if key == "off" else name
+            act = QAction(label, self, checkable=True)
             act.setData(f"fixed:{key}" if key != "off" else "off")
             act.triggered.connect(lambda _=False: self._on_grid_action())
             self._grid_group.addAction(act)
@@ -3017,15 +3116,34 @@ class MainWindow(QMainWindow):
         self.act_triplet_grid.setShortcut("Ctrl+3")
         self.act_triplet_grid.toggled.connect(self._on_triplet_toggled)
 
-    def _fill_grid_menu(self, menu: QMenu) -> None:
+    def _populate_grid_menu(self, menu: QMenu, include_midi: bool = False) -> None:
+        """Re-add shared grid actions so each menu that is about to show owns them.
+
+        A QAction can live in only one QMenu at a time; filling View / context /
+        toolbar once at startup would steal items (including Grid Off) from the
+        others.
+        """
+        menu.clear()
+        if include_midi:
+            midi = menu.addAction("Add MIDI Clip")
+            midi.triggered.connect(self._on_add_midi_clip)
+            menu.addSeparator()
         menu.addSection("Adaptive Grid")
         for _name, key, _px in ADAPTIVE_LEVELS:
             menu.addAction(self._grid_actions[f"adaptive:{key}"])
         menu.addSection("Fixed Grid")
         for _name, key in FIXED_OPTIONS:
-            menu.addAction(self._grid_actions["off" if key == "off" else f"fixed:{key}"])
+            if key == "off":
+                continue
+            menu.addAction(self._grid_actions[f"fixed:{key}"])
+        menu.addSeparator()
+        menu.addSection("Grid Off")
+        menu.addAction(self._grid_actions["off"])
         menu.addSeparator()
         menu.addAction(self.act_triplet_grid)
+
+    def _fill_grid_menu(self, menu: QMenu) -> None:
+        self._populate_grid_menu(menu)
 
     def _on_grid_action(self) -> None:
         act = self._grid_group.checkedAction()
@@ -3051,7 +3169,103 @@ class MainWindow(QMainWindow):
             self.timeline.viewport().update()
 
     def _on_grid_menu(self, global_pos) -> None:  # noqa: ANN001
+        view_pt = self.timeline.mapFromGlobal(global_pos)
+        scene = self.timeline.mapToScene(view_pt)
+        self._lane_menu_time = max(0.0, self.timeline.snap(scene.x() / self.timeline.pps))
+        row = int((scene.y() - RULER_H) // TRACK_H)
+        if 0 <= row < len(self.project.tracks):
+            self._set_selected_track(self.project.tracks[row].id)
         self.grid_context_menu.exec(global_pos)
+
+    def _on_add_midi_clip(self) -> None:
+        placed = self._place_midi_clip()
+        if placed is None:
+            return
+        self.timeline.rebuild()
+        self.timeline.select_clips([placed.id])
+        self.timeline.clear_range_select()
+        self.statusBar().showMessage(f"Added MIDI clip ({placed.duration:.2f}s)")
+
+    def _midi_clip_placement(self) -> Optional[tuple[str, float, float]]:
+        """``(track_id, start, duration)`` from the lane interval, else playhead."""
+        span = self.timeline.range_span()
+        if span is not None:
+            return span
+        tid = self.selected_track_id
+        if tid is None or tid == MASTER_ID:
+            if not self.project.tracks:
+                return None
+            tid = self.project.tracks[0].id
+            self.selected_track_id = tid
+        start = self._lane_menu_time
+        if start is None:
+            start = float(self.timeline.playhead)
+        duration = self.project.seconds_per_beat() * self.project.beats_per_bar * 4
+        return tid, start, duration
+
+    def _place_midi_clip(self, notes: Optional[list] = None, name: str = "MIDI"):
+        """Create a MIDI clip at the current interval/playhead. Returns the clip or None."""
+        place = self._midi_clip_placement()
+        if place is None:
+            if not self.project.tracks:
+                cmd = self.bus.dispatch(AddTrackCommand())
+                self.selected_track_id = cmd.created_track.id
+                self._rebuild_all()
+                place = self._midi_clip_placement()
+            if place is None:
+                self.statusBar().showMessage("Select a track to add a MIDI clip")
+                return None
+        tid, start, duration = place
+        track = self.project.track_by_id(tid)
+        if track is None:
+            return None
+        if track.midi_overlaps(start, duration):
+            self.statusBar().showMessage(
+                "MIDI clips on a track cannot overlap — clear the interval or pick a gap")
+            return None
+        kwargs = {"content_type": "midi"}
+        if notes:
+            kwargs["notes"] = notes
+        cmd = self.bus.dispatch(AddClipCommand(tid, start, duration, name=name, **kwargs))
+        self._lane_menu_time = None
+        if cmd.created_clip is None:
+            self.statusBar().showMessage("Couldn't add MIDI clip")
+            return None
+        self._set_selected_track(tid)
+        return cmd.created_clip
+
+    def _on_join_midi_clips(self) -> None:
+        ids = self.timeline.selected_clip_ids()
+        midi = []
+        for cid in ids:
+            track, clip = self.project.find_clip(cid)
+            if clip is not None and clip.is_midi:
+                midi.append((track, clip))
+        if len(midi) < 2:
+            self.statusBar().showMessage("Select two or more MIDI clips on the same track to join")
+            return
+        if len({t.id for t, _ in midi}) != 1:
+            self.statusBar().showMessage("Join requires all selected MIDI clips to be on the same track")
+            return
+        cmd = self.bus.dispatch(JoinMidiClipsCommand([c.id for _, c in midi]))
+        if cmd.created_clip is None:
+            self.statusBar().showMessage(
+                "Can't join — an unselected MIDI clip sits in the gap, or the clips aren't on one track")
+            return
+        # Only the new spanning clip is uncached. A full _warm() would
+        # resynthesize every MIDI clip in the project on the UI thread.
+        track = midi[0][0]
+        joined = cmd.created_clip
+        if getattr(track, "plugin", ""):
+            self._warm()
+        elif getattr(track, "is_synth", False):
+            self.synth_engine.render(joined, getattr(track, "synth", None) or {})
+        else:
+            self.midi.render(joined, track.instrument, getattr(track, "is_drum", False))
+        self.timeline.rebuild()
+        self.timeline.select_clips([cmd.created_clip.id])
+        self.statusBar().showMessage(
+            f"Joined {len(midi)} MIDI clips ({cmd.created_clip.duration:.2f}s)")
 
     def _dispatch_attr(self, track_id: str, attr: str, value) -> None:
         self.bus.dispatch(
@@ -3110,6 +3324,7 @@ class MainWindow(QMainWindow):
         self.piano.edit_clip(
             clip, self.project.seconds_per_beat(), self.project.beats_per_bar,
             drum_mode=getattr(track, "is_drum", False), clip_bar=clip_bar,
+            color=self._resolved_clip_color(clip, track),
         )
         self._update_piano_waveform(clip_id)
         if reveal:
@@ -3134,6 +3349,7 @@ class MainWindow(QMainWindow):
             self.piano.view.set_waveform(buf, self.project.sample_rate)
         except Exception:  # noqa: BLE001
             self.piano.view.set_waveform(None, self.project.sample_rate)
+
     def _on_pr_need_clip(self) -> None:
         """Piano roll was used with no clip bound — create or convert one."""
         clip = self._ensure_midi_clip()
@@ -3163,9 +3379,20 @@ class MainWindow(QMainWindow):
             if clip is not None and clip.is_midi:
                 return clip
             if clip is not None and not clip.source_path:
-                self.bus.dispatch(MakeMidiClipCommand(clip.id, []))
+                track, _ = self.project.find_clip(clip.id)
+                if track is None or not track.midi_overlaps(
+                    clip.start, clip.duration, exclude_id=clip.id
+                ):
+                    self.bus.dispatch(MakeMidiClipCommand(clip.id, []))
+                    self.timeline.rebuild()
+                    return clip
+        span = self.timeline.range_span()
+        if span is not None:
+            created = self._place_midi_clip()
+            if created is not None:
                 self.timeline.rebuild()
-                return clip
+                self.timeline.clear_range_select()
+            return created
         tid = self.selected_track_id
         if tid is None:
             if not self.project.tracks:
@@ -3182,24 +3409,43 @@ class MainWindow(QMainWindow):
         playhead = float(self.timeline.playhead)
         for clip in track.clips:
             if clip.start <= playhead < clip.end and (clip.is_midi or not clip.source_path):
-                if not clip.is_midi:
-                    self.bus.dispatch(MakeMidiClipCommand(clip.id, []))
-                    self.timeline.rebuild()
+                if clip.is_midi:
+                    return clip
+                if track.midi_overlaps(clip.start, clip.duration, exclude_id=clip.id):
+                    continue
+                self.bus.dispatch(MakeMidiClipCommand(clip.id, []))
+                self.timeline.rebuild()
                 return clip
         start = max(0.0, playhead)
         duration = self.project.seconds_per_beat() * self.project.beats_per_bar * 4
+        if track.midi_overlaps(start, duration):
+            self.statusBar().showMessage("MIDI clips on a track cannot overlap")
+            return None
         cmd = self.bus.dispatch(AddClipCommand(
             tid, start, duration, name="MIDI", content_type="midi"))
         self.timeline.rebuild()
         return cmd.created_clip
 
-    def _on_notes_changed(self, clip_id: str, notes: list) -> None:
-        self.bus.dispatch(SetClipNotesCommand(clip_id, notes))
-        self._warm()  # re-render this clip via whichever engine the track uses
+    def _on_notes_changed(self, clip_id: str, notes: list, coalesce: bool = False) -> None:
+        self.bus.dispatch(SetClipNotesCommand(clip_id, notes, mergeable=bool(coalesce)))
         _, clip = self.project.find_clip(clip_id)
         self.timeline.viewport().update()  # refresh the timeline note preview
         self.piano.refresh_title(clip)
-        self._update_piano_waveform(clip_id)  # keep the overlay in sync with edits
+        # Re-render is expensive (FluidSynth / synth / waveform). Coalesced
+        # nudges wait until the key-repeat burst ends so Shift+arrows stay snappy.
+        self._pending_note_clip_id = clip_id
+        if coalesce:
+            self._note_warm_timer.start()
+        else:
+            self._note_warm_timer.stop()
+            self._flush_note_warm()
+
+    def _flush_note_warm(self) -> None:
+        clip_id = self._pending_note_clip_id
+        self._pending_note_clip_id = None
+        self._warm()
+        if clip_id:
+            self._update_piano_waveform(clip_id)
 
     def _preview_pitch(self, pitch: int) -> None:
         """Audition a note on the editing track's instrument (one-shot playback)."""
@@ -3261,8 +3507,8 @@ class MainWindow(QMainWindow):
 
     def _piano_has_focus(self) -> bool:
         fw = QApplication.focusWidget()
-        view = self.piano.view
-        return fw is not None and (fw is view or view.isAncestorOf(fw))
+        panel = self.piano
+        return fw is not None and (fw is panel or panel.isAncestorOf(fw))
 
     def _on_copy_clip(self) -> None:
         if self._try_text_edit("copy"):
@@ -3314,7 +3560,16 @@ class MainWindow(QMainWindow):
                 return
             self.selected_track_id = self.project.tracks[0].id
         start = self.timeline.playhead
+        span = self.timeline.range_span()
+        if span is not None:
+            tid, start, _dur = span
+            self.selected_track_id = tid
         notes = [Note(n.pitch, n.start, n.duration, n.velocity) for n in cb["notes"]]
+        if cb.get("content_type") == "midi":
+            track = self.project.track_by_id(self.selected_track_id)
+            if track is not None and track.midi_overlaps(start, cb["duration"]):
+                self.statusBar().showMessage("MIDI clips on a track cannot overlap")
+                return
         self.bus.dispatch(AddClipCommand(
             self.selected_track_id, start, cb["duration"], name=cb["name"],
             content_type=cb["content_type"], source_path=cb["source_path"],
@@ -3326,6 +3581,7 @@ class MainWindow(QMainWindow):
         self.pool.preload(self.project)
         self._warm()
         self.timeline.rebuild()
+        self.timeline.clear_range_select()
         self.statusBar().showMessage(f"Pasted clip at {start:.2f}s")
 
     def _on_select_all(self) -> None:
@@ -4382,6 +4638,11 @@ class MainWindow(QMainWindow):
         if clip is None:
             return
         if action == "write_midi":
+            if track is not None and track.midi_overlaps(
+                clip.start, clip.duration, exclude_id=clip.id
+            ):
+                self.statusBar().showMessage("MIDI clips on a track cannot overlap")
+                return
             if track is not None and track.is_drum:
                 notes = default_drum_pattern(clip.duration, self.project.seconds_per_beat())
                 msg = "Wrote a drum beat"
@@ -4413,6 +4674,13 @@ class MainWindow(QMainWindow):
             self._stretch_clip_action(clip, action[len("stretch_"):])
         elif action == "tempo_lock":
             self._toggle_tempo_lock(clip)
+        elif action.startswith("color:"):
+            hex_color = action.split(":", 1)[1]
+            self.bus.dispatch(SetClipAttrCommand(clip_id, "color", hex_color))
+            self.timeline.refresh_clip(clip_id)
+            if self._editing_clip_id == clip_id:
+                self.piano.reload(
+                    clip, color=self._resolved_clip_color(clip, track))
         elif action == "split":
             self._split_clip(clip)
         elif action == "reverse":
@@ -4445,19 +4713,39 @@ class MainWindow(QMainWindow):
         # Any clip edit changes how the clip should look — always repaint.
         self.timeline.viewport().update()
 
+    def _resolved_clip_color(self, clip, track=None) -> str:  # noqa: ANN001
+        """Clip override if set, otherwise the parent track colour."""
+        if clip is None:
+            return theme.MAGENTA
+        override = (getattr(clip, "color", "") or "").strip()
+        if override:
+            return override
+        if track is None:
+            track, _ = self.project.find_clip(clip.id)
+        parent = getattr(track, "color", "") or ""
+        return parent or theme.MAGENTA
+
     def _on_split_selected(self) -> None:
-        clip_id = self.timeline.selected_clip_id()
-        if clip_id is None:
+        ids = self.timeline.selected_clip_ids()
+        if not ids:
             self.statusBar().showMessage("Select a clip to split")
             return
-        _, clip = self.project.find_clip(clip_id)
-        if clip is not None:
-            self._split_clip(clip)
+        at = self.timeline.start_position
+        n = 0
+        for cid in ids:
+            _, clip = self.project.find_clip(cid)
+            if clip is not None and clip.start < at < clip.end:
+                self.bus.dispatch(SplitClipCommand(clip.id, at))
+                n += 1
+        if n:
+            self.timeline.rebuild()
+        else:
+            self.statusBar().showMessage("Put the playhead inside the clip to split")
 
     def _split_clip(self, clip) -> None:
-        ph = self.timeline.playhead
-        if clip.start < ph < clip.end:
-            self.bus.dispatch(SplitClipCommand(clip.id, ph))
+        at = self.timeline.start_position
+        if clip.start < at < clip.end:
+            self.bus.dispatch(SplitClipCommand(clip.id, at))
             self.timeline.rebuild()
         else:
             self.statusBar().showMessage("Put the playhead inside the clip to split")
@@ -4513,8 +4801,22 @@ class MainWindow(QMainWindow):
             self._rebuild_all()
             self.statusBar().showMessage(f"Removed {track.name} — Undo (Cmd+Z) to restore")
             return
+        if action.startswith("color:"):
+            hex_color = action.split(":", 1)[1]
+            self.bus.dispatch(SetTrackAttrCommand(track_id, "color", hex_color))
+            self._rebuild_all()
+            if self._editing_clip_id is not None:
+                tr, clip = self.project.find_clip(self._editing_clip_id)
+                if clip is not None:
+                    self.piano.reload(
+                        clip, color=self._resolved_clip_color(clip, tr))
+            self.statusBar().showMessage(f"Color — {track.name}")
+            return
         if action == "toggle_synth":
-            self.bus.dispatch(SetTrackAttrCommand(track_id, "is_synth", not track.is_synth))
+            turning_on = not track.is_synth
+            self.bus.dispatch(SetTrackAttrCommand(track_id, "is_synth", turning_on))
+            if turning_on and not track.synth:
+                self.bus.dispatch(SetTrackSynthCommand(track_id, dict(DEFAULT_PATCH)))
             self._warm()
             state = "on" if track.is_synth else "off"
             self.statusBar().showMessage(f"Synth voice {state} — {track.name}")
@@ -4604,8 +4906,12 @@ class MainWindow(QMainWindow):
             if scope == "stems":
                 self._export_stems(ext, subtype, loudness)
             else:
+                default = export_default_filename(
+                    self._current_path, self.project.name, ext)
+                if self._current_path:
+                    default = os.path.join(os.path.dirname(self._current_path), default)
                 path, _ = QFileDialog.getSaveFileName(
-                    self, "Export Mix", f"{self.project.name or 'mix'}.{ext}",
+                    self, "Export Mix", default,
                     f"{ext.upper()} (*.{ext})")
                 if not path:
                     return
@@ -4647,8 +4953,19 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Exported {count} stems → {folder}")
 
     # ---- selection -------------------------------------------------------
+    @property
+    def selected_track_id(self) -> Optional[str]:
+        return self._selected_track_id
+
+    @selected_track_id.setter
+    def selected_track_id(self, value: Optional[str]) -> None:
+        self._selected_track_id = value
+        if not getattr(self, "_multi_selecting", False):
+            self.selected_track_ids = [value] if value else []
+
     def _on_track_selected(self, track_id: str) -> None:
-        self._set_selected_track(track_id)
+        additive = bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
+        self._set_selected_track(track_id, additive=additive)
         if not self._focus_is_text():
             self.timeline.setFocus(Qt.OtherFocusReason)
 
@@ -4658,43 +4975,78 @@ class MainWindow(QMainWindow):
         follow_piano = self.editor.is_piano_open()
         track, clip = self.project.find_clip(clip_id)
         if track is not None:
+            additive = bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
             self._set_selected_track(
                 track.id,
+                additive=additive,
                 keep_piano=follow_piano and clip is not None and clip.is_midi,
             )
         if follow_piano and clip is not None and clip.is_midi:
             self._open_piano_roll(clip_id, reveal=False)
 
-    def _set_selected_track(self, track_id: Optional[str], *, keep_piano: bool = False) -> None:
-        self.selected_track_id = track_id
+    def _set_selected_track(
+        self, track_id: Optional[str], *, additive: bool = False, keep_piano: bool = False,
+    ) -> None:
+        if additive and track_id and track_id != MASTER_ID:
+            self._multi_selecting = True
+            try:
+                current = [tid for tid in self.selected_track_ids if tid and tid != MASTER_ID]
+                if track_id not in current:
+                    current.append(track_id)
+                self._selected_track_id = track_id
+                self.selected_track_ids = current
+            finally:
+                self._multi_selecting = False
+        else:
+            self.selected_track_id = track_id
         self._apply_selection_highlight(keep_piano=keep_piano)
 
     def _apply_selection_highlight(self, *, keep_piano: bool = False) -> None:
-        self.header_panel.set_selected(self.selected_track_id)
+        ids = list(self.selected_track_ids)
+        self.header_panel.set_selected(ids)
         if self.master_header is not None:
             self.master_header.set_selected(self.selected_track_id == MASTER_ID)
-        self.timeline.set_selected_track(
-            None if self.selected_track_id == MASTER_ID else self.selected_track_id
-        )
+        arrangement = [tid for tid in ids if tid != MASTER_ID]
+        self.timeline.set_selected_tracks(arrangement)
         self._update_target_label()
-        # Switch the editor to Synth mode for a synth track; else flip back to
-        # Piano Roll mode (without forcing the editor open).
         track = (
             self.project.track_by_id(self.selected_track_id)
             if self.selected_track_id
             else None
         )
         self._refresh_eq_curve()
-        if self.editor.is_chain_open() or self.editor.is_graph_open():
-            self._refresh_signal_views()
-        elif self.editor.stack.currentIndex() == 2:
-            pass  # keep the EQ view up while stepping through tracks
-        elif keep_piano:
+        self._refresh_signal_views()
+        if track is not None and getattr(track, "is_synth", False) and not getattr(
+            track, "is_master", False
+        ):
+            self.editor.synth.set_track(track)
+        if not self.editor.is_open():
+            return
+        idx = self.editor.stack.currentIndex()
+        from ui.editor_dock import MODE_CHAIN, MODE_EQ, MODE_GRAPH, MODE_SYNTH
+
+        if idx in (MODE_CHAIN, MODE_GRAPH, MODE_EQ):
+            return
+        if keep_piano:
             self.editor.switch_to_piano_mode()
-        elif track is not None and not getattr(track, "is_master", False) and getattr(track, "is_synth", False):
-            self.editor.show_synth(track, reveal=self.editor.is_open())
-        else:
-            self.editor.switch_to_piano_mode()
+            return
+        if idx == MODE_SYNTH or (
+            track is not None
+            and not getattr(track, "is_master", False)
+            and getattr(track, "is_synth", False)
+        ):
+            if track is not None and getattr(track, "is_synth", False) and not getattr(
+                track, "is_master", False
+            ):
+                self.editor.show_synth(track, reveal=True)
+                return
+        if track is not None and not getattr(track, "is_master", False):
+            midi = next((c for c in track.clips if c.is_midi), None)
+            if midi is not None:
+                self._open_piano_roll(midi.id, reveal=False)
+                return
+            self._editing_clip_id = None
+        self.editor.switch_to_piano_mode()
 
     def _refresh_eq_curve(self) -> None:
         """Keep the EQ plot showing the selected track's filter chain."""
@@ -4813,6 +5165,30 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001 — analyzer must never disturb playback
             return
 
+    def _on_graph_param(self, nid: str, key: str, value) -> None:
+        if not self.selected_track_id:
+            return
+        from fantasia_core.document.fx_insert import SOURCE as FX_IN
+
+        if nid == FX_IN:
+            self.bus.dispatch(SetTrackSynthParamCommand(self.selected_track_id, key, value))
+            self._warm()
+            return
+        track = self.project.track_by_id(self.selected_track_id)
+        if track is None:
+            return
+        fx = [copy_insert(e) for e in track.fx]
+        ins = next((e for e in fx if getattr(e, "id", None) == nid), None)
+        if ins is None:
+            return
+        ins.params = apply_param(ins.params, key, value)
+        self._graph_writing = True
+        try:
+            self.bus.dispatch(SetTrackFxCommand(
+                track.id, fx, label="Set FX param", mergeable=True))
+        finally:
+            self._graph_writing = False
+
     def _on_synth_param(self, track_id: str, key: str, value) -> None:
         self.bus.dispatch(SetTrackSynthParamCommand(track_id, key, value))
         self._warm()  # re-render this synth track's clips
@@ -4824,7 +5200,17 @@ class MainWindow(QMainWindow):
             if self.selected_track_id
             else None
         )
-        self._target_label.setText(f"Target: {track.name}   " if track else "Target: —   ")
+        names = []
+        for tid in self.selected_track_ids:
+            t = self.project.track_by_id(tid)
+            if t is not None:
+                names.append(t.name)
+        if len(names) > 1:
+            self._target_label.setText(f"Target: {', '.join(names)}   ")
+        elif track is not None:
+            self._target_label.setText(f"Target: {track.name}   ")
+        else:
+            self._target_label.setText("Target: —   ")
 
     # ---- import / demo ---------------------------------------------------
     def _on_import(self) -> None:
@@ -4895,20 +5281,28 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("That MIDI file has no notes")
             return
 
-        if self.selected_track_id is None:
+        # Notes come back relative to the file's start; place the clip at the
+        # selected interval (or the playhead) and keep them clip-relative.
+        place = self._midi_clip_placement()
+        if place is None:
             if not self.project.tracks:
                 self.selected_track_id = self.bus.dispatch(AddTrackCommand()).created_track.id
-            else:
-                self.selected_track_id = self.project.tracks[0].id
-        # Notes come back relative to the file's start; place the clip at the
-        # playhead and keep them clip-relative.
-        start = self.timeline.playhead
+            place = self._midi_clip_placement()
+        if place is None:
+            return
+        tid, start, _sel_dur = place
         dur = max(n.start + n.duration for n in notes)
-        cmd = self.bus.dispatch(AddClipCommand(self.selected_track_id, start, dur, name=label))
+        track = self.project.track_by_id(tid)
+        if track is not None and track.midi_overlaps(start, dur):
+            self.statusBar().showMessage("MIDI clips on a track cannot overlap")
+            return
+        cmd = self.bus.dispatch(AddClipCommand(
+            tid, start, dur, name=label, content_type="midi", notes=notes))
         clip = cmd.created_clip
         if clip is None:
+            self.statusBar().showMessage("Couldn't import MIDI (overlap or missing track)")
             return
-        self.bus.dispatch(MakeMidiClipCommand(clip.id, notes))
+        self.timeline.clear_range_select()
         self._warm()
         self.timeline.rebuild()
         self.statusBar().showMessage(

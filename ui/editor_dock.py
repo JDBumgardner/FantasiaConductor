@@ -103,10 +103,10 @@ class EditorDock(QWidget):
         synth_scroll.setFrameShape(QScrollArea.NoFrame)
         synth_scroll.setMinimumHeight(60)
         synth_scroll.setStyleSheet(
-            f"QScrollArea {{ background: {theme.BG_PANEL}; border: none; }}"
-            f"QScrollArea > QWidget {{ background: {theme.BG_PANEL}; }}"
+            f"QScrollArea {{ background: {theme.BG_DEEP}; border: none; }}"
+            f"QScrollArea > QWidget {{ background: {theme.BG_DEEP}; }}"
         )
-        synth_scroll.viewport().setStyleSheet(f"background: {theme.BG_PANEL};")
+        synth_scroll.viewport().setStyleSheet(f"background: {theme.BG_DEEP};")
         self.stack.setStyleSheet(f"QStackedWidget {{ background: {theme.BG_PANEL}; }}")
         self.piano.setMinimumHeight(60)
         self.eq = EqEditor()

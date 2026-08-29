@@ -43,3 +43,19 @@ def test_dialog_lists_menu_and_contextual_keys(qapp):
     assert any(row[1] == "Hotkeys…" and "F1" in row[2] for row in rows)
     # NativeText may render Space as "Space"
     assert any(row[1] == "Play/Pause" for row in rows)
+
+
+def test_hotkeys_tree_uses_readable_contrast(qapp):
+    from PySide6.QtGui import QColor, QPalette
+
+    from ui import theme
+
+    dlg = HotkeysDialog()
+    pal = dlg.tree.palette()
+    # Alternate rows stay on the dark palette, never system grey.
+    assert pal.color(QPalette.AlternateBase).name() == QColor(theme.BG_ELEVATED).name()
+    # Selection is the dusty-pink chip with dark ink (dark-on-light).
+    assert pal.color(QPalette.HighlightedText).name() == QColor(theme.BUTTON_CHECKED_FG).name()
+    sheet = dlg.tree.styleSheet()
+    assert theme.BUTTON_CHECKED_FG in sheet
+    assert "item:alternate" in sheet

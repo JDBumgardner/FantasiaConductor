@@ -123,6 +123,52 @@ def default_soundfont() -> Optional[str]:
     return None
 
 
+# After the last note-off of a cluster, keep synthesising this long so
+# GM releases / soundfont reverb die naturally. Past that, silence is zeros
+# — FluidSynth ``get_samples`` on a multi-bar gap is what froze Join.
+RELEASE_TAIL_SEC = 1.5
+
+
+def midi_render_spans(
+    events: list, total: int, tail: int,
+) -> list[tuple[int, int]]:
+    """Frame ranges ``[start, end)`` that must go through FluidSynth.
+
+    ``events`` are ``(frame, kind, ...)`` with ``kind`` 1 = note-on, 0 = note-off,
+    sorted by frame. Gaps between clusters (plus ``tail``) are omitted.
+    """
+    if total <= 0:
+        return []
+    active = 0
+    cluster_start: Optional[int] = None
+    raw: list[tuple[int, int]] = []
+    for ev in events:
+        frame = int(ev[0])
+        kind = int(ev[1])
+        if kind == 1:
+            if active == 0:
+                cluster_start = max(0, frame)
+            active += 1
+        else:
+            active = max(0, active - 1)
+            if active == 0 and cluster_start is not None:
+                raw.append((cluster_start, min(total, frame + max(0, tail))))
+                cluster_start = None
+    if active > 0 and cluster_start is not None:
+        raw.append((cluster_start, total))
+    if not raw:
+        return []
+    raw.sort()
+    merged = [raw[0]]
+    for start, end in raw[1:]:
+        prev_s, prev_e = merged[-1]
+        if start <= prev_e:
+            merged[-1] = (prev_s, max(prev_e, end))
+        else:
+            merged.append((start, end))
+    return [(s, e) for s, e in merged if e > s]
+
+
 class MidiRenderer:
     def __init__(self, soundfont: Optional[str], sample_rate: int = 44100) -> None:
         # A missing soundfont is a legitimate state — MIDI just renders silent
@@ -231,21 +277,35 @@ class MidiRenderer:
         events.sort(key=lambda x: (x[0], x[1]))
 
         out = np.zeros((total, 2), dtype=np.float32)
-        frame = 0
-        i = 0
-        while frame < total:
-            next_f = min(events[i][0], total) if i < len(events) else total
-            if next_f > frame:
-                nf = next_f - frame
-                seg = np.asarray(fs.get_samples(nf)).reshape(-1, 2).astype(np.float32)
-                m = min(len(seg), total - frame)
-                out[frame : frame + m] = seg[:m] / 32768.0
-                frame = next_f
-            while i < len(events) and events[i][0] <= frame:
-                _, kind, pitch, vel = events[i]
-                if kind == 1:
-                    fs.noteon(0, pitch, vel)
-                else:
-                    fs.noteoff(0, pitch)
-                i += 1
+        spans = midi_render_spans(events, total, int(RELEASE_TAIL_SEC * sr))
+        if not spans:
+            return out
+
+        # Fire note events only inside sounding spans. Gaps stay zeros — no
+        # FluidSynth work — which is why joining clips across empty bars is
+        # now a note copy instead of a multi-second silence render.
+        ev_i = 0
+        for span_start, span_end in spans:
+            while ev_i < len(events) and events[ev_i][0] < span_start:
+                ev_i += 1
+            self._reset()
+            fs.program_select(0, self._sfid, bank, int(instrument))
+            frame = span_start
+            i = ev_i
+            while frame < span_end:
+                next_f = min(events[i][0], span_end) if i < len(events) else span_end
+                if next_f > frame:
+                    nf = next_f - frame
+                    seg = np.asarray(fs.get_samples(nf)).reshape(-1, 2).astype(np.float32)
+                    m = min(len(seg), total - frame)
+                    out[frame : frame + m] = seg[:m] / 32768.0
+                    frame = next_f
+                while i < len(events) and events[i][0] <= frame:
+                    _, kind, pitch, vel = events[i]
+                    if kind == 1:
+                        fs.noteon(0, pitch, vel)
+                    else:
+                        fs.noteoff(0, pitch)
+                    i += 1
+            ev_i = i
         return out

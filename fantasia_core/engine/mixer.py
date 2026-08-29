@@ -172,6 +172,7 @@ def render_block(
     fx_host=None, midi_renderer=None, synth_renderer=None, plugin_renderer=None,
     warp_compute: bool = True,
     spectrum_tap=None, spectrum_track_id=None,
+    level_tap=None,
     apply_master: bool = True,
     stats=None,
 ) -> np.ndarray:  # noqa: ANN001
@@ -196,6 +197,9 @@ def render_block(
         lpan, rpan = _pan_gains(track.pan)
         out[:, 0] += tb[:, 0] * tgain * lpan
         out[:, 1] += tb[:, 1] * tgain * rpan
+        if level_tap is not None and tb.size:
+            peak = max(abs(float(np.max(tb))), abs(float(np.min(tb)))) * abs(tgain)
+            level_tap.write_peak(track.id, peak)
 
     if apply_master:
         master = getattr(project, "master", None)
@@ -212,5 +216,8 @@ def render_block(
                 lpan, rpan = _pan_gains(getattr(master, "pan", 0.0))
                 out[:, 0] *= mgain * lpan
                 out[:, 1] *= mgain * rpan
+            if level_tap is not None and out.size:
+                peak = max(abs(float(np.max(out))), abs(float(np.min(out))))
+                level_tap.write_peak(getattr(master, "id", "master"), peak)
 
     return out

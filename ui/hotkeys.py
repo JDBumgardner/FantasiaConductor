@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, List, Optional, Sequence, Tuple
 
-from PySide6.QtGui import QKeySequence
+from PySide6.QtGui import QColor, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -24,7 +24,12 @@ CONTEXTUAL_HOTKEYS: Sequence[Tuple[str, str, str]] = (
     ("Arrangement", "Mute selected track(s)", "0"),
     ("Arrangement", "Solo selected track(s)", "S"),
     ("Arrangement", "Previous / next track", "Up / Down"),
-    ("Arrangement", "Nudge playhead (when no clip is selected)", "Left / Right"),
+    ("Arrangement", "Nudge locator (when no clip is selected)", "Left / Right"),
+    ("Arrangement", "Drag empty lane to select a time interval", "Click+drag"),
+    ("Arrangement", "Add tracks or clips to the selection", "Shift+click"),
+    ("Arrangement", "Locate to MIDI clip start (click position if already selected)", "Click MIDI clip"),
+    ("Arrangement", "Locator (click) vs playback playhead", "Click timeline"),
+    ("Arrangement", "Type a value into a fader or slider", "Double-click"),
     ("Piano Roll", "Draw mode", "B"),
     ("Piano Roll", "Fold unused pitches", "F"),
     ("Piano Roll", "Zoom time", "+ / −"),
@@ -106,11 +111,29 @@ class HotkeysDialog(QDialog):
         self.tree.setHeaderLabels(["Action", "Keys"])
         self.tree.setRootIsDecorated(True)
         self.tree.setAlternatingRowColors(True)
+        pal = self.tree.palette()
+        pal.setColor(QPalette.Base, QColor(theme.BG_DEEP))
+        pal.setColor(QPalette.AlternateBase, QColor(theme.BG_ELEVATED))
+        pal.setColor(QPalette.Text, QColor(theme.FG_BRIGHT))
+        pal.setColor(QPalette.HighlightedText, QColor(theme.BUTTON_CHECKED_FG))
+        pal.setColor(QPalette.Highlight, QColor(theme.BUTTON_CHECKED))
+        self.tree.setPalette(pal)
+        # Explicit item colours so a light AlternateBase can never leak
+        # system grey + lavender text (unreadable). Selected rows use the
+        # dusty-pink highlight with dark ink — dark-on-light, by design.
         self.tree.setStyleSheet(
-            f"QTreeWidget {{ background:{theme.BG_DEEP}; color:{theme.FG};"
+            f"QTreeWidget {{ background:{theme.BG_DEEP}; color:{theme.FG_BRIGHT};"
+            f" alternate-background-color:{theme.BG_ELEVATED};"
             f" border:1px solid {theme.BORDER}; }}"
             f"QHeaderView::section {{ background:{theme.BG_ELEVATED}; color:{theme.FG_BRIGHT};"
             f" padding:4px 8px; border:none; border-bottom:1px solid {theme.BORDER}; }}"
+            f"QTreeWidget::item {{ color:{theme.FG_BRIGHT}; padding:3px 6px; }}"
+            f"QTreeWidget::item:alternate {{ background:{theme.BG_ELEVATED};"
+            f" color:{theme.FG_BRIGHT}; }}"
+            f"QTreeWidget::item:selected, QTreeWidget::item:alternate:selected {{"
+            f" background:{theme.BUTTON_CHECKED}; color:{theme.BUTTON_CHECKED_FG}; }}"
+            f"QTreeWidget::item:hover:!selected {{ background:{theme.BG_HOVER};"
+            f" color:{theme.FG_BRIGHT}; }}"
         )
         header = self.tree.header()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -131,6 +154,7 @@ class HotkeysDialog(QDialog):
             if group is None:
                 group = QTreeWidgetItem([section, ""])
                 group.setFirstColumnSpanned(True)
+                group.setForeground(0, QColor(theme.CYAN))
                 self.tree.addTopLevelItem(group)
                 groups[section] = group
             QTreeWidgetItem(group, [action, keys])

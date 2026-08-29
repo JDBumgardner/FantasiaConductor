@@ -40,6 +40,7 @@ def clip_to_dict(clip: Clip) -> dict[str, Any]:
         "lock_tempo": clip.lock_tempo,
         "orig_source_path": clip.orig_source_path,
         "lock_base_dur": clip.lock_base_dur,
+        "color": clip.color,
     }
 
 
@@ -111,6 +112,7 @@ def clip_from_dict(data: dict[str, Any]) -> Clip:
         lock_tempo=data.get("lock_tempo"),
         orig_source_path=data.get("orig_source_path"),
         lock_base_dur=float(data.get("lock_base_dur", 0.0)),
+        color=str(data.get("color") or ""),
     )
 
 

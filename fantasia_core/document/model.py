@@ -87,6 +87,7 @@ class Clip:
     lock_tempo: Optional[float] = None       # BPM the original plays at 1×
     orig_source_path: Optional[str] = None   # un-stretched source to re-derive from
     lock_base_dur: float = 0.0               # clip duration at lock time (at lock_tempo)
+    color: str = ""  # clip override; empty → inherit the track colour
 
     @property
     def end(self) -> float:
@@ -99,8 +100,12 @@ class Clip:
 
 @dataclass
 class Track:
-    """A horizontal lane holding non-overlapping clips (overlap allowed for now;
-    the engine mixes whatever is present)."""
+    """A horizontal lane of clips.
+
+    MIDI clips on one track must not overlap (enforced by ``add_clip`` and
+    geometry commands). Audio clips may stack; the engine mixes whatever is
+    present.
+    """
 
     id: str
     name: str
@@ -109,7 +114,7 @@ class Track:
     pan: float = 0.0  # -1.0 (hard left) .. +1.0 (hard right)
     mute: bool = False
     solo: bool = False
-    color: str = "#4a90d9"
+    color: str = "#ff2e97"
     # Ordered insert *nodes*. Topology lives in ``fx_wires``; an empty wire
     # list means the implicit serial graph in → fx[0] → … → out.
     fx: list = field(default_factory=list)
@@ -126,6 +131,84 @@ class Track:
             if clip.id == clip_id:
                 return clip
         return None
+
+    def midi_overlaps(
+        self,
+        start: float,
+        duration: float,
+        exclude_id: Optional[str] = None,
+        exclude_ids: Optional[set] = None,
+    ) -> bool:
+        """True if a MIDI region ``[start, start+duration)`` hits another MIDI clip.
+
+        Adjacent clips that only share a boundary (``end == start``) do not
+        overlap. Audio clips are ignored — they may still stack on a lane.
+        """
+        skip = set(exclude_ids or ())
+        if exclude_id:
+            skip.add(exclude_id)
+        end = float(start) + float(duration)
+        if end <= start:
+            return False
+        for clip in self.clips:
+            if not clip.is_midi or clip.id in skip:
+                continue
+            if start < clip.end - 1e-9 and clip.start < end - 1e-9:
+                return True
+        return False
+
+    def nearest_midi_start(
+        self,
+        start: float,
+        duration: float,
+        exclude_id: Optional[str] = None,
+    ) -> Optional[float]:
+        """Legal MIDI start closest to ``start`` (adjacent if the drop overlaps).
+
+        Returns ``None`` when no gap on this track can hold ``duration``.
+        """
+        start = max(0.0, float(start))
+        duration = float(duration)
+        if duration <= 0:
+            return start
+        if not self.midi_overlaps(start, duration, exclude_id=exclude_id):
+            return start
+        others = [c for c in self.clips if c.is_midi and c.id != exclude_id]
+        overlapping = [
+            c for c in others
+            if start < c.end - 1e-9 and c.start < start + duration - 1e-9
+        ]
+        candidates: list[float] = []
+        for clip in overlapping:
+            left = clip.start - duration
+            if left >= -1e-9:
+                candidates.append(max(0.0, left))
+            candidates.append(max(0.0, clip.end))
+        valid = [
+            s for s in candidates
+            if s >= 0.0 and not self.midi_overlaps(s, duration, exclude_id=exclude_id)
+        ]
+        if not valid:
+            return None
+        return min(valid, key=lambda s: (abs(s - start), s))
+
+    def clamp_midi_duration(
+        self,
+        start: float,
+        duration: float,
+        exclude_id: Optional[str] = None,
+    ) -> float:
+        """Shrink a right-edge resize so it does not overlap later MIDI clips."""
+        start = float(start)
+        duration = max(0.05, float(duration))
+        end = start + duration
+        limit = end
+        for clip in self.clips:
+            if not clip.is_midi or clip.id == exclude_id:
+                continue
+            if clip.start >= start - 1e-9 and start < clip.end and end > clip.start + 1e-9:
+                limit = min(limit, clip.start)
+        return max(0.05, limit - start)
 
     def fx_by_id(self, insert_id: str) -> Optional[FxInsert]:
         for ins in self.fx:
@@ -183,7 +266,10 @@ class Project:
 
     # ---- track/clip operations (thin; Commands wrap these in M2) ---------
     def add_track(self, name: Optional[str] = None) -> Track:
+        from fantasia_core.document.colors import next_track_color
+
         track = Track(id=self.new_id("t"), name=name or f"Track {len(self.tracks) + 1}")
+        track.color = next_track_color([t.color for t in self.tracks])
         self.tracks.append(track)
         return track
 
@@ -235,6 +321,9 @@ class Project:
         track = self.track_by_id(track_id)
         if track is None or getattr(track, "is_master", False):
             return None
+        if str(kwargs.get("content_type") or "audio") == "midi":
+            if track.midi_overlaps(start, duration):
+                return None
         clip = Clip(
             id=self.new_id("c"),
             name=name or "Clip",
@@ -291,8 +380,30 @@ class Project:
                 end = max(end, clip.end)
         return end
 
+    def tail_seconds(self, bars: int = 4) -> float:
+        """Ring-out after the last clip so reverbs/delays can decay."""
+        return float(self.seconds_per_beat() * max(int(self.beats_per_bar), 1) * max(int(bars), 0))
+
+    def playback_end(self) -> float:
+        """Last clip end plus four buffer bars (0.0 if the arrangement is empty)."""
+        body = float(self.duration)
+        if body <= 0.0:
+            return 0.0
+        return body + self.tail_seconds()
+
     def seconds_per_beat(self) -> float:
         return 60.0 / self.tempo if self.tempo > 0 else 0.5
+
+    def bar_beat(self, seconds: float) -> tuple[int, float]:
+        """Song time → ``(bar, beat)``, both 1-based. Beat includes a fraction."""
+        spb = self.seconds_per_beat()
+        bpb = max(int(self.beats_per_bar), 1)
+        if spb <= 0:
+            return 1, 1.0
+        total = max(0.0, float(seconds)) / spb
+        bar = int(total // bpb) + 1
+        beat = (total % bpb) + 1.0
+        return bar, beat
 
 
 # C major scale (semitone offsets from C) for seeding new MIDI clips.

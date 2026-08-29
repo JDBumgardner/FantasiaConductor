@@ -42,6 +42,23 @@ def test_project_duration():
     assert p.duration == 4.5
 
 
+def test_bar_beat_is_one_based():
+    p = Project(tempo=120.0, beats_per_bar=4)
+    assert p.bar_beat(0.0) == (1, 1.0)
+    assert p.bar_beat(0.5) == (1, 2.0)   # one beat at 120 BPM
+    assert p.bar_beat(2.0) == (2, 1.0)   # bar 2
+
+
+def test_playback_end_adds_four_buffer_bars():
+    p = Project(tempo=120.0, beats_per_bar=4)
+    assert p.playback_end() == 0.0
+    t = p.add_track("A")
+    p.add_clip(t.id, 0.0, 2.0, "c")
+    # 4 bars × 4 beats × 0.5s = 8s of tail after the last clip.
+    assert p.tail_seconds() == 8.0
+    assert p.playback_end() == 10.0
+
+
 def test_dict_round_trip():
     p = _sample_project()
     restored = project_from_dict(project_to_dict(p))
@@ -65,6 +82,61 @@ def test_midi_clip_round_trip():
     assert rc.is_midi and len(rc.notes) == len(c.notes)
     assert isinstance(rc.notes[0], Note)
     assert rc.notes[0].pitch == 60 and rc.notes[-1].pitch == 72
+
+
+def test_midi_clips_do_not_overlap_on_add():
+    p = Project()
+    t = p.add_track("Lead")
+    a = p.add_clip(t.id, 0.0, 2.0, "a", content_type="midi")
+    b = p.add_clip(t.id, 1.0, 2.0, "b", content_type="midi")
+    c = p.add_clip(t.id, 2.0, 1.0, "c", content_type="midi")
+    assert a is not None and b is None and c is not None
+    assert t.midi_overlaps(0.5, 0.5) is True
+    assert t.midi_overlaps(2.0, 1.0, exclude_id=c.id) is False
+    assert t.midi_overlaps(3.0, 1.0) is False
+
+
+def test_new_tracks_get_unique_palette_colors():
+    from fantasia_core.document.colors import TRACK_CYCLE
+
+    p = Project()
+    colors = [p.add_track(f"T{i}").color for i in range(len(TRACK_CYCLE))]
+    assert colors == list(TRACK_CYCLE)
+    assert p.add_track("again").color == TRACK_CYCLE[0]
+
+
+def test_midi_clip_color_inherits_until_set():
+    p = Project()
+    t = p.add_track("Lead")
+    c = p.add_clip(t.id, 0.0, 1.0, "m", content_type="midi")
+    assert c is not None and c.color == ""
+    c.color = "#25e6d5"
+    restored = project_from_dict(project_to_dict(p))
+    assert restored.tracks[0].clips[0].color == "#25e6d5"
+
+
+def test_nearest_midi_start_snaps_adjacent_and_respects_origin():
+    p = Project()
+    t = p.add_track("Lead")
+    p.add_clip(t.id, 0.0, 2.0, "a", content_type="midi")
+    p.add_clip(t.id, 5.0, 2.0, "b", content_type="midi")
+    b = t.clips[1]
+    assert t.nearest_midi_start(1.0, 2.0, exclude_id=b.id) == 2.0
+    a = t.clips[0]
+    assert t.nearest_midi_start(4.0, 2.0, exclude_id=a.id) == 3.0
+    # Left of the clip at t=0 is blocked.
+    assert t.nearest_midi_start(0.5, 2.0, exclude_id=b.id) == 2.0
+
+
+def test_fx_params_apply_nested_eq_band():
+    from fantasia_core.document.fx_params import apply_param, read_param, specs_for
+
+    params = apply_param({"bands": [{"freq": 1000.0, "gain": 0.0}]}, "b0.gain", 3.5)
+    assert params["bands"][0]["gain"] == 3.5
+    specs = specs_for("reverb", {})
+    assert any(s.key == "wet" for s in specs)
+    wet = next(s for s in specs if s.key == "wet")
+    assert read_param({"wet": 0.2}, wet) == 0.2
 
 
 def test_file_round_trip(tmp_path):

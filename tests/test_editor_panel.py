@@ -150,3 +150,48 @@ def test_signal_chain_and_graph_follow_the_track(panel):
     dock.show_graph(t)
     assert SOURCE in dock.graph.view._nodes
     assert "Lead" in dock.graph._title.text()
+
+
+def test_graph_nodes_list_stock_params(panel):
+    from PySide6.QtWidgets import QDoubleSpinBox
+
+    from fantasia_core.document import Project
+    from fantasia_core.document.fx_insert import SOURCE
+    from fantasia_core.engine.eq import default_bands
+    from fantasia_core.engine.synth import DEFAULT_PATCH
+
+    dock, _ = panel
+    p = Project()
+    t = p.add_track("Lead")
+    t.is_synth = True
+    t.synth = dict(DEFAULT_PATCH)
+    t.fx = [p.new_insert("reverb", {"wet": 0.4, "dry": 0.6, "room_size": 0.5}),
+            p.new_insert("eq", {"bands": default_bands()})]
+    dock.show_graph(t)
+    src = dock.graph.view._nodes[SOURCE]
+    assert src._panel is not None
+    assert "cutoff" in src._panel._controls
+    rev = dock.graph.view._nodes[t.fx[0].id]
+    assert rev._panel is not None
+    wet = rev._panel._controls["wet"]
+    assert isinstance(wet, QDoubleSpinBox)
+    assert abs(wet.value() - 0.4) < 1e-6
+    eq = dock.graph.view._nodes[t.fx[1].id]
+    assert eq._panel is not None
+    assert "b0.freq" in eq._panel._controls
+    assert "b7.gain" in eq._panel._controls
+
+
+def test_synth_panel_has_three_oscillators(panel):
+    from fantasia_core.commands import AddTrackCommand, CommandBus
+    from fantasia_core.document import Project
+
+    dock, _ = panel
+    t = CommandBus(Project()).dispatch(AddTrackCommand("Lead")).created_track
+    dock.show_synth(t)
+    assert dock.stack.currentIndex() == 1
+    assert dock.synth.osc1 is not None
+    assert dock.synth.osc2 is not None
+    assert dock.synth.osc3 is not None
+    assert "cutoff" in dock.synth._sliders
+    assert dock.synth._name.text() == "Lead"

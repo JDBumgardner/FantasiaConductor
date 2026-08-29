@@ -37,6 +37,8 @@ BG_PANEL = "#14162a"     # panels, headers, docks
 BG_ELEVATED = "#1b1e38"  # inputs, menus, elevated controls
 BG_HOVER = "#262a4d"
 BG_SELECTED = "#2a2f57"
+# Track-header selection: brighter than the panel so the row reads as armed.
+HEADER_SELECTED = "#24366a"
 BORDER = "#2a2e52"
 BORDER_SOFT = "#20233f"
 
@@ -49,10 +51,12 @@ FG_BRIGHT = "#eef1ff"
 MAGENTA = "#ff2e97"
 PINK = "#ff6ac1"
 CYAN = "#25e6d5"
+HEADER_SELECTED_EDGE = CYAN  # luminance + hue; not a red/green pair
 BLUE = "#5a8bff"
 PURPLE = "#b46bff"
 GREEN = "#4ff2a6"
 ORANGE = "#ff9e64"
+NEON_ORANGE = "#ff6a1a"   # live playback / transport liveness
 YELLOW = "#ffd76b"
 RED = "#ff4d6d"
 
@@ -68,6 +72,9 @@ PLAYHEAD = MAGENTA
 
 LANE_EVEN = QColor(0x18, 0x1b, 0x36)
 LANE_ODD = QColor(0x13, 0x15, 0x2c)
+# Hairline between adjacent track lanes / headers.
+LANE_DIVIDER = QColor(0x5a, 0x64, 0xa8)
+LANE_DIVIDER_CSS = "#5a64a8"
 # In-scale piano-roll rows (muted neon green — highlight only, not a fold).
 SCALE_LANE = QColor(0x4f, 0xf2, 0xa6, 38)
 SCALE_KEY = QColor(0x4f, 0xf2, 0xa6, 52)
@@ -95,10 +102,49 @@ NOTE_SELECTED = QColor(0xff, 0xff, 0xff)
 # Dark olive-gray — color-wheel complement of purple, readable on magenta notes.
 NOTE_LABEL = QColor(0x1e, 0x1c, 0x12)
 
-# ---- track colour cycle (neon) ------------------------------------------
-TRACK_CYCLE = [MAGENTA, CYAN, PURPLE, BLUE, GREEN, ORANGE, PINK, YELLOW]
-STEM_COLORS = {"drums": MAGENTA, "bass": GREEN, "vocals": YELLOW, "other": PURPLE}
+# ---- track / clip colour palette ----------------------------------------
+# Tokyo 90s sci-fi neons, spaced on the blue–yellow axis so deuteranopia
+# (red–green) does not collapse neighbouring swatches into each other.
+TRACK_PALETTE = (
+    ("Magenta", MAGENTA),
+    ("Cyan", CYAN),
+    ("Violet", PURPLE),
+    ("Blue", BLUE),
+    ("Gold", YELLOW),
+    ("Orange", ORANGE),
+    ("Pink", PINK),
+    ("Ice", "#a8b4ff"),
+    ("Aqua", "#3ecfff"),
+    ("Coral", "#ff7a8a"),
+)
+TRACK_CYCLE = [hex_ for _name, hex_ in TRACK_PALETTE]
+STEM_COLORS = {"drums": MAGENTA, "bass": ORANGE, "vocals": YELLOW, "other": PURPLE}
 
 
 def track_color(index: int) -> str:
     return TRACK_CYCLE[index % len(TRACK_CYCLE)]
+
+
+def next_track_color(existing: list[str]) -> str:
+    """Least-used palette colour among current tracks (ties keep palette order)."""
+    counts = {c.lower(): 0 for c in TRACK_CYCLE}
+    for raw in existing:
+        key = str(raw or "").lower()
+        if key in counts:
+            counts[key] += 1
+    return min(TRACK_CYCLE, key=lambda c: (counts[c.lower()], TRACK_CYCLE.index(c)))
+
+
+def swatch_icon(hex_color: str, size: int = 12):
+    """A solid square icon for colour menus."""
+    from PySide6.QtGui import QIcon, QPainter, QPixmap
+
+    pm = QPixmap(size, size)
+    pm.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(pm)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setPen(QColor(FG_BRIGHT))
+    painter.setBrush(QColor(hex_color))
+    painter.drawRoundedRect(0, 0, size - 1, size - 1, 2, 2)
+    painter.end()
+    return QIcon(pm)

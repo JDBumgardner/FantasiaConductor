@@ -103,11 +103,11 @@ class NoteItem(QGraphicsRectItem):
 
     def paint(self, painter: QPainter, option, widget=None) -> None:  # noqa: N802
         painter.setRenderHint(QPainter.Antialiasing, True)
-        c = QColor(theme.NOTE_FILL)
+        c = QColor(self._view.note_color)
         c.setAlpha(110 + int(self.note.velocity / 127.0 * 145))
         painter.setBrush(QBrush(c))
         painter.setPen(QPen(theme.NOTE_SELECTED, 1.5) if self.isSelected()
-                       else QPen(theme.NOTE_BORDER, 1))
+                       else QPen(QColor(self._view.note_color).lighter(145), 1))
         r = self.rect()
         painter.drawRoundedRect(r, 2, 2)
         # Label the note so you can read the pitch straight off the block.
@@ -178,7 +178,7 @@ class NoteItem(QGraphicsRectItem):
 
 
 class PianoRollView(QGraphicsView):
-    notes_changed = Signal(str, list)
+    notes_changed = Signal(str, list, bool)  # clip_id, notes, coalesce
     copy_requested = Signal()
     cut_requested = Signal()
     paste_requested = Signal()
@@ -214,6 +214,7 @@ class PianoRollView(QGraphicsView):
         self.spb = 0.5
         self.bpb = 4
         self.drum_mode = False
+        self.note_color = theme.MAGENTA
         self.draw_mode = False
         self.fold = False
         self.scale_name = "Chromatic"
@@ -548,12 +549,14 @@ class PianoRollView(QGraphicsView):
         self._pitch_row = {p: i for i, p in enumerate(self._lane_pitch)}
 
     # ---- binding ---------------------------------------------------------
-    def set_clip(self, clip, spb: float, bpb: int, drum_mode: bool = False) -> None:  # noqa: ANN001
+    def set_clip(self, clip, spb: float, bpb: int, drum_mode: bool = False,
+                 color: str = "") -> None:  # noqa: ANN001
         self.clip_id = clip.id
         self.duration = clip.duration
         self.spb = spb
         self.bpb = bpb
         self.drum_mode = drum_mode
+        self.note_color = color or getattr(clip, "color", "") or theme.MAGENTA
         self._rebuild(clip.notes)
         if not drum_mode:
             avg = int(sum(n.pitch for n in clip.notes) / len(clip.notes)) if clip.notes else 60
@@ -565,6 +568,9 @@ class PianoRollView(QGraphicsView):
         if clip is None or clip.id != self.clip_id:
             return
         self.duration = clip.duration
+        override = getattr(clip, "color", "") or ""
+        if override:
+            self.note_color = override
         selected = {(i.note.pitch, round(i.note.start, 4)) for i in self._items if i.isSelected()}
         self._rebuild(clip.notes)
         for item in self._items:
@@ -635,7 +641,7 @@ class PianoRollView(QGraphicsView):
             if (item.note.pitch, round(item.note.start, 4)) in selected:
                 item.setSelected(True)
 
-    def commit(self) -> None:
+    def commit(self, coalesce: bool = False) -> None:
         if self.clip_id is None:
             return
         if self._pending_unmoved():
@@ -646,7 +652,7 @@ class PianoRollView(QGraphicsView):
             Note(i.note.pitch, i.note.start, i.note.duration, i.note.velocity)
             for i in self._items
         ]
-        self.notes_changed.emit(self.clip_id, notes)
+        self.notes_changed.emit(self.clip_id, notes, coalesce)
         if self.fold:
             self._relayout_lanes()
         self.view_metrics_changed.emit()
@@ -1151,7 +1157,7 @@ class PianoRollView(QGraphicsView):
             midi_ops.transpose_in_scale(sel, steps, pcs, lo, hi)
             for i in self._items:
                 i.refresh()
-            self.commit()
+            self.commit(coalesce=True)
             self.ensure_selection_visible()
             event.accept()
             return
@@ -1166,7 +1172,7 @@ class PianoRollView(QGraphicsView):
                     i.note.start = self.snap_time(i.note.start)
             for i in self.selected_items():
                 i.refresh()
-            self.commit()
+            self.commit(coalesce=True)
             self.ensure_selection_visible()
             event.accept()
             return
@@ -1343,7 +1349,7 @@ class PianoRollView(QGraphicsView):
 
 
 class PianoRollPanel(QWidget):
-    notes_changed = Signal(str, list)
+    notes_changed = Signal(str, list, bool)  # clip_id, notes, coalesce
     copy_requested = Signal()
     cut_requested = Signal()
     paste_requested = Signal()
@@ -1522,13 +1528,15 @@ class PianoRollPanel(QWidget):
                 break
 
     def edit_clip(self, clip, spb: float, bpb: int, drum_mode: bool = False,
-                  clip_bar: int = 1) -> None:  # noqa: ANN001
+                  clip_bar: int = 1, color: str = "") -> None:  # noqa: ANN001
         self.view.clip_bar = clip_bar        # ruler numbers in song bars
-        self.view.set_clip(clip, spb, bpb, drum_mode)
+        self.view.set_clip(clip, spb, bpb, drum_mode, color=color)
         self.refresh_title(clip, drum_mode)
         self.view.setFocus(Qt.OtherFocusReason)
 
-    def reload(self, clip) -> None:  # noqa: ANN001
+    def reload(self, clip, color: str = "") -> None:  # noqa: ANN001
+        if color:
+            self.view.note_color = color
         self.view.reload(clip)
         self.refresh_title(clip, self.view.drum_mode)
 

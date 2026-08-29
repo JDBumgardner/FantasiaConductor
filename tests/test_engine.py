@@ -93,7 +93,7 @@ def test_bounce_matches_length():
     p.add_clip(t2.id, 1.0, 3.0, "c2", source_path=BASS)
     pool.preload(p)
     mix = bounce_to_array(p, pool, 44100)
-    assert mix.shape == (int(p.duration * 44100), 2)  # spans to the last clip end
+    assert mix.shape == (int(p.playback_end() * 44100), 2)  # last clip + 4-bar tail
     assert np.max(np.abs(mix)) > 0.0
 
 
@@ -240,3 +240,20 @@ def test_midi_renderer_still_accepts_no_soundfont():
 
     assert MidiRenderer(None).available() is False
     assert MidiRenderer("/nope/missing.sf2").available() is False
+
+
+def test_midi_render_spans_skip_silent_gaps():
+    """Join-across-a-gap must not synthesise the empty bars."""
+    from fantasia_core.engine.midi_render import midi_render_spans
+
+    # note-on at 0, off at 100; on at 10000, off at 10100; tail 200
+    events = [(0, 1), (100, 0), (10000, 1), (10100, 0)]
+    spans = midi_render_spans(events, 20000, tail=200)
+    assert spans == [(0, 300), (10000, 10300)]
+    assert sum(e - s for s, e in spans) < 1000
+
+
+def test_midi_render_spans_empty_clip():
+    from fantasia_core.engine.midi_render import midi_render_spans
+
+    assert midi_render_spans([], 80000, tail=200) == []

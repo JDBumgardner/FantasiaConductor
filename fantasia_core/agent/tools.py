@@ -65,7 +65,7 @@ def _clean_patch(patch: dict) -> dict:
     """Keep only valid synth params, coercing types."""
     out = {}
     for key, val in (patch or {}).items():
-        if key in ("osc1", "osc2"):
+        if key in ("osc1", "osc2", "osc3"):
             if val in WAVEFORMS:
                 out[key] = val
         elif key in _SYNTH_NUMERIC:
@@ -258,13 +258,13 @@ class AgentTools:
                  "gain": {"type": "number", "description": "dB"},
                  "q": {"type": "number"},
                  "enabled": {"type": "boolean"}}, "required": ["track_id", "band"]}},
-            {"name": "set_synth_param", "description": "Set one synth patch parameter on a synth track (osc1/osc2: sine|saw|square|triangle; mix,sustain,resonance,gain 0-1; detune semitones; attack,decay,release seconds; cutoff,env_amount Hz).",
+            {"name": "set_synth_param", "description": "Set one synth patch parameter on a synth track (osc1/osc2/osc3: sine|saw|square|triangle; mix 0=osc1 only … 1=detuned trio; detune semitones; attack,decay,release seconds; cutoff,env_amount Hz; sustain,resonance,gain 0-1).",
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"}, "key": {"type": "string"}, "value": {}},
                  "required": ["track_id", "key", "value"]}},
             {"name": "get_synth_patch", "description": "Get the full current synth patch of a synth track.",
              "input_schema": {"type": "object", "properties": {"track_id": {"type": "string"}}, "required": ["track_id"]}},
-            {"name": "set_synth_patch", "description": "Design a sound: set the whole synth patch at once (merges with the current patch). Params: osc1/osc2 (sine|saw|square|triangle), mix/sustain/resonance/gain (0-1), detune (semitones), attack/decay/release (seconds), cutoff/env_amount (Hz). Use this to create a sound from a description; add_fx layers reverb/delay/filters on top.",
+            {"name": "set_synth_patch", "description": "Design a sound: set the whole synth patch at once (merges with the current patch). Params: osc1/osc2/osc3 (sine|saw|square|triangle), mix (0=osc1 only, 1=detuned trio), detune (semitones), attack/decay/release (seconds), cutoff/env_amount (Hz), sustain/resonance/gain (0-1). New tracks already use a filtered saw trio; use this to reshape it. add_fx layers reverb/delay/filters on top.",
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"}, "patch": {"type": "object"}}, "required": ["track_id", "patch"]}},
             {"name": "add_clip", "description": "Add an empty clip to a track. Position it MUSICALLY with bar (1-based measure) + bars (length in measures) — preferred — or in seconds with start/duration. Returns its id; fill it with write_midi.",
@@ -619,7 +619,7 @@ class AgentTools:
                                                    name=a.get("name", "Clip")))
             clip = cmd.created_clip
             if not clip:
-                return {"error": "track not found"}
+                return {"error": "could not add clip (missing track or MIDI overlap)"}
             first = int(round(start / bar_len)) + 1 if bar_len else 1
             return {"clip_id": clip.id, "bar": first,
                     "bars": round(dur / bar_len, 3) if bar_len else None}
@@ -647,6 +647,12 @@ class AgentTools:
                                  f"clip (it covers bars {first_bar}-{last_bar}). "
                                  f"Use bar/beat positions inside that range, or make "
                                  f"the clip longer."}
+            if name == "write_midi" and not clip.is_midi:
+                track, _ = p.find_clip(a["clip_id"])
+                if track is not None and track.midi_overlaps(
+                    clip.start, clip.duration, exclude_id=clip.id
+                ):
+                    return {"error": "MIDI clips on a track cannot overlap"}
             cmd = (MakeMidiClipCommand if name == "write_midi" else SetClipNotesCommand)
             self.bus.dispatch(cmd(a["clip_id"], notes))
             return {"ok": True, "num_notes": len(notes)}
@@ -668,7 +674,8 @@ class AgentTools:
                 notes=notes, gain_db=c.gain_db,
                 fade_in=c.fade_in, fade_out=c.fade_out, reversed=c.reversed,
                 pitch_semitones=c.pitch_semitones))
-            return {"clip_id": cmd.created_clip.id} if cmd.created_clip else {"error": "track not found"}
+            return {"clip_id": cmd.created_clip.id} if cmd.created_clip else {
+                "error": "could not add clip (missing track or MIDI overlap)"}
         if name == "duplicate_track":
             src = p.track_by_id(a["track_id"])
             if src is None:
