@@ -157,6 +157,38 @@ class SetTrackFxCommand(Command):
         self.fx_list = other.fx_list
 
 
+class SetTrackFxWiresCommand(Command):
+    """Replace a track's FX *topology* without touching the inserts.
+
+    The inserts are the nodes; this is the edges. An empty list restores the
+    implicit serial graph ``in → fx[0] → … → out``, which is how a chain with
+    no explicit wiring is defined.
+
+    Wires naming a missing insert are dropped rather than rejected, matching
+    ``sanitize_wires``: a graph that outlives one of its nodes should lose the
+    dangling edge, not the whole edit.
+    """
+
+    def __init__(self, track_id: str, wires: list, label: str = "Set FX routing") -> None:
+        self.track_id = track_id
+        self.wires = copy_wires(wires)
+        self._before = _UNSET
+        self.label = label
+
+    def do(self, project) -> None:  # noqa: ANN001
+        track = project.track_by_id(self.track_id)
+        if track is None:
+            return
+        if self._before is _UNSET:
+            self._before = copy_wires(getattr(track, "fx_wires", None))
+        track.fx_wires = sanitize_wires(track.fx, self.wires)
+
+    def undo(self, project) -> None:  # noqa: ANN001
+        track = project.track_by_id(self.track_id)
+        if track is not None and self._before is not _UNSET:
+            track.fx_wires = copy_wires(self._before)
+
+
 def _copy_fx(fx_list) -> list:
     return [copy_insert(e) for e in (fx_list or [])]
 

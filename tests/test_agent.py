@@ -257,3 +257,73 @@ def test_history_cache_marker_moves_to_newest_message():
     # Call 1: marker on the user message (idx 0). Call 2: only on the newest
     # message (the tool_result at idx 2) — exactly one marker per call.
     assert client.marker_snapshots == [[0], [2]]
+
+
+# ---- FX routing ---------------------------------------------------------
+def _fx_track(t):
+    """A track with three inserts, so there is something to wire."""
+    tr = t.bus.dispatch(AddTrackCommand("routing")).created_track
+    ids = [t.execute("add_fx", {"track_id": tr.id, "type": k})["insert_id"]
+           for k in ("reverb", "delay", "chorus")]
+    return tr.id, ids
+
+
+def test_routing_starts_serial_and_reports_its_nodes():
+    t = _tools()
+    tid, ids = _fx_track(t)
+    got = t.execute("get_fx_routing", {"track_id": tid})
+    assert got["serial"] is True
+    assert got["wires"] == []            # empty means the implicit serial chain
+    assert got["nodes"] == ["in", *ids, "out"]
+
+
+def test_parallel_wet_dry_routing_is_not_serial():
+    """The point of the tool: a dry path alongside a wet one."""
+    t = _tools()
+    tid, (rev, _dly, _cho) = _fx_track(t)
+    res = t.execute("set_fx_routing", {"track_id": tid, "wires": [
+        {"src": "in", "dst": rev}, {"src": "in", "dst": "out"},
+        {"src": rev, "dst": "out"}]})
+    assert res["ok"] and res["serial"] is False
+    assert {(w["src"], w["dst"]) for w in res["wires"]} == {
+        ("in", rev), ("in", "out"), (rev, "out")}
+
+
+def test_a_cycle_is_refused_rather_than_stored():
+    t = _tools()
+    tid, (a, b, _c) = _fx_track(t)
+    res = t.execute("set_fx_routing", {"track_id": tid, "wires": [
+        {"src": "in", "dst": a}, {"src": a, "dst": b}, {"src": b, "dst": a}]})
+    assert "error" in res and "cycle" in res["error"]
+    assert t.execute("get_fx_routing", {"track_id": tid})["wires"] == []
+
+
+def test_wires_naming_a_missing_insert_are_dropped_not_rejected():
+    t = _tools()
+    tid, (rev, *_rest) = _fx_track(t)
+    res = t.execute("set_fx_routing", {"track_id": tid, "wires": [
+        {"src": "in", "dst": rev}, {"src": "fx_gone", "dst": "out"},
+        {"src": rev, "dst": "out"}]})
+    assert res["ok"] and res["dropped"] == 1
+    assert len(res["wires"]) == 2
+
+
+def test_empty_wires_restores_the_serial_chain():
+    t = _tools()
+    tid, (rev, *_rest) = _fx_track(t)
+    t.execute("set_fx_routing", {"track_id": tid, "wires": [
+        {"src": "in", "dst": rev}, {"src": "in", "dst": "out"},
+        {"src": rev, "dst": "out"}]})
+    res = t.execute("set_fx_routing", {"track_id": tid, "wires": []})
+    assert res["serial"] is True and res["wires"] == []
+
+
+def test_routing_is_undoable():
+    t = _tools()
+    tid, (rev, *_rest) = _fx_track(t)
+    t.execute("set_fx_routing", {"track_id": tid, "wires": [
+        {"src": "in", "dst": rev}, {"src": "in", "dst": "out"},
+        {"src": rev, "dst": "out"}]})
+    assert t.execute("get_fx_routing", {"track_id": tid})["serial"] is False
+    t.execute("undo", {})
+    assert t.execute("get_fx_routing", {"track_id": tid})["serial"] is True

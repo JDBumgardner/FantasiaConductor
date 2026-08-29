@@ -29,12 +29,23 @@ from fantasia_core.commands import (
     SetTempoCommand,
     SetTrackAttrCommand,
     SetTrackFxCommand,
+    SetTrackFxWiresCommand,
     SetTrackSynthCommand,
     SetTrackSynthParamCommand,
     SplitClipCommand,
 )
 from fantasia_core.document import naming
-from fantasia_core.document.fx_insert import as_dict, as_insert
+from fantasia_core.document.fx_insert import (
+    OUT,
+    SOURCE,
+    as_dict,
+    as_insert,
+    connect_wire,
+    copy_wires as as_wires,
+    insert_id,
+    is_serial,
+    sanitize_wires,
+)
 from fantasia_core.document.model import MASTER_ID, Note
 from fantasia_core.engine import DEFAULT_PATCH, WAVEFORMS
 from fantasia_core.engine.eq import (
@@ -199,6 +210,26 @@ class AgentTools:
                  "track_id": {"type": "string"}, "insert_id": {"type": "string"},
                  "index": {"type": "integer"}},
                  "required": ["track_id", "insert_id", "index"]}},
+            {"name": "get_fx_routing", "description": (
+                "Read a track's FX routing as a list of {src, dst} wires. Node ids are insert ids "
+                "plus the sentinels 'in' (the track's audio/instrument) and 'out' (the fader). "
+                "An empty list means the plain serial chain in -> fx[0] -> ... -> out."),
+             "input_schema": {"type": "object", "properties": {
+                 "track_id": {"type": "string"}}, "required": ["track_id"]}},
+            {"name": "set_fx_routing", "description": (
+                "Replace a track's FX routing so effects can run in parallel instead of in series. "
+                "wires is a list of {src, dst}; ids are insert ids plus 'in' and 'out'. "
+                "Pass [] to go back to the serial chain. Splitting one source to several inserts "
+                "copies the signal; several inserts into one destination mixes them. "
+                "Use this for wet/dry parallel FX — e.g. in->fx1, in->out, fx1->out sends the dry "
+                "signal straight through alongside a reverb, which keeps depth without washing out "
+                "the source. Cycles are rejected; wires naming a missing insert are dropped."),
+             "input_schema": {"type": "object", "properties": {
+                 "track_id": {"type": "string"},
+                 "wires": {"type": "array", "items": {"type": "object", "properties": {
+                     "src": {"type": "string"}, "dst": {"type": "string"}},
+                     "required": ["src", "dst"]}}},
+                 "required": ["track_id", "wires"]}},
             {"name": "remove_fx", "description": "Remove one insert from a track by insert_id.",
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"}, "insert_id": {"type": "string"}},
@@ -490,6 +521,35 @@ class AgentTools:
             self.bus.dispatch(MoveFxCommand(a["track_id"], a["insert_id"], int(a["index"])))
             return {"ok": True, "insert_id": a["insert_id"],
                     "index": t.fx_index(a["insert_id"])}
+        if name == "get_fx_routing":
+            t = p.track_by_id(a["track_id"])
+            if t is None:
+                return {"error": "track not found"}
+            wires = getattr(t, "fx_wires", None) or []
+            return {"track_id": t.id,
+                    "wires": [{"src": w.src, "dst": w.dst} for w in as_wires(wires)],
+                    "serial": is_serial(t.fx, wires),
+                    "nodes": [SOURCE] + [insert_id(n) for n in (t.fx or [])] + [OUT]}
+        if name == "set_fx_routing":
+            t = p.track_by_id(a["track_id"])
+            if t is None:
+                return {"error": "track not found"}
+            raw = a.get("wires") or []
+            wires = sanitize_wires(t.fx, raw)
+            # Rebuild edge by edge so a cycle is reported rather than silently
+            # producing a graph topo_order cannot walk.
+            built = []
+            for w in wires:
+                nxt = connect_wire(built, w.src, w.dst)
+                if nxt is None:
+                    return {"error": f"{w.src} -> {w.dst} would create a cycle"}
+                built = nxt
+            dropped = len(raw) - len(wires)
+            self.bus.dispatch(SetTrackFxWiresCommand(a["track_id"], built))
+            return {"ok": True,
+                    "wires": [{"src": w.src, "dst": w.dst} for w in (t.fx_wires or [])],
+                    "serial": is_serial(t.fx, t.fx_wires),
+                    "dropped": dropped}
         if name == "remove_fx":
             t = p.track_by_id(a["track_id"])
             if t is None:
