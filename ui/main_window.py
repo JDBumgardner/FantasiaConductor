@@ -2168,6 +2168,7 @@ class MainWindow(QMainWindow):
         self.timeline.import_into_clip_requested.connect(self._on_import_into_clip)
         self.timeline.clip_action_requested.connect(self._on_clip_action)
         self.timeline.playhead_moved.connect(self.transport.set_time)
+        self.timeline.playhead_moved.connect(self._prefetch_window)
         self.timeline.playhead_moved.connect(self._sync_piano_playhead)
 
         self.timeline.verticalScrollBar().valueChanged.connect(self._sync_from_timeline)
@@ -2269,6 +2270,29 @@ class MainWindow(QMainWindow):
     # only matters when a plugin is still loading.
     GATE_WINDOW_S = 4.0
     GATE_TIMEOUT_S = 8.0
+    # How often to check whether the window is ready. This matters more than it
+    # looks: the check walks every clip, and polling it tightly starves the very
+    # workers it is waiting on. At 10ms the same gate took 4.9s; at 80ms, 2.0s.
+    GATE_POLL_MS = 80
+
+    def _prefetch_window(self, start: float) -> None:
+        """Queue the audio around a new playhead position, without waiting.
+
+        Moving the locator is the moment the user decides where to play from,
+        which is a whole interaction earlier than pressing play. Starting the
+        render there usually means the gate has nothing left to wait for.
+        """
+        if self.engine.is_playing:
+            return                      # the queue is already following the playhead
+        pr = getattr(self, "plugin_renderer", None)
+        svc = self._render_service()
+        if pr is None or svc is None:
+            return
+        from fantasia_core.engine.plugin_render import missing_in_window
+
+        need = missing_in_window(pr, self.project, start, start + self.GATE_WINDOW_S)
+        if need:
+            svc.submit(need)
 
     def _await_window(self, start: float) -> bool:
         """Render everything audible in the first window before play begins.
@@ -2300,7 +2324,7 @@ class MainWindow(QMainWindow):
                 f"Preparing audio… {total - len(left)}/{total}")
             # Keep the window alive while waiting; the render is on workers, so
             # this loop is only here to watch and to stay responsive.
-            QApplication.processEvents(QEventLoop.AllEvents, 30)
+            QApplication.processEvents(QEventLoop.AllEvents, self.GATE_POLL_MS)
         return False
 
     def _on_play(self) -> None:
@@ -2876,7 +2900,9 @@ class MainWindow(QMainWindow):
             return None
         from fantasia_core.engine.render_service import RenderService
 
-        svc = RenderService(self.plugin_renderer, workers=2,
+        # Three rather than two: measurably faster to clear the play gate, and
+        # ~50MB per instance is affordable where a fourth stopped helping.
+        svc = RenderService(self.plugin_renderer, workers=3,
                             on_progress=self._on_render_progress)
         svc.start()
         self._renderer_pool = svc

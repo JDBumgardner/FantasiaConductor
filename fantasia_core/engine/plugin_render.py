@@ -27,16 +27,34 @@ class PluginRenderer:
         self.tail = tail
         self._cache: Dict[Tuple, np.ndarray] = {}
         self._states: Dict[tuple, str] = {}
+        self._digests: Dict[str, str] = {}
         self.last_error = ""      # why the most recent render produced silence
         self.errors = 0
 
     # ---- keys ---------------------------------------------------------
+    def _digest(self, state: str) -> str:
+        """Hash of a patch blob, memoised.
+
+        A Vital patch is ~230KB and this is called for every plugin clip on
+        every cache lookup — including from the audio callback, which was
+        spending ~1.9ms per block re-hashing blobs that had not changed.
+        Python caches a str's own hash on the object, so the dict lookup is
+        effectively free once the same blob has been seen.
+        """
+        if not state:
+            return ""
+        got = self._digests.get(state)
+        if got is None:
+            got = hashlib.sha1(state.encode()).hexdigest()[:12]
+            if len(self._digests) > 64:      # a handful of patches, not a leak
+                self._digests.clear()
+            self._digests[state] = got
+        return got
+
     def _key(self, clip, plugin: str, state: str, owner: str = "") -> Tuple:  # noqa: ANN001
         notes = tuple((n.pitch, round(n.start, 4), round(n.duration, 4), n.velocity)
                       for n in clip.notes)
-        # The state blob can be large; hash it so keys stay small.
-        digest = hashlib.sha1((state or "").encode()).hexdigest()[:12]
-        return (plugin, owner, digest, round(clip.duration, 4), notes)
+        return (plugin, owner, self._digest(state), round(clip.duration, 4), notes)
 
     def cached(self, clip, plugin: str, state: str = "",
                owner: str = "") -> Optional[np.ndarray]:  # noqa: ANN001

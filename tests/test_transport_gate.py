@@ -79,3 +79,28 @@ def test_the_window_is_ordered_by_when_it_is_needed(renderer):
     p = _project(_Clip("second", 33.0, 4.0), _Clip("sounding", 31.0, 8.0))
     assert [r[0].id for r in missing_in_window(renderer, p, 32.0, 40.0)] == \
         ["sounding", "second"]
+
+
+def test_prefetching_a_window_leaves_the_gate_nothing_to_do(renderer):
+    """Moving the locator is a whole interaction before pressing play. Starting
+    the render there is what makes the gate free in the common case."""
+    p = _project(_Clip("a", 32.0, 16.0), _Clip("b", 32.0, 16.0))
+    need = missing_in_window(renderer, p, 32.0, 36.0)
+    assert len(need) == 2
+    for clip, plugin, state, owner in need:          # what the prefetch renders
+        renderer.render(clip, plugin, state, owner)
+    assert missing_in_window(renderer, p, 32.0, 36.0) == []
+
+
+def test_the_window_query_does_not_rehash_the_patch_every_call(renderer):
+    """A Vital patch is ~230KB and this runs per clip on every cache lookup,
+    including from the audio callback."""
+    big = "A" * 300_000
+    track = type("T", (), {"id": "t1", "plugin": "Vital", "plugin_state": big,
+                           "clips": [_Clip("a", 0.0, 4.0)]})()
+    p = type("P", (), {"tracks": [track]})()
+    missing_in_window(renderer, p, 0.0, 4.0)
+    seen = dict(renderer._digests)
+    assert seen, "the digest should be memoised"
+    missing_in_window(renderer, p, 0.0, 4.0)
+    assert renderer._digests == seen, "recomputed a digest it already had"
