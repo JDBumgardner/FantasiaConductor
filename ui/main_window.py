@@ -2268,6 +2268,8 @@ class MainWindow(QMainWindow):
         if self.engine.play():
             self.timeline.playback_active = True
             self._play_timer.start()
+            # Re-queue from the playhead: what is about to sound goes first.
+            self._queue_plugin_render(self.project)
             self.statusBar().showMessage("Playing")
         else:
             # Keep the macOS message short; on Linux/WSL, Pulse/ALSA is the usual culprit.
@@ -2791,17 +2793,23 @@ class MainWindow(QMainWindow):
             self._queue_plugin_render(p)
 
     PLUGIN_RENDER_GAP_MS = 15
+    # While playing, the queue is racing the playhead, so give back only enough
+    # of the event loop to keep the UI alive. The audio callback is unaffected:
+    # it runs on its own thread and was measured using 12ms of its 186ms budget.
+    PLUGIN_RENDER_GAP_PLAYING_MS = 1
 
     def _queue_plugin_render(self, project) -> None:
         """Render outstanding plugin clips one at a time, off the startup path."""
-        pending = self.plugin_renderer.pending(project)
+        pending = self.plugin_renderer.pending(project, from_time=self.timeline.playhead)
         if not pending:
             return
         self._plugin_queue = pending
         if getattr(self, "_plugin_timer", None) is None:
             self._plugin_timer = QTimer(self)
-            self._plugin_timer.setInterval(self.PLUGIN_RENDER_GAP_MS)
             self._plugin_timer.timeout.connect(self._render_next_plugin_clip)
+        self._plugin_timer.setInterval(
+            self.PLUGIN_RENDER_GAP_PLAYING_MS if self.engine.is_playing
+            else self.PLUGIN_RENDER_GAP_MS)
         self.statusBar().showMessage(f"Rendering {len(pending)} plugin clip(s)…")
         self._plugin_timer.start()
 

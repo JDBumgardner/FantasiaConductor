@@ -421,3 +421,55 @@ def test_capture_state_reads_an_open_editors_own_instance(fake_plugin, monkeypat
     monkeypatch.setattr(plg, "preset_bytes", lambda inst: inst.tag.encode())
 
     assert base64.b64decode(capture_state("Vital", "t7")).decode() == "the-editor-instance"
+
+
+# ---- queue order follows the playhead -----------------------------------
+def _clip_at(start, dur=4.0, pitch=60):
+    c = _Clip([_Note(pitch, 0, 1)])
+    c.start, c.duration = start, dur
+    return c
+
+
+def test_pending_is_ordered_by_when_each_clip_is_needed(fake_plugin, monkeypatch):
+    """Project order renders bar 1 of the last track before the clip under the
+    playhead, so pressing play mid-song leaves what you are hearing silent."""
+    from fantasia_core import plugins as plg
+
+    monkeypatch.setattr(plg, "_LOADED", {})
+    r = PluginRenderer(1000)
+
+    class _P:
+        tracks = [type("T", (), {"id": "t1", "plugin": "Vital", "plugin_state": "",
+                                 "clips": [_clip_at(0.0), _clip_at(60.0),
+                                           _clip_at(32.0), _clip_at(40.0)]})()]
+
+    order = [row[0].start for row in r.pending(_P(), from_time=33.0)]
+    assert order[0] == 32.0     # sounding right now
+    assert order[1] == 40.0     # next to arrive
+    assert order[2] == 60.0     # later
+    assert order[3] == 0.0      # already passed
+
+
+def test_pending_without_a_playhead_keeps_project_order(fake_plugin, monkeypatch):
+    """Warming a freshly loaded project has no playhead to prioritise around."""
+    from fantasia_core import plugins as plg
+
+    monkeypatch.setattr(plg, "_LOADED", {})
+    r = PluginRenderer(1000)
+
+    class _P:
+        tracks = [type("T", (), {"id": "t1", "plugin": "Vital", "plugin_state": "",
+                                 "clips": [_clip_at(60.0), _clip_at(0.0)]})()]
+
+    assert [row[0].start for row in r.pending(_P())] == [60.0, 0.0]
+
+
+def test_preroll_skips_a_plugin_that_is_not_loaded_yet(fake_plugin, monkeypatch):
+    """Loading an instance takes seconds. Doing it while the user waits for
+    playback to start trades a short gap for a long freeze."""
+    from fantasia_core import plugins as plg
+
+    monkeypatch.setattr(plg, "_LOADED", {})
+    assert plg.is_resident("Vital") is False
+    monkeypatch.setattr(plg, "_LOADED", {(plg.resolve("Vital"), plg.RENDER_OWNER): object()})
+    assert plg.is_resident("Vital") is True

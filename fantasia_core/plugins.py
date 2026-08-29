@@ -189,6 +189,17 @@ def instance_for(path_or_name: str, owner: Optional[str] = None):
     return load(path, owner=RENDER_OWNER), RENDER_OWNER
 
 
+def is_resident(path_or_name: str) -> bool:
+    """Whether an instance for this plugin is already loaded.
+
+    Loading one costs seconds; rendering through a loaded one costs a couple of
+    hundred milliseconds. Anything that must not block the user has to know the
+    difference before it commits.
+    """
+    path = resolve(path_or_name)
+    return any(k[0] == path for k in _LOADED)
+
+
 def owners() -> set:
     """Track ids that currently hold an instance."""
     return {k[1] for k in _LOADED if k[1] is not None and k[1] != RENDER_OWNER}

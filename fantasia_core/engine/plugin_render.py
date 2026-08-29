@@ -78,12 +78,18 @@ class PluginRenderer:
         self._cache[key] = buf
         return buf
 
-    def pending(self, project) -> list:  # noqa: ANN001
+    def pending(self, project, from_time: Optional[float] = None) -> list:  # noqa: ANN001
         """Plugin clips with no rendered audio yet, as ``(clip, plugin, state)``.
 
         Rendering one clip through a plugin costs a few hundred milliseconds, so
         a project with a plugin on several tracks is many seconds of work. The
         caller spreads that over the event loop instead of blocking on it.
+
+        With ``from_time``, the queue is ordered by when each clip is needed
+        rather than by track. Project order renders bar 1 of the last track
+        before the clip under the playhead, so pressing play in the middle of a
+        song leaves the parts you are listening to silent while work goes to
+        parts you are not.
         """
         out = []
         for track in project.tracks:
@@ -95,6 +101,8 @@ class PluginRenderer:
                 if (clip.content_type == "midi"
                         and self.cached(clip, plugin, state, track.id) is None):
                     out.append((clip, plugin, state, track.id))
+        if from_time is not None:
+            out.sort(key=lambda row: _need_order(row[0], from_time))
         return out
 
     def warm(self, project) -> None:  # noqa: ANN001
@@ -154,6 +162,17 @@ def prune(project, renderer: "PluginRenderer") -> int:  # noqa: ANN001
         if owner not in keep:
             renderer.invalidate(owner=owner)
     return plg.prune(keep)
+
+
+def _need_order(clip, now: float) -> tuple:  # noqa: ANN001
+    """Sort key: sounding now, then soonest ahead, then anything behind."""
+    start = float(getattr(clip, "start", 0.0))
+    end = start + float(getattr(clip, "duration", 0.0))
+    if start <= now < end:
+        return (0, start)          # audible this instant
+    if start >= now:
+        return (1, start - now)    # coming up, soonest first
+    return (2, now - end)          # already passed; only matters on a loop
 
 
 def capture_state(plugin_name: str, owner: Optional[str] = None) -> str:
