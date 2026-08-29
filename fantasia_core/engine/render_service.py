@@ -86,6 +86,9 @@ class RenderService:
         Already-queued clips are skipped, so re-submitting on every playhead
         move costs nothing and simply re-prioritises what is left.
         """
+        # Prepared here rather than left to the caller: a worker cannot build
+        # a plugin instance, and forgetting this leaves silent tracks behind.
+        self.prepare({row[1] for row in jobs if len(row) > 1})
         added = 0
         with self._lock:
             for priority, row in enumerate(jobs):

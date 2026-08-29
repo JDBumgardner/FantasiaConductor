@@ -80,9 +80,12 @@ class PluginRenderer:
         except Exception as exc:  # noqa: BLE001 — must not kill playback
             # Returning silence keeps playback alive, but a silent track with
             # no record of why is indistinguishable from a mixing mistake, and
-            # cost an afternoon once. Keep the reason.
+            # cost an afternoon once. Keep the reason — and do NOT cache the
+            # silence: a cached failure looks identical to a finished render,
+            # so pending() stops reporting it and nothing ever retries.
             self.last_error = f"{getattr(clip, 'name', '?')}: {exc!r}"[:200]
             self.errors += 1
+            return buf
         self._cache[key] = buf
         return buf
 

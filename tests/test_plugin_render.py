@@ -53,7 +53,15 @@ def fake_plugin(monkeypatch):
 
     import fantasia_core.plugins as plg
 
-    monkeypatch.setattr(plg, "load", lambda name, owner=None: f"<{name}:{owner}>")
+    # Stub resolution but keep the real instance_for: without a resolvable
+    # path a render raises before reaching render_notes, silence comes back,
+    # and any test asserting "something was cached" passes on the failure.
+    monkeypatch.setattr(plg, "resolve",                      # idempotent, like the real one
+                        lambda name: str(name) if str(name).startswith("/")
+                        else f"/fake/{name}.vst3")
+    monkeypatch.setattr(plg, "load",
+                        lambda name, owner=None: plg._LOADED.setdefault(
+                            (plg.resolve(name), owner), f"<{name}:{owner}>"))
     monkeypatch.setattr(plg, "render_notes", render_notes)
     monkeypatch.setattr(plg, "restore_preset",
                         lambda p, d: calls["restore"].append(d) or True)
@@ -253,7 +261,8 @@ def test_deleting_a_track_frees_its_instance(fake_plugin, monkeypatch):
         tracks = [type("T", (), {"id": "t1"})()]      # t2 has been deleted
 
     assert prune(_P(), r) == 1
-    assert set(held) == {("/x/Vital.vst3", "t1")}
+    # the shared render slot belongs to no track, so it stays
+    assert {k for k in held if k[1] != plg.RENDER_OWNER} == {("/x/Vital.vst3", "t1")}
     assert r.cached(clip, "Vital", "", "t1") is not None
     assert r.cached(clip, "Vital", "", "t2") is None
 
@@ -284,12 +293,13 @@ def test_loading_another_song_does_not_carry_instances_over(fake_plugin, monkeyp
     monkeypatch.setattr(plg, "_LOADED", held)
     r = PluginRenderer(1000)
     clip = _Clip([_Note(60, 0, 1)])
-    r.render(clip, "Vital", "PATCH-A", owner="t3")
-    assert r.cached(clip, "Vital", "PATCH-A", "t3") is not None
+    r.render(clip, "Vital", _b64("PATCH-A"), owner="t3")
+    assert r.cached(clip, "Vital", _b64("PATCH-A"), "t3") is not None
 
     assert reset(r) == 1                      # the owned one goes
-    assert set(held) == {("/x/Vital.vst3", None)}   # the unowned one stays
-    assert r.cached(clip, "Vital", "PATCH-A", "t3") is None
+    assert ("/x/Vital.vst3", "t3") not in held
+    assert ("/x/Vital.vst3", None) in held     # the unowned one stays
+    assert r.cached(clip, "Vital", _b64("PATCH-A"), "t3") is None
 
 
 # ---- one shared instance, patch swapped per track -----------------------
