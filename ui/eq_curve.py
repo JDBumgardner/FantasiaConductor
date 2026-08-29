@@ -182,13 +182,85 @@ class _EqPlot(QWidget):
         self._drag_q0 = 1.0
         self._hover: Optional[int] = None
         self._spec_path: Optional[QPainterPath] = None
+        # The band response curve, cached: it only moves when a handle does.
+        self._band_path: Optional[QPainterPath] = None
+        self._band_fill: Optional[QPainterPath] = None
+        self._grid = None            # static grid + labels, redrawn on resize
 
     def set_bands(self, bands: Sequence[dict], sr: int = 44100, title: str = "") -> None:
         self._bands = [normalize_band(b) for b in bands[:MAX_BANDS]]
         self._db = response_db(self._bands, self._freqs, sr)
         if title:
             self._title = title
+        self._build_band_path()
         self.update()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        self._band_path = self._band_fill = None    # geometry changed
+        self._grid = None
+        super().resizeEvent(event)
+
+    def _build_grid(self) -> None:
+        """The dB lines, frequency ticks and their labels, drawn once.
+
+        Text layout is the expensive part of a Qt paint, and none of this moves
+        between frames — only on a resize.
+        """
+        from PySide6.QtGui import QPixmap
+
+        pm = QPixmap(self.size())
+        pm.setDevicePixelRatio(self.devicePixelRatioF())
+        pm.fill(QColor(theme.TIMELINE_BG))
+        rect = _plot_rect(self)
+        g = QPainter(pm)
+        g.setRenderHint(QPainter.Antialiasing, True)
+        g.setFont(theme.ui_font(9))
+        for db in (-24, -12, 0, 12, 24):
+            y = self._y(db, rect)
+            g.setPen(QPen(QColor(*(theme.GRID_BAR if db == 0 else theme.GRID_BEAT)), 1))
+            g.drawLine(int(rect.left()), int(y), int(rect.right()), int(y))
+            g.setPen(QColor(theme.FG_DIM))
+            g.drawText(4, int(y) + 3, f"{db:+d}" if db else " 0")
+        for f, _blank in _FREQ_TICKS:
+            x = self._x(f, rect)
+            label = _FREQ_LABELS.get(f, "")
+            g.setPen(QPen(QColor(*(theme.GRID_BAR if label else theme.GRID_BEAT)), 1))
+            g.drawLine(int(x), int(rect.top()), int(x), int(rect.bottom()))
+            if label:
+                g.setPen(QColor(theme.FG_DIM))
+                g.setFont(theme.ui_font(8))
+                g.drawText(int(x) + 2, int(rect.bottom()) + 13, label)
+        g.end()
+        self._grid = pm
+
+    def _build_band_path(self) -> None:
+        """The EQ response curve, rebuilt only when the bands or size change.
+
+        This used to be recomputed inside paintEvent, one pixel column at a
+        time, on every analyzer frame — 850 searchsorted calls and 850 QPointF
+        objects, 33 times a second, for a curve that only moves when a handle
+        is dragged. It was most of a 6.8ms paint.
+        """
+        rect = _plot_rect(self)
+        if not self._bands or rect.width() < 8 or self._db is None:
+            self._band_path = self._band_fill = None
+            return
+        n = max(int(rect.width()), 2)
+        lo, hi = np.log10(F_MIN), np.log10(F_MAX)
+        t = np.arange(n) / (n - 1)
+        f = 10.0 ** (lo + t * (hi - lo))
+        idx = np.clip(np.searchsorted(self._freqs, f), 0, len(self._db) - 1)
+        mag = np.clip(self._db[idx], DB_MIN, DB_MAX)
+        ys = rect.top() + ((mag - DB_MAX) / (DB_MIN - DB_MAX)) * rect.height()
+        xs = rect.left() + np.arange(n)
+        path = QPainterPath()
+        path.addPolygon(QPolygonF([QPointF(float(x), float(y))
+                                   for x, y in zip(xs, ys)]))
+        fill = QPainterPath(path)
+        fill.lineTo(rect.right(), self._y(0.0, rect))
+        fill.lineTo(rect.left(), self._y(0.0, rect))
+        fill.closeSubpath()
+        self._band_path, self._band_fill = path, fill
 
     def set_selected(self, index: int) -> None:
         self._selected = max(0, min(MAX_BANDS - 1, index))
@@ -207,7 +279,10 @@ class _EqPlot(QWidget):
         # ran ~1600 numpy calls and ~800 QPainterPath calls per frame, 33 times
         # a second — enough UI-thread churn to starve the audio callback while
         # the analyzer was on screen.
-        n = max(int(rect.width()), 2)
+        # One point per two pixels: indistinguishable on screen, half the
+        # QPointF objects, and this runs on every analyzer frame.
+        step = 2
+        n = max(int(rect.width()) // step, 2)
         lo, hi = np.log10(F_MIN), np.log10(F_MAX)
         t = np.arange(n) / (n - 1)
         f = 10.0 ** (lo + t * (hi - lo))
@@ -215,7 +290,9 @@ class _EqPlot(QWidget):
         mag = np.clip(db[idx], _SPEC_DB_LO, _SPEC_DB_HI)
         y_t = (mag - _SPEC_DB_HI) / (_SPEC_DB_LO - _SPEC_DB_HI)
         ys = rect.top() + y_t * rect.height()
-        xs = rect.left() + np.arange(n)
+        # Span the full plot: stepping by whole pixels leaves the last point
+        # short of the right edge, which slides the whole curve off frequency.
+        xs = rect.left() + t * rect.width()
         path = QPainterPath()
         path.addPolygon(QPolygonF([QPointF(float(x), float(y))
                                    for x, y in zip(xs, ys)]))
@@ -351,25 +428,9 @@ class _EqPlot(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         rect = _plot_rect(self)
-        p.fillRect(self.rect(), QColor(theme.TIMELINE_BG))
-
-        p.setFont(theme.ui_font(9))
-        for db in (-24, -12, 0, 12, 24):
-            y = self._y(db, rect)
-            p.setPen(QPen(QColor(*(theme.GRID_BAR if db == 0 else theme.GRID_BEAT)), 1))
-            p.drawLine(int(rect.left()), int(y), int(rect.right()), int(y))
-            p.setPen(QColor(theme.FG_DIM))
-            p.drawText(4, int(y) + 3, f"{db:+d}" if db else " 0")
-
-        for f, _blank in _FREQ_TICKS:
-            x = self._x(f, rect)
-            label = _FREQ_LABELS.get(f, "")
-            p.setPen(QPen(QColor(*(theme.GRID_BAR if label else theme.GRID_BEAT)), 1))
-            p.drawLine(int(x), int(rect.top()), int(x), int(rect.bottom()))
-            if label:
-                p.setPen(QColor(theme.FG_DIM))
-                p.setFont(theme.ui_font(8))
-                p.drawText(int(x) + 2, int(rect.bottom()) + 13, label)
+        if self._grid is None or self._grid.size() != self.size():
+            self._build_grid()
+        p.drawPixmap(0, 0, self._grid)
 
         if self._spec_path is not None:
             shade = QColor(theme.YELLOW)
@@ -382,22 +443,11 @@ class _EqPlot(QWidget):
             p.drawText(rect, Qt.AlignCenter, "No track selected")
             return
 
-        path = QPainterPath()
-        n = max(int(rect.width()), 2)
-        lo, hi = np.log10(F_MIN), np.log10(F_MAX)
-        for i in range(n):
-            t = i / (n - 1)
-            f = 10 ** (lo + t * (hi - lo))
-            idx = int(np.searchsorted(self._freqs, f))
-            idx = max(0, min(len(self._db) - 1, idx))
-            y = self._y(float(np.clip(self._db[idx], DB_MIN, DB_MAX)), rect)
-            pt = QPointF(rect.left() + i, y)
-            path.moveTo(pt) if i == 0 else path.lineTo(pt)
-
-        fill = QPainterPath(path)
-        fill.lineTo(rect.right(), self._y(0.0, rect))
-        fill.lineTo(rect.left(), self._y(0.0, rect))
-        fill.closeSubpath()
+        if self._band_path is None:
+            self._build_band_path()
+        path, fill = self._band_path, self._band_fill
+        if path is None:
+            return
         shade = QColor(theme.CYAN)
         shade.setAlpha(38)
         p.fillPath(fill, shade)

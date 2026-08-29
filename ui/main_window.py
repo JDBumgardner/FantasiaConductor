@@ -2331,9 +2331,16 @@ class MainWindow(QMainWindow):
             f"Stopped — {dropped} audio dropout(s); mute a track or raise the "
             f"buffer if that was audible" if dropped else "Stopped")
 
+    EQ_ANALYZER_EVERY = 3        # playhead ticks per analyzer frame (~11fps)
+
     def _on_tick(self) -> None:
         self.timeline.set_playhead(self.engine.playhead)
-        if self.editor.isVisible() and self.editor.stack.currentIndex() == 2:
+        # The analyzer runs at a third of the playhead's rate. A spectrum does
+        # not need 33fps, and each frame costs a few milliseconds of Qt
+        # rasterising two antialiased fills over the whole plot.
+        self._eq_tick = getattr(self, "_eq_tick", 0) + 1
+        if (self.editor.isVisible() and self.editor.stack.currentIndex() == 2
+                and self._eq_tick % self.EQ_ANALYZER_EVERY == 0):
             self._update_eq_spectrum()
         if not self.engine.is_playing:  # reached the end on its own
             self._play_timer.stop()
@@ -3998,6 +4005,19 @@ class MainWindow(QMainWindow):
             return {"error": "no playback engine"}
         out = eng.playback_health(int(args.get("limit", 20) or 20))
         out["playing"] = bool(eng.is_playing)
+        # Which clips have no audio yet. Without this, "I can't hear track X"
+        # cannot be told apart from a mixing problem without guessing.
+        pr = getattr(self, "plugin_renderer", None)
+        if pr is not None:
+            missing: dict = {}
+            for clip, plugin, state, owner in pr.pending(self.project):
+                t = self.project.track_by_id(owner)
+                missing.setdefault(getattr(t, "name", owner), []).append(clip.name)
+            out["unrendered"] = {k: v for k, v in missing.items()}
+            out["render_errors"] = pr.errors
+            out["last_render_error"] = pr.last_error
+        svc = getattr(self, "_renderer_pool", None)
+        out["render_service"] = svc.stats() if svc is not None else "not started"
         return out
 
     def _agent_save_project(self, args: dict):

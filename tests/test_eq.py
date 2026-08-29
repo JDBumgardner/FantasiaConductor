@@ -231,36 +231,45 @@ def plot(qapp):
     qapp.processEvents()
 
 
-def test_spectrum_polyline_matches_the_per_pixel_reference(plot):
-    """The path is built with array maths now; it must trace the same curve
-    the per-pixel loop did."""
+def test_spectrum_polyline_traces_the_reference_curve(plot):
+    """Built with array maths and sampled every second pixel. The sparser
+    sampling is a drawing choice, not licence to move the line.
+
+    The test signal is smooth on purpose: with per-bin noise a one-index
+    sampling difference shows as a 60dB jump and the comparison says nothing.
+    """
     import numpy as np
     from PySide6.QtCore import QRectF
+
     from ui.eq_curve import F_MAX, F_MIN, _SPEC_DB_HI, _SPEC_DB_LO, _plot_rect
 
     freqs = np.fft.rfftfreq(2048, 1 / 44100)
-    rng = np.random.default_rng(7)
-    db = rng.uniform(-60.0, 0.0, len(freqs))
+    # a broad tilt with one gentle bump — no bin-to-bin jumps
+    db = -50 + 40 * np.exp(-((np.log10(np.maximum(freqs, 1)) - 3.0) ** 2) / 0.5)
     plot.set_spectrum(freqs, db)
 
     rect: QRectF = _plot_rect(plot)
-    n = max(int(rect.width()), 2)
     lo, hi = np.log10(F_MIN), np.log10(F_MAX)
-    want = []
-    for i in range(n):                      # the original scalar formulation
-        t = i / (n - 1)
+
+    def reference(x):
+        t = (x - rect.left()) / rect.width()
         f = 10 ** (lo + t * (hi - lo))
         idx = max(0, min(len(db) - 1, int(np.searchsorted(freqs, f))))
         mag = float(np.clip(db[idx], _SPEC_DB_LO, _SPEC_DB_HI))
-        y_t = (mag - _SPEC_DB_HI) / (_SPEC_DB_LO - _SPEC_DB_HI)
-        want.append((rect.left() + i, rect.top() + y_t * rect.height()))
+        return rect.top() + ((mag - _SPEC_DB_HI) / (_SPEC_DB_LO - _SPEC_DB_HI)) * rect.height()
 
+    # _spec_path is the closed fill: the curve, then two corners and the
+    # closing segment. Only the curve itself should trace the reference.
     path = plot._spec_path
     assert path is not None
-    got = [(path.elementAt(i).x, path.elementAt(i).y) for i in range(len(want))]
-    for (gx, gy), (wx, wy) in zip(got, want):
-        assert gx == pytest.approx(wx, abs=1e-6)
-        assert gy == pytest.approx(wy, abs=1e-6)
+    n_curve = path.elementCount() - 3
+    assert n_curve > 100, "the curve should still be finely sampled"
+    for i in range(n_curve):
+        e = path.elementAt(i)
+        assert e.y == pytest.approx(reference(e.x), abs=2.0), f"point {i} at x={e.x}"
+    # and it must span the plot, or the whole curve sits off-frequency
+    assert path.elementAt(0).x == pytest.approx(rect.left(), abs=1.0)
+    assert path.elementAt(n_curve - 1).x == pytest.approx(rect.right(), abs=1.0)
 
 
 def test_spectrum_clears_without_a_path(plot):
