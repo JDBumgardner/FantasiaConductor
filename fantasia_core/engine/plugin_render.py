@@ -175,6 +175,24 @@ def prune(project, renderer: "PluginRenderer") -> int:  # noqa: ANN001
     return plg.prune(keep)
 
 
+def missing_in_window(renderer, project, start: float, end: float) -> list:  # noqa: ANN001
+    """Plugin clips that overlap ``[start, end)`` and have no audio yet.
+
+    The transport must not enter a block whose audio does not exist — that is
+    heard as the arrangement dropping parts, and no amount of prioritising the
+    render queue prevents it, only shrinks the window. This is the question the
+    gate asks before opening the stream.
+    """
+    out = []
+    for clip, plugin, state, owner in renderer.pending(project):
+        c_start = float(getattr(clip, "start", 0.0))
+        c_end = c_start + float(getattr(clip, "duration", 0.0))
+        if c_start < end and c_end > start:
+            out.append((clip, plugin, state, owner))
+    out.sort(key=lambda row: _need_order(row[0], start))
+    return out
+
+
 def _need_order(clip, now: float) -> tuple:  # noqa: ANN001
     """Sort key: sounding now, then soonest ahead, then anything behind."""
     start = float(getattr(clip, "start", 0.0))

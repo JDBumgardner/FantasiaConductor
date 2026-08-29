@@ -19,7 +19,8 @@ from typing import Optional
 
 import numpy as np
 
-from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import (QEventLoop, QSettings, Qt, QThread, QTimer,
+                            Signal)
 from PySide6.QtGui import QAction, QActionGroup, QCursor, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -2262,17 +2263,59 @@ class MainWindow(QMainWindow):
         else:
             self._on_play()
 
+    # How much of the song must exist before the stream opens, and how long to
+    # wait for it. Rendering runs ~46x realtime on two workers, so a couple of
+    # seconds of audio is normally ready well inside the timeout; the timeout
+    # only matters when a plugin is still loading.
+    GATE_WINDOW_S = 4.0
+    GATE_TIMEOUT_S = 8.0
+
+    def _await_window(self, start: float) -> bool:
+        """Render everything audible in the first window before play begins.
+
+        Returns True if the window is complete. Starting without it is what is
+        heard as the arrangement dropping parts for the first few seconds:
+        prioritising the queue shrinks that window but cannot close it, because
+        the transport is simply faster than the renderer.
+        """
+        pr = getattr(self, "plugin_renderer", None)
+        svc = self._render_service()
+        if pr is None or svc is None:
+            return True
+        from time import perf_counter
+
+        from fantasia_core.engine.plugin_render import missing_in_window
+
+        need = missing_in_window(pr, self.project, start, start + self.GATE_WINDOW_S)
+        if not need:
+            return True
+        svc.submit(need)
+        deadline = perf_counter() + self.GATE_TIMEOUT_S
+        total = len(need)
+        while perf_counter() < deadline:
+            left = missing_in_window(pr, self.project, start, start + self.GATE_WINDOW_S)
+            if not left:
+                return True
+            self.statusBar().showMessage(
+                f"Preparing audio… {total - len(left)}/{total}")
+            # Keep the window alive while waiting; the render is on workers, so
+            # this loop is only here to watch and to stay responsive.
+            QApplication.processEvents(QEventLoop.AllEvents, 30)
+        return False
+
     def _on_play(self) -> None:
         start = self._playback_start_seconds()
         self.timeline.start_position = start
         self.timeline.set_playhead(start)
         self.engine.set_playhead_seconds(start)
+        ready = self._await_window(start)
         if self.engine.play():
             self.timeline.playback_active = True
             self._play_timer.start()
             # Re-queue from the playhead: what is about to sound goes first.
             self._queue_plugin_render(self.project)
-            self.statusBar().showMessage("Playing")
+            self.statusBar().showMessage(
+                "Playing" if ready else "Playing — some clips are still rendering")
         else:
             # Keep the macOS message short; on Linux/WSL, Pulse/ALSA is the usual culprit.
             import sys
