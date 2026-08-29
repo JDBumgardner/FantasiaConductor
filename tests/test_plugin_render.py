@@ -231,3 +231,151 @@ def test_invalidate_without_an_owner_still_clears_the_plugin(fake_plugin):
     r.invalidate("Vital")
     assert r.cached(clip, "Vital", "", "t1") is None
     assert r.cached(clip, "Other", "", "t1") is not None
+
+
+# ---- instance lifetime follows the track --------------------------------
+def test_deleting_a_track_frees_its_instance(fake_plugin, monkeypatch):
+    """A live plugin handle cannot live on the Track — the document is written
+    to JSON, snapshotted for undo and copied on duplicate. So ownership is by
+    id, and the lifetime is reconciled by sweeping."""
+    from fantasia_core import plugins as plg
+    from fantasia_core.engine.plugin_render import prune
+
+    held = {("/x/Vital.vst3", "t1"): object(), ("/x/Vital.vst3", "t2"): object()}
+    monkeypatch.setattr(plg, "_LOADED", held)
+    r = PluginRenderer(1000)
+    clip = _Clip([_Note(60, 0, 1)])
+    r.render(clip, "Vital", "", owner="t1")
+    r.render(clip, "Vital", "", owner="t2")
+
+    class _P:
+        tracks = [type("T", (), {"id": "t1"})()]      # t2 has been deleted
+
+    assert prune(_P(), r) == 1
+    assert set(held) == {("/x/Vital.vst3", "t1")}
+    assert r.cached(clip, "Vital", "", "t1") is not None
+    assert r.cached(clip, "Vital", "", "t2") is None
+
+
+def test_pruning_keeps_instances_with_no_owner(fake_plugin, monkeypatch):
+    """An instance loaded without a track (a one-off inspection) is not a leak
+    tied to any track, so a sweep must not take it."""
+    from fantasia_core import plugins as plg
+    from fantasia_core.engine.plugin_render import prune
+
+    held = {("/x/Vital.vst3", None): object()}
+    monkeypatch.setattr(plg, "_LOADED", held)
+
+    class _P:
+        tracks = []
+
+    assert prune(_P(), PluginRenderer(1000)) == 0
+    assert held
+
+
+def test_loading_another_song_does_not_carry_instances_over(fake_plugin, monkeypatch):
+    """Track ids restart at t1 per project, so song B's t3 must not inherit
+    song A's t3 — which has no saved patch to overwrite the stale sound."""
+    from fantasia_core import plugins as plg
+    from fantasia_core.engine.plugin_render import reset
+
+    held = {("/x/Vital.vst3", "t3"): object(), ("/x/Vital.vst3", None): object()}
+    monkeypatch.setattr(plg, "_LOADED", held)
+    r = PluginRenderer(1000)
+    clip = _Clip([_Note(60, 0, 1)])
+    r.render(clip, "Vital", "PATCH-A", owner="t3")
+    assert r.cached(clip, "Vital", "PATCH-A", "t3") is not None
+
+    assert reset(r) == 1                      # the owned one goes
+    assert set(held) == {("/x/Vital.vst3", None)}   # the unowned one stays
+    assert r.cached(clip, "Vital", "PATCH-A", "t3") is None
+
+
+# ---- one shared instance, patch swapped per track -----------------------
+def _b64(text: str) -> str:
+    """A patch blob is base64 in the document; render() decodes it, and a bad
+    string fails the render silently — which would make these pass vacuously."""
+    import base64
+
+    return base64.b64encode(text.encode()).decode()
+
+
+def _recording_loader(monkeypatch):
+    """Record which slot each load asks for, without a real plugin."""
+    from fantasia_core import plugins as plg
+
+    asked = []
+    monkeypatch.setattr(plg, "load",
+                        lambda name, owner=None: asked.append(owner) or f"<{name}:{owner}>")
+    return asked
+
+
+def test_tracks_render_through_one_shared_instance(fake_plugin, monkeypatch):
+    """Holding an instance per track costs ~160MB each; a swap costs ~20ms
+    against a ~210ms render."""
+    from fantasia_core import plugins as plg
+
+    monkeypatch.setattr(plg, "_LOADED", {})
+    asked = _recording_loader(monkeypatch)
+    r = PluginRenderer(1000)
+    for i, patch in enumerate(("PATCH-A", "PATCH-B", "PATCH-C")):
+        out = r.render(_Clip([_Note(60 + i, 0, 1)]), "Vital", _b64(patch), owner=f"t{i}")
+        assert out.any(), "render failed — the rest of this test proves nothing"
+
+    assert set(asked) == {plg.RENDER_OWNER}          # never one per track
+    assert fake_plugin["restore"] == [b"PATCH-A", b"PATCH-B", b"PATCH-C"]
+
+
+def test_a_track_rendered_twice_running_does_not_reswap(fake_plugin, monkeypatch):
+    """The queue is grouped by track, so a song swaps once per track."""
+    from fantasia_core import plugins as plg
+
+    monkeypatch.setattr(plg, "_LOADED", {})
+    _recording_loader(monkeypatch)
+    r = PluginRenderer(1000)
+    for pitch in (60, 62, 64):
+        out = r.render(_Clip([_Note(pitch, 0, 1)]), "Vital", _b64("PATCH-A"), owner="t1")
+        assert out.any(), "render failed — the rest of this test proves nothing"
+    assert fake_plugin["restore"] == [b"PATCH-A"]
+
+
+def test_an_open_editor_keeps_its_own_instance(fake_plugin, monkeypatch):
+    """Its patch cannot be swapped out from under a window being edited."""
+    from fantasia_core import plugins as plg
+
+    editing = object()
+    monkeypatch.setattr(plg, "_LOADED", {(plg.resolve("Vital"), "t7"): editing})
+    _recording_loader(monkeypatch)
+
+    inst, slot = plg.instance_for("Vital", "t7")
+    assert inst is editing and slot == "t7"          # the editor's own
+    _other, slot2 = plg.instance_for("Vital", "t8")
+    assert slot2 == plg.RENDER_OWNER                 # everyone else shares
+
+
+def test_the_shared_instance_survives_a_prune(fake_plugin, monkeypatch):
+    """It belongs to no track, so no track's deletion may take it."""
+    from fantasia_core import plugins as plg
+
+    path = plg.resolve("Vital")
+    loaded = {(path, plg.RENDER_OWNER): object(), (path, "t1"): object()}
+    monkeypatch.setattr(plg, "_LOADED", loaded)
+
+    assert plg.owners() == {"t1"}                    # the shared one is not a track
+    assert plg.prune(set()) == 1
+    assert list(loaded) == [(path, plg.RENDER_OWNER)]
+
+
+def test_loading_a_song_forgets_the_patch_in_the_shared_instance(
+        fake_plugin, monkeypatch):
+    """It holds the old song's patch; the next render must not assume so."""
+    from fantasia_core import plugins as plg
+    from fantasia_core.engine.plugin_render import reset
+
+    monkeypatch.setattr(plg, "_LOADED", {})
+    _recording_loader(monkeypatch)
+    r = PluginRenderer(1000)
+    r.render(_Clip([_Note(60, 0, 1)]), "Vital", _b64("OLD-SONG-PATCH"), owner="t3")
+    assert r._states
+    reset(r)
+    assert not r._states

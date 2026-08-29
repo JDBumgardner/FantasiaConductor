@@ -9,6 +9,7 @@ playhead on a timer during playback; the engine never touches Qt.
 from __future__ import annotations
 
 import math
+import base64
 import os
 import pathlib
 import sys
@@ -2666,6 +2667,12 @@ class MainWindow(QMainWindow):
         # for the best part of a minute. Queue them and let the event loop
         # drain the queue a clip at a time.
         if getattr(self, "plugin_renderer", None) is not None:
+            # A deleted track's plugin instance is ~224MB that nothing else will
+            # free, and undo/redo and project loads all move tracks around, so
+            # this is swept here rather than hooked onto one removal path.
+            from fantasia_core.engine.plugin_render import prune as prune_plugins
+
+            prune_plugins(p, self.plugin_renderer)
             self._queue_plugin_render(p)
 
     PLUGIN_RENDER_GAP_MS = 15
@@ -3702,7 +3709,13 @@ class MainWindow(QMainWindow):
         from fantasia_core.engine.plugin_render import capture_state
 
         try:
+            # An editor needs an instance of its own: the shared render instance
+            # has its patch swapped constantly, which cannot happen underneath a
+            # window someone is turning knobs in.
             plugin = plg.load(name, owner=track.id)
+            blob = getattr(track, "plugin_state", "")
+            if blob:
+                plg.restore_preset(plugin, base64.b64decode(blob))
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(f"Could not load {name}: {exc}", 8000)
             return
@@ -3713,11 +3726,15 @@ class MainWindow(QMainWindow):
             plugin.show_editor()          # blocks here until the window closes
         except Exception as exc:  # noqa: BLE001
             self.statusBar().showMessage(f"{name}: {exc}", 8000)
+            plg.unload(name, owner=track.id)
             return
         try:
             state = capture_state(name, track.id)
         except Exception:  # noqa: BLE001
             state = ""
+        # The patch is on the track now, so the window's instance has nothing
+        # left that the shared one cannot reproduce — and it is ~160MB.
+        plg.unload(name, owner=track.id)
         if state and state != getattr(track, "plugin_state", ""):
             self._resync_plugin_tracks(name, track.id)
             self.statusBar().showMessage(f"{name} patch saved with the project", 5000)
@@ -3767,8 +3784,9 @@ class MainWindow(QMainWindow):
         # work and affect nothing.
         track_id = str(args.get("track_id") or "")
         plugin_name = str(args.get("plugin") or "")
+        _t = None
         if track_id:
-            _t, _c = None, None
+            _c = None
             for t in self.project.tracks:
                 if t.id == track_id:
                     _t = t
@@ -3785,11 +3803,18 @@ class MainWindow(QMainWindow):
                 return {"error": f"{len(owners)} tracks use {plugin_name}; pass track_id "
                                  f"to say which — they each have their own patch"}
             if owners:
-                track_id = owners[0].id
+                _t = owners[0]
+                track_id = _t.id
         if not plugin_name:
             return {"error": "give a track_id, or a plugin name"}
         try:
-            plugin = plg.load(plugin_name, owner=track_id or None)
+            plugin, slot = plg.instance_for(plugin_name, track_id or None)
+            # On the shared instance the patch in it belongs to whichever track
+            # rendered last, so load this track's before reading or writing it.
+            blob = getattr(_t, "plugin_state", "") if track_id else ""
+            if blob and slot == plg.RENDER_OWNER:
+                plg.restore_preset(plugin, base64.b64decode(blob))
+                self.plugin_renderer._states[(plugin_name, slot)] = blob
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
         try:
@@ -4448,6 +4473,7 @@ class MainWindow(QMainWindow):
         — and each track keeps its own patch, which is stored on the track.
         """
         from fantasia_core import plugins as plg
+        from fantasia_core.document import naming
 
         fixed = 0
         for track in getattr(project, "tracks", []):
@@ -4458,10 +4484,22 @@ class MainWindow(QMainWindow):
             if tidy and tidy != name:
                 track.plugin = tidy
                 fixed += 1
+            # The plugin is shown beside the name now, so a name that spells it
+            # out again ("Vital Arp") would read "Vital · Vital Arp".
+            bare = naming.bare_name(track.name, track.plugin)
+            if bare != track.name:
+                track.name = bare
+                fixed += 1
         return fixed
 
     def _load_project(self, project: Project, path: Optional[str]) -> None:
         self._on_stop()
+        # Instances belong to a track *in this song*; ids restart at t1 in every
+        # project, so nothing from the old song may be carried into the new one.
+        if getattr(self, "plugin_renderer", None) is not None:
+            from fantasia_core.engine.plugin_render import reset as reset_plugins
+
+            reset_plugins(self.plugin_renderer)
         self._tidy_plugin_names(project)
         self.project = project
         self._current_path = path

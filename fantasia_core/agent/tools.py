@@ -29,6 +29,7 @@ from fantasia_core.commands import (
     SetTrackSynthParamCommand,
     SplitClipCommand,
 )
+from fantasia_core.document import naming
 from fantasia_core.document.model import Note
 from fantasia_core.engine import DEFAULT_PATCH, WAVEFORMS
 
@@ -345,7 +346,8 @@ class AgentTools:
                     "duration": round(p.duration, 3), "num_tracks": len(p.tracks),
                     "seconds_per_beat": round(p.seconds_per_beat(), 4)}
         if name == "list_tracks":
-            return [{"id": t.id, "name": t.name, "is_drum": t.is_drum, "is_synth": t.is_synth, "plugin": getattr(t, "plugin", ""),
+            return [{"id": t.id, "name": t.name, "label": naming.track_label(t),
+                     "is_drum": t.is_drum, "is_synth": t.is_synth, "plugin": getattr(t, "plugin", ""),
                      "instrument": t.instrument, "mute": t.mute, "solo": t.solo,
                      "gain_db": t.gain_db, "pan": t.pan, "num_clips": len(t.clips)} for t in p.tracks]
         if name == "list_clips":
