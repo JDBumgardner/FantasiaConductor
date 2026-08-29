@@ -85,3 +85,52 @@ def test_loop_region_round_trip():
     assert restored.loop_start == 1.5
     assert restored.loop_end == 5.0
     assert restored.loop_bounds() == (1.5, 5.0)
+
+
+def test_fx_inserts_get_stable_ids_on_save_and_load():
+    from fantasia_core.document import FxInsert
+
+    p = Project()
+    t = p.add_track("A")
+    t.fx = [{"type": "reverb", "params": {"wet": 0.3}}]
+    p.master.fx = [p.new_insert("eq", {"bands": []})]
+    restored = project_from_dict(project_to_dict(p))
+    ins = restored.tracks[0].fx[0]
+    assert isinstance(ins, FxInsert)
+    assert ins.id.startswith("fx") and ins.type == "reverb"
+    assert ins.bypassed is False
+    ch, found, idx = restored.find_insert(ins.id)
+    assert ch is restored.tracks[0] and found.id == ins.id and idx == 0
+    master_eq = restored.master.fx[0]
+    assert master_eq.id == p.master.fx[0].id and master_eq.type == "eq"
+
+
+def test_fx_graph_serial_by_default_and_rewires_on_remove():
+    from fantasia_core.document.fx_insert import (
+        OUT, SOURCE, FxWire, is_serial, rewire_remove, serial_wires, would_cycle,
+    )
+
+    p = Project()
+    t = p.add_track("A")
+    a = p.new_insert("reverb")
+    b = p.new_insert("delay")
+    c = p.new_insert("eq")
+    t.fx = [a, b, c]
+    assert is_serial(t.fx, t.fx_wires)
+    wires = serial_wires(t.fx)
+    assert wires[0].src == SOURCE and wires[-1].dst == OUT
+    # Remove the middle node: a should connect straight to c.
+    bridged = rewire_remove(wires, b.id)
+    keys = {(w.src, w.dst) for w in bridged}
+    assert (a.id, c.id) in keys
+    assert not any(w.src == b.id or w.dst == b.id for w in bridged)
+    # Branching: a → b and a → c, both to out. Cycle a←c from c→a is rejected.
+    branched = [FxWire(SOURCE, a.id), FxWire(a.id, b.id), FxWire(a.id, c.id),
+                FxWire(b.id, OUT), FxWire(c.id, OUT)]
+    assert not is_serial(t.fx, branched)
+    assert would_cycle(branched, c.id, a.id)
+    t.fx_wires = branched
+    restored = project_from_dict(project_to_dict(p))
+    assert {(w.src, w.dst) for w in restored.tracks[0].fx_wires} == {
+        (w.src, w.dst) for w in branched
+    }

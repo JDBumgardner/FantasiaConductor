@@ -26,7 +26,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from fantasia_core.document.model import Track
+from fantasia_core.document.fx_insert import insert_type
+from fantasia_core.document.model import MASTER_ID, Track
 from ui import theme
 from ui.gm_instruments import DRUM_KITS, GM_FAMILIES, gm_name
 from ui.metrics import RULER_H, TRACK_H
@@ -78,21 +79,32 @@ class TrackHeader(QWidget):
         outer.setContentsMargins(8, 6, 8, 6)
         outer.setSpacing(4)
 
-        self._fx_types = [e.get("type") for e in track.fx]
+        self._fx_types = [insert_type(e) for e in track.fx]
         self._is_drum = getattr(track, "is_drum", False)
         self._is_synth = getattr(track, "is_synth", False)
         self._instrument = getattr(track, "instrument", 0)
         self._plugin = getattr(track, "plugin", "") or ""
+        self._is_master = track.id == MASTER_ID or getattr(track, "is_master", False)
 
         # --- create widgets and set state from the model (no signals yet) ---
         self.name_edit = QLineEdit(track.name)
+        self.name_edit.setObjectName("trackNameEdit")
         self.name_edit.setFrame(False)
+        self.name_edit.setReadOnly(True)
+        self.name_edit.setFocusPolicy(Qt.NoFocus)
+        self.name_edit.setCursor(Qt.ArrowCursor)
+        self.name_edit.setToolTip("Double-click or press F2 to rename")
         self.name_edit.setStyleSheet(
             f"color:{theme.FG_BRIGHT}; background:transparent; font-weight:700; font-size:12px;")
+        self._renaming = False
+        self._name_before_edit = track.name
         self.fx_badge = QLabel()
         self.fx_badge.setStyleSheet(f"color:{theme.CYAN}; font-size:10px; font-weight:600;")
         parts = []
-        if self._is_synth:
+        if self._is_master:
+            parts.append("MASTER")
+            self.setToolTip("Master mix bus — FX here apply to the whole mix")
+        elif self._is_synth:
             parts.append("SYNTH")
             self.setToolTip("Built-in synth")
         elif self._is_drum:
@@ -121,6 +133,12 @@ class TrackHeader(QWidget):
         self.solo_btn.setStyleSheet(_MS_BUTTON_STYLE)
         self.solo_btn.setChecked(track.solo)
         self.solo_btn.setToolTip("Solo")
+        if self._is_master:
+            self.solo_btn.setEnabled(False)
+            self.solo_btn.setToolTip("Solo is per-track; mute the Master to silence the mix")
+            self.setStyleSheet(
+                f"QWidget#trackHeader {{ border-top: 1px solid {theme.CYAN}; }}"
+            )
 
         self.vol = QSlider(Qt.Horizontal)
         self.vol.setRange(-60, 12)  # dB
@@ -150,9 +168,7 @@ class TrackHeader(QWidget):
         outer.addLayout(controls)
 
         # --- connect signals last, so setup above never emits ---
-        self.name_edit.editingFinished.connect(
-            lambda: self.renamed.emit(self.track_id, self.name_edit.text())
-        )
+        self.name_edit.editingFinished.connect(self._on_name_editing_finished)
         self.mute_btn.toggled.connect(
             lambda on: self.mute_toggled.emit(self.track_id, on)
         )
@@ -188,8 +204,51 @@ class TrackHeader(QWidget):
         for child in self.findChildren(QWidget):
             child.installEventFilter(self)
 
+    def begin_rename(self) -> None:
+        """Enter in-place rename (double-click on the name, or F2)."""
+        if self._renaming:
+            self.name_edit.setFocus()
+            self.name_edit.selectAll()
+            return
+        self._name_before_edit = self.name_edit.text()
+        self._renaming = True
+        self.name_edit.setReadOnly(False)
+        self.name_edit.setFocusPolicy(Qt.StrongFocus)
+        self.name_edit.setCursor(Qt.IBeamCursor)
+        self.name_edit.setFocus()
+        self.name_edit.selectAll()
+
+    def _end_rename(self, commit: bool) -> None:
+        if not self._renaming:
+            return
+        self._renaming = False
+        text = self.name_edit.text().strip() or self._name_before_edit
+        if not commit:
+            text = self._name_before_edit
+        self.name_edit.blockSignals(True)
+        self.name_edit.setText(text)
+        self.name_edit.setReadOnly(True)
+        self.name_edit.setFocusPolicy(Qt.NoFocus)
+        self.name_edit.setCursor(Qt.ArrowCursor)
+        self.name_edit.deselect()
+        self.name_edit.blockSignals(False)
+        self.name_edit.clearFocus()
+        if commit:
+            self.renamed.emit(self.track_id, text)
+
+    def _on_name_editing_finished(self) -> None:
+        self._end_rename(commit=True)
+
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         et = event.type()
+        if obj is self.name_edit and et == QEvent.MouseButtonDblClick:
+            self.clicked.emit(self.track_id)
+            self.begin_rename()
+            return True
+        if obj is self.name_edit and et == QEvent.KeyPress:
+            if event.key() == Qt.Key_Escape:
+                self._end_rename(commit=False)
+                return True
         if et == QEvent.MouseButtonPress:
             self.clicked.emit(self.track_id)
         elif et == QEvent.ContextMenu:
@@ -202,50 +261,54 @@ class TrackHeader(QWidget):
         menu = QMenu()
         mapping = {}
 
-        synth = menu.addAction("Synth Voice (built-in)")
-        synth.setCheckable(True)
-        synth.setChecked(self._is_synth)
-        mapping[synth] = "toggle_synth"
+        if self._is_master:
+            head = menu.addAction("Master mix bus")
+            head.setEnabled(False)
+            menu.addSeparator()
+        else:
+            synth = menu.addAction("Synth Voice (built-in)")
+            synth.setCheckable(True)
+            synth.setChecked(self._is_synth)
+            mapping[synth] = "toggle_synth"
 
-        drum = menu.addAction("Drum Kit (percussion)")
-        drum.setCheckable(True)
-        drum.setChecked(self._is_drum)
-        mapping[drum] = "toggle_drum"
+            drum = menu.addAction("Drum Kit (percussion)")
+            drum.setCheckable(True)
+            drum.setChecked(self._is_drum)
+            mapping[drum] = "toggle_drum"
 
-        if self._is_drum:  # drum-kit picker
-            kit_menu = menu.addMenu("Drum Kit")
-            for prog, name in DRUM_KITS:
-                act = kit_menu.addAction(name)
-                act.setCheckable(True)
-                act.setChecked(prog == self._instrument)
-                mapping[act] = f"instrument:{prog}"
-        elif not self._is_synth:  # instrument picker (soundfont tracks)
-            inst_menu = menu.addMenu("Instrument")
-            for family, insts in GM_FAMILIES:
-                sub = inst_menu.addMenu(family)
-                for prog, name in insts:
-                    act = sub.addAction(name)
+            if self._is_drum:  # drum-kit picker
+                kit_menu = menu.addMenu("Drum Kit")
+                for prog, name in DRUM_KITS:
+                    act = kit_menu.addAction(name)
                     act.setCheckable(True)
                     act.setChecked(prog == self._instrument)
                     mapping[act] = f"instrument:{prog}"
+            elif not self._is_synth:  # instrument picker (soundfont tracks)
+                inst_menu = menu.addMenu("Instrument")
+                for family, insts in GM_FAMILIES:
+                    sub = inst_menu.addMenu(family)
+                    for prog, name in insts:
+                        act = sub.addAction(name)
+                        act.setCheckable(True)
+                        act.setChecked(prog == self._instrument)
+                        mapping[act] = f"instrument:{prog}"
 
-        # A hosted plugin replaces the built-in engines entirely, so it sits
-        # with them rather than in the FX chain below.
-        plug = menu.addAction("Plugin Instrument…"
-                              + (f"  [{self._plugin}]" if self._plugin else ""))
-        mapping[plug] = "plugin_instrument"
-        if self._plugin:
-            # Editing the patch is the frequent action once a plugin is chosen;
-            # going back through the picker every time is friction.
-            mapping[menu.addAction(f"Open {self._plugin} Interface…")] = "plugin_editor"
+            # A hosted plugin replaces the built-in engines entirely, so it sits
+            # with them rather than in the FX chain below.
+            plug = menu.addAction("Plugin Instrument…"
+                                  + (f"  [{self._plugin}]" if self._plugin else ""))
+            mapping[plug] = "plugin_instrument"
+            if self._plugin:
+                mapping[menu.addAction(f"Open {self._plugin} Interface…")] = "plugin_editor"
 
-        menu.addSeparator()
+            menu.addSeparator()
         if self._fx_types:
             head = menu.addAction("FX: " + ", ".join(self._fx_types))
             head.setEnabled(False)
             menu.addSeparator()
         # Mixing chain, in the order you'd normally use it: EQ -> colour -> dynamics.
         eq = menu.addMenu("EQ")
+        mapping[eq.addAction("Stock EQ (8-band)")] = "add_eq"
         for label, name in [
             ("High-pass 120 Hz  (remove rumble)", "add_highpass"),
             ("Low-pass 1.2 kHz  (darken)", "add_lowpass"),
@@ -276,8 +339,9 @@ class TrackHeader(QWidget):
 
         menu.addSeparator()
         mapping[menu.addAction("Clear FX")] = "clear_fx"
-        menu.addSeparator()
-        mapping[menu.addAction("Remove Track")] = "remove_track"
+        if not self._is_master:
+            menu.addSeparator()
+            mapping[menu.addAction("Remove Track")] = "remove_track"
 
         action = mapping.get(menu.exec(global_pos))
         if action:
@@ -296,6 +360,7 @@ class TrackHeaderPanel(QScrollArea):
     gain_changed = Signal(str, float)
     pan_changed = Signal(str, float)
     fx_action = Signal(str, str)
+    track_step_requested = Signal(int)  # -1 previous, +1 next
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -359,6 +424,22 @@ class TrackHeaderPanel(QScrollArea):
     def set_selected(self, track_id: Optional[str]) -> None:
         for tid, header in self._headers.items():
             header.set_selected(tid == track_id)
+
+    def begin_rename(self, track_id: str) -> bool:
+        header = self._headers.get(track_id)
+        if header is None:
+            return False
+        header.begin_rename()
+        return True
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() in (Qt.Key_Up, Qt.Key_Down) and not (
+            event.modifiers() & Qt.ControlModifier
+        ):
+            self.track_step_requested.emit(-1 if event.key() == Qt.Key_Up else 1)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def sync_mute_solo(self, project) -> None:  # noqa: ANN001
         for track in project.tracks:

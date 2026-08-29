@@ -1,7 +1,10 @@
 """Document model — the project's source of truth."""
 
 from fantasia_core.document.model import (
+    MASTER_ID,
     Clip,
+    FxInsert,
+    FxWire,
     Note,
     Project,
     Track,
@@ -11,7 +14,10 @@ from fantasia_core.document.model import (
 from fantasia_core.document.tempo import scale_timeline, source_span
 
 __all__ = [
+    "MASTER_ID",
     "Clip",
+    "FxInsert",
+    "FxWire",
     "Note",
     "Track",
     "Project",

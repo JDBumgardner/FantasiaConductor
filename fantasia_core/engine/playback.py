@@ -18,6 +18,7 @@ import numpy as np
 from fantasia_core.engine.fx import FxHost
 from fantasia_core.engine.metronome import make_click_bank, mix_metronome
 from fantasia_core.engine.mixer import render_block
+from fantasia_core.engine.spectrum import SpectrumTap
 
 try:  # optional at import time
     import sounddevice as sd
@@ -146,6 +147,9 @@ class PlaybackEngine:
         self.midi_renderer = None  # set by the app; audio callback only reads its cache
         self.synth_renderer = None
         self.plugin_renderer = None
+        # Analyzer tap: the callback only memcpy's. FFT lives on the UI timer.
+        self.spectrum_tap = SpectrumTap(4096)
+        self.spectrum_track_id = None  # which channel the EQ analyzer is watching
 
     # ---- state -----------------------------------------------------------
     def set_project(self, project) -> None:  # noqa: ANN001
@@ -198,6 +202,8 @@ class PlaybackEngine:
                 synth_renderer=self.synth_renderer,
                 plugin_renderer=self.plugin_renderer,
                 warp_compute=False,
+                spectrum_tap=self.spectrum_tap,
+                spectrum_track_id=self.spectrum_track_id,
             )
             if self.metronome_enabled:
                 mix_metronome(

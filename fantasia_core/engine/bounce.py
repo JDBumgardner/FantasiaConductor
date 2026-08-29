@@ -13,7 +13,8 @@ from fantasia_core.engine.mixer import render_block
 
 
 def bounce_to_array(project, pool, sr: int, block: int = 8192, midi_renderer=None,  # noqa: ANN001
-                    synth_renderer=None, plugin_renderer=None) -> np.ndarray:
+                    synth_renderer=None, plugin_renderer=None,
+                    apply_master: bool = True) -> np.ndarray:
     total = int(project.duration * sr)
     out = np.zeros((max(total, 0), 2), dtype=np.float32)
     if hasattr(pool, "preload"):
@@ -29,6 +30,7 @@ def bounce_to_array(project, pool, sr: int, block: int = 8192, midi_renderer=Non
         out[pos : pos + n] = render_block(
             project, pool, pos, n, sr,
             fx_host=fx_host, midi_renderer=midi_renderer, synth_renderer=synth_renderer, plugin_renderer=plugin_renderer,
+            apply_master=apply_master,
         )
         pos += n
     np.clip(out, -1.0, 1.0, out=out)
@@ -91,7 +93,8 @@ def bounce_track_to_file(project, pool, sr: int, path: str, track_id: str,  # no
             t.solo = False
             t.mute = t.id != track_id
         mix = bounce_to_array(project, pool, sr, midi_renderer=midi_renderer,
-                              synth_renderer=synth_renderer, plugin_renderer=plugin_renderer)
+                              synth_renderer=synth_renderer, plugin_renderer=plugin_renderer,
+                              apply_master=False)
     finally:
         for t, (m, s) in zip(project.tracks, saved):
             t.mute, t.solo = m, s

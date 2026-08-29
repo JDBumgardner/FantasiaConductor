@@ -48,10 +48,54 @@ def test_add_fx_and_synth_param():
     t = _tools()
     tid = t.execute("add_track", {})["track_id"]
     t.execute("add_fx", {"track_id": tid, "type": "reverb", "params": {"wet": 0.5}})
-    assert t.bus.project.track_by_id(tid).fx[0]["type"] == "reverb"
+    ins = t.bus.project.track_by_id(tid).fx[0]
+    assert ins.type == "reverb" and ins.id
     t.execute("set_track", {"track_id": tid, "is_synth": True})
     t.execute("set_synth_param", {"track_id": tid, "key": "cutoff", "value": 800})
     assert t.bus.project.track_by_id(tid).synth["cutoff"] == 800
+
+
+def test_stock_eq_band_and_master_channel():
+    from fantasia_core.document import MASTER_ID
+
+    t = _tools()
+    tid = t.execute("add_track", {})["track_id"]
+    r = t.execute("set_eq_band", {"track_id": tid, "band": 3, "gain": 4.5, "freq": 800})
+    assert r["ok"] is True
+    eq = t.execute("get_eq", {"track_id": tid})
+    assert eq["bands"][2]["gain"] == 4.5
+    assert eq["bands"][2]["freq"] == 800
+    tracks = t.execute("list_tracks", {})
+    assert tracks[-1]["id"] == MASTER_ID and tracks[-1]["is_master"] is True
+    t.execute("add_fx", {"track_id": MASTER_ID, "type": "eq"})
+    assert t.bus.project.master.fx[0].type == "eq"
+    assert t.bus.project.master.fx[0].id
+    assert t.execute("remove_track", {"track_id": MASTER_ID})["error"]
+    assert t.execute("add_clip", {"track_id": MASTER_ID, "start": 0, "duration": 1})["error"]
+
+
+def test_insert_graph_tools_address_by_id():
+    t = _tools()
+    tid = t.execute("add_track", {})["track_id"]
+    a = t.execute("add_fx", {"track_id": tid, "type": "reverb", "params": {"wet": 0.4}})
+    b = t.execute("add_fx", {"track_id": tid, "type": "delay"})
+    assert a["insert_id"] and b["insert_id"]
+    listed = t.execute("list_fx", {"track_id": tid})
+    assert [row["type"] for row in listed] == ["reverb", "delay"]
+    tracks = t.execute("list_tracks", {})
+    assert tracks[0]["fx"][0] == {
+        "id": a["insert_id"], "type": "reverb", "bypassed": False}
+    t.execute("move_fx", {"track_id": tid, "insert_id": b["insert_id"], "index": 0})
+    assert [row["type"] for row in t.execute("list_fx", {"track_id": tid})] == [
+        "delay", "reverb"]
+    t.execute("bypass_fx", {
+        "track_id": tid, "insert_id": a["insert_id"], "bypassed": True})
+    assert t.execute("list_fx", {"track_id": tid})[1]["bypassed"] is True
+    t.execute("remove_fx", {"track_id": tid, "insert_id": a["insert_id"]})
+    remaining = t.execute("list_fx", {"track_id": tid})
+    assert [row["id"] for row in remaining] == [b["insert_id"]]
+    names = {d["name"] for d in t.definitions()}
+    assert {"list_fx", "bypass_fx", "move_fx", "remove_fx"} <= names
 
 
 def test_design_synth_patch():

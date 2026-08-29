@@ -107,6 +107,25 @@ def test_track_fx_changes_output():
     assert not np.allclose(dry, wet)
 
 
+def test_master_fx_changes_the_mix():
+    from fantasia_core.engine import FxHost
+
+    p, pool = _project_with(DRUMS, start=0.0, dur=2.0)
+    dry = render_block(p, pool, 0, 8192, 44100, fx_host=FxHost())
+    p.master.fx = [{"type": "gain", "params": {"gain": -12.0}}]
+    quiet = render_block(p, pool, 0, 8192, 44100, fx_host=FxHost())
+    assert np.max(np.abs(quiet)) < np.max(np.abs(dry)) * 0.5
+    p.master.fx = []
+    p.master.gain_db = -12.0
+    quiet2 = render_block(p, pool, 0, 8192, 44100)
+    assert np.max(np.abs(quiet2)) < np.max(np.abs(dry)) * 0.5
+    muted = render_block(p, pool, 0, 8192, 44100)
+    p.master.mute = True
+    silent = render_block(p, pool, 0, 8192, 44100)
+    assert np.max(np.abs(silent)) == 0.0
+    assert np.max(np.abs(muted)) > 0.0
+
+
 def test_pitch_shift_changes_output_same_length():
     p, pool = _project_with(BASS, start=0.0, dur=2.0)
     dry = render_block(p, pool, 0, 8192, 44100)
@@ -156,6 +175,17 @@ def test_eq_bands_target_the_right_frequencies():
     y = _fx_run({"type": "eq_peak", "params": {"freq": 5000, "gain": -24, "q": 2.0}}, x)
     assert _band(y, 4000, 6000) / high0 < 0.4      # notched the 5k tone only
     assert 0.9 < _band(y, 50, 200) / low0 < 1.1
+
+
+def test_stock_eq_insert_matches_legacy_peak():
+    x = _two_tone()
+    high0 = _band(x, 4000, 6000)
+    legacy = _fx_run({"type": "eq_peak", "params": {"freq": 5000, "gain": -24, "q": 2.0}}, x)
+    stock = _fx_run({"type": "eq", "params": {"bands": [
+        {"type": "bell", "freq": 5000, "gain": -24, "q": 2.0, "enabled": True},
+    ]}}, x)
+    assert _band(legacy, 4000, 6000) / high0 < 0.4
+    assert _band(stock, 4000, 6000) / high0 < 0.4
 
 
 def test_compressor_narrows_dynamic_range():

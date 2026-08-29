@@ -92,6 +92,7 @@ class NoteItem(QGraphicsRectItem):
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setAcceptHoverEvents(True)
         self.setZValue(1)
+        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         self._mode: Optional[str] = None
         self.refresh()
 
@@ -585,7 +586,6 @@ class PianoRollView(QGraphicsView):
         for item in self._items:
             item.refresh()
         self._update_scene_rect()
-        self.viewport().update()
         self.view_metrics_changed.emit()
 
     def _moved_from_origin(self, item: NoteItem) -> bool:
@@ -1186,6 +1186,10 @@ class PianoRollView(QGraphicsView):
         """Clipboard payload — original clip-relative times (paste stacks on top)."""
         return midi_ops.clone_notes(i.note for i in self._items if i.isSelected())
 
+    def select_all_notes(self) -> None:
+        for item in self._items:
+            item.setSelected(True)
+
     def paste_notes(self, notes: List[Note], anchor: Optional[float] = None) -> None:
         if not notes or self.clip_id is None:
             return
@@ -1210,12 +1214,16 @@ class PianoRollView(QGraphicsView):
     # ---- background / gutter --------------------------------------------
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
         super().drawBackground(painter, rect)
+        painter.setRenderHint(QPainter.Antialiasing, False)
         rh = self.row_h()
         pcs = self._scale_pcs()
+        y0, y1 = rect.top() - rh, rect.bottom() + rh
         if self._laned():
             pitches = self._lane_pitch
             for i, p in enumerate(pitches):
                 y = PR_RULER_H + i * rh
+                if y + rh < y0 or y > y1:
+                    continue
                 shade = theme.LANE_ODD if (p % 12) in _BLACK_KEYS else theme.LANE_EVEN
                 if self.drum_mode:
                     shade = theme.LANE_EVEN if i % 2 == 0 else theme.LANE_ODD
@@ -1227,6 +1235,8 @@ class PianoRollView(QGraphicsView):
         else:
             for p in range(PITCH_LO, PITCH_HI + 1):
                 y = self.pitch_to_y(p)
+                if y + rh < y0 or y > y1:
+                    continue
                 shade = theme.LANE_ODD if (p % 12) in _BLACK_KEYS else theme.LANE_EVEN
                 painter.fillRect(QRectF(rect.left(), y, rect.width(), rh), shade)
                 if pcs is not None and (p % 12) in pcs:
