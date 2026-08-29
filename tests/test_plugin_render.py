@@ -46,7 +46,8 @@ def fake_plugin(monkeypatch):
     """Stand in for the pedalboard layer and record what it was asked for."""
     calls = {"render": 0, "restore": []}
 
-    def render_notes(plugin, notes, duration, sr, tail=1.0):
+    def render_notes(plugin, notes, duration, sr, tail=1.0, off_main_thread=False):
+        calls.setdefault("off_thread", []).append(off_main_thread)
         calls["render"] += 1
         return np.ones((int((duration + tail) * sr), 2), dtype=np.float32) * 0.5
 

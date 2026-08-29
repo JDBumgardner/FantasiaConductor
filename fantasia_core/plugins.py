@@ -316,17 +316,34 @@ def notes_to_midi(notes: Sequence, offset: float = 0.0, channel: int = 0):
     return msgs
 
 
+# How much silence to push through the plugin before a render when it cannot be
+# reset. Measured on Vital's longest-release patch: 0.5s still leaked, 1.0s took
+# the leading energy from 1.44 to 0.00001, and it costs ~34ms.
+FLUSH_SECONDS = 1.5
+
+
 def render_notes(plugin, notes: Sequence, duration: float, sr: int = 44100,
-                 tail: float = 1.0) -> np.ndarray:
+                 tail: float = 1.0, off_main_thread: bool = False) -> np.ndarray:
     """Render notes through an instrument plugin; returns ``(frames, channels)``.
 
     ``tail`` leaves room for the release to finish — cutting at the last
     note-off chops the ending off anything with a slow release.
+
+    ``off_main_thread`` is required from a worker: pedalboard refuses to reset a
+    plugin that was loaded on another thread, so the reset is skipped and the
+    previous render's tail is flushed out with silence instead. Without that
+    flush a loud clip leaks into the next one at 75x the new clip's own level.
     """
     if not notes:
         return np.zeros((0, 2), dtype=np.float32)
-    audio = plugin(notes_to_midi(notes), duration=float(duration) + float(tail),
-                   sample_rate=float(sr))
+    if off_main_thread:
+        plugin(notes_to_midi([]), duration=FLUSH_SECONDS,
+               sample_rate=float(sr), reset=False)
+        audio = plugin(notes_to_midi(notes), duration=float(duration) + float(tail),
+                       sample_rate=float(sr), reset=False)
+    else:
+        audio = plugin(notes_to_midi(notes), duration=float(duration) + float(tail),
+                       sample_rate=float(sr))
     a = np.asarray(audio, dtype=np.float32)
     return a.T if a.ndim == 2 and a.shape[0] <= 2 else a
 

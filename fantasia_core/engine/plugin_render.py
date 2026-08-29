@@ -43,7 +43,7 @@ class PluginRenderer:
 
     # ---- rendering ----------------------------------------------------
     def render(self, clip, plugin: str, state: str = "",
-               owner: str = "") -> np.ndarray:  # noqa: ANN001
+               owner: str = "", off_main_thread: bool = False) -> np.ndarray:  # noqa: ANN001
         """Synthesize on a worker/UI thread and cache. Silence if unavailable.
 
         ``owner`` is the track id: one synth used on several tracks needs an
@@ -65,7 +65,8 @@ class PluginRenderer:
                 plg.restore_preset(inst, base64.b64decode(state))
                 self._states[(plugin, slot)] = state
             audio = plg.render_notes(inst, clip.notes, clip.duration, self.sr,
-                                     tail=self.tail)
+                                     tail=self.tail,
+                                     off_main_thread=off_main_thread)
             if len(audio):
                 if audio.ndim == 1:
                     audio = np.stack([audio, audio], axis=1)

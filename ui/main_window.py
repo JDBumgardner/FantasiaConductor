@@ -1748,6 +1748,7 @@ class _AgentWorker(QThread):
 
 
 class MainWindow(QMainWindow):
+    render_progress = Signal(int, int)
     def __init__(self) -> None:
         super().__init__()
         _load_secrets()  # pick up a saved ANTHROPIC_API_KEY before the agent inits
@@ -1820,6 +1821,7 @@ class MainWindow(QMainWindow):
         self._syncing = False
         self._eq_writing = False
 
+        self.render_progress.connect(self._on_render_progress_ui)
         self._play_timer = QTimer(self)
         self._play_timer.setInterval(30)  # ~33 fps playhead updates
         self._play_timer.timeout.connect(self._on_tick)
@@ -2792,41 +2794,55 @@ class MainWindow(QMainWindow):
             prune_plugins(p, self.plugin_renderer)
             self._queue_plugin_render(p)
 
-    PLUGIN_RENDER_GAP_MS = 15
-    # While playing, the queue is racing the playhead, so give back only enough
-    # of the event loop to keep the UI alive. The audio callback is unaffected:
-    # it runs on its own thread and was measured using 12ms of its 186ms budget.
-    PLUGIN_RENDER_GAP_PLAYING_MS = 1
 
     def _queue_plugin_render(self, project) -> None:
-        """Render outstanding plugin clips one at a time, off the startup path."""
+        """Hand outstanding plugin clips to the render workers, nearest first.
+
+        This used to render one clip per QTimer tick on the UI thread, which put
+        a few hundred milliseconds of synthesis between every repaint and made
+        the queue crawl exactly when the transport needed it to hurry.
+        """
+        svc = self._render_service()
+        if svc is None:                       # no plugin hosting available
+            return
         pending = self.plugin_renderer.pending(project, from_time=self.timeline.playhead)
         if not pending:
             return
-        self._plugin_queue = pending
-        if getattr(self, "_plugin_timer", None) is None:
-            self._plugin_timer = QTimer(self)
-            self._plugin_timer.timeout.connect(self._render_next_plugin_clip)
-        self._plugin_timer.setInterval(
-            self.PLUGIN_RENDER_GAP_PLAYING_MS if self.engine.is_playing
-            else self.PLUGIN_RENDER_GAP_MS)
+        svc.clear()                           # re-prioritise around the playhead
+        svc.submit(pending)
         self.statusBar().showMessage(f"Rendering {len(pending)} plugin clip(s)…")
-        self._plugin_timer.start()
 
-    def _render_next_plugin_clip(self) -> None:
-        queue = getattr(self, "_plugin_queue", None)
-        if not queue:
-            self._plugin_timer.stop()
-            self.statusBar().showMessage("Plugin tracks ready", 4000)
+    def _render_service(self):
+        """The worker pool, started on first use.
+
+        Two workers: rendering scales ~1.96x on two threads and 2.7x on four,
+        but each worker needs its own plugin instance at roughly 50MB, and this
+        runs on an 8GB machine.
+        """
+        svc = getattr(self, "_renderer_pool", None)
+        if svc is not None:
+            return svc
+        if getattr(self, "plugin_renderer", None) is None:
+            return None
+        from fantasia_core.engine.render_service import RenderService
+
+        svc = RenderService(self.plugin_renderer, workers=2,
+                            on_progress=self._on_render_progress)
+        svc.start()
+        self._renderer_pool = svc
+        return svc
+
+    def _on_render_progress(self, done: int, submitted: int) -> None:
+        """Called from a worker thread — only touch Qt via a queued signal."""
+        self.render_progress.emit(done, submitted)
+
+    def _on_render_progress_ui(self, done: int, submitted: int) -> None:
+        left = max(0, submitted - done)
+        if left:
+            self.statusBar().showMessage(f"Rendering plugin clips… {left} left")
+        else:
+            self.statusBar().showMessage("Plugin tracks ready", 3000)
             self.timeline.viewport().update()
-            return
-        clip, plugin, state, owner = queue.pop(0)
-        try:
-            self.plugin_renderer.render(clip, plugin, state, owner)
-        except Exception:  # noqa: BLE001 — one bad clip must not stall the rest
-            pass
-        if len(queue) % 5 == 0 and queue:
-            self.statusBar().showMessage(f"Rendering plugin clips… {len(queue)} left")
 
     def _rebuild_all(self) -> None:
         self.header_panel.rebuild(self.project)
@@ -4954,6 +4970,9 @@ class MainWindow(QMainWindow):
         if not self._maybe_discard():
             event.ignore()
             return
+        svc = getattr(self, "_renderer_pool", None)
+        if svc is not None:
+            svc.stop()                 # join the render workers before teardown
         self.bridge.stop()
         self.engine.close()
         self.recorder.close()
