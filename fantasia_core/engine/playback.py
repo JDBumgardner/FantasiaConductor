@@ -139,6 +139,10 @@ class PlaybackEngine:
         self.metronome_enabled = False
         self._metro_clicks = make_click_bank(self.sr)
         self._cursor = 0  # frames
+        # The last block the callback timed, for interpolating the playhead.
+        self._block_start = 0
+        self._block_frames = 0
+        self._block_dac = 0.0
         self._playing = False
         self._stream = None
         self.output_device = None  # None = system default; else sounddevice index
@@ -161,10 +165,37 @@ class PlaybackEngine:
 
     @property
     def playhead(self) -> float:
-        return self._cursor / self.sr
+        """Where the audio being heard *now* is.
+
+        The cursor only moves once per callback — 186ms at 8192 frames — so
+        reporting it directly makes the playhead advance in steps a third of a
+        beat wide. It is also ahead of the sound: the callback fills a block the
+        device has not played yet, and ``latency="high"`` buys several more.
+
+        Interpolating from the block's DAC time fixes both. ``elapsed`` is
+        negative until the block starts being heard, which correctly walks the
+        position back into the previous block rather than clamping and stalling.
+        """
+        start, dac, n = self._block_start, self._block_dac, self._block_frames
+        stream = self._stream
+        if not self._playing or stream is None or dac <= 0.0 or n <= 0:
+            return self._cursor / self.sr
+        try:
+            elapsed = float(stream.time) - dac
+        except Exception:  # noqa: BLE001 — a closing stream has no clock
+            return self._cursor / self.sr
+        pos = start + elapsed * self.sr
+        return min(max(pos, 0.0), float(start + n)) / self.sr
 
     def set_playhead_seconds(self, seconds: float) -> None:
         self._cursor = max(0, int(seconds * self.sr))
+        self._forget_block()   # the old block says nothing about the new cursor
+
+    def _forget_block(self) -> None:
+        """Fall back to the raw cursor until the next callback times a block."""
+        self._block_start = 0
+        self._block_dac = 0.0
+        self._block_frames = 0
 
     def _end_frame(self) -> int:
         return int(self.project.duration * self.sr)
@@ -186,6 +217,11 @@ class PlaybackEngine:
         if not self._playing:
             outdata.fill(0.0)
             return
+        # Stamp this block against the clock before rendering, so the playhead
+        # can be interpolated between callbacks instead of jumping per block.
+        self._block_start = self._cursor
+        self._block_frames = frames
+        self._block_dac = float(getattr(time_info, "outputBufferDacTime", 0.0) or 0.0)
         loop_on = bool(self.loop or getattr(self.project, "loop_enabled", False))
         lo_f = hi_f = 0
         if loop_on:
