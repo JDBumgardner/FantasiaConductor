@@ -203,19 +203,22 @@ class _EqPlot(QWidget):
         rect = _plot_rect(self)
         if rect.width() < 8 or rect.height() < 8:
             return
-        path = QPainterPath()
+        # One point per pixel column, computed as arrays. Doing this per pixel
+        # ran ~1600 numpy calls and ~800 QPainterPath calls per frame, 33 times
+        # a second — enough UI-thread churn to starve the audio callback while
+        # the analyzer was on screen.
         n = max(int(rect.width()), 2)
         lo, hi = np.log10(F_MIN), np.log10(F_MAX)
-        for i in range(n):
-            t = i / (n - 1)
-            f = 10 ** (lo + t * (hi - lo))
-            idx = int(np.searchsorted(freqs, f))
-            idx = max(0, min(len(db) - 1, idx))
-            mag = float(np.clip(db[idx], _SPEC_DB_LO, _SPEC_DB_HI))
-            y_t = (mag - _SPEC_DB_HI) / (_SPEC_DB_LO - _SPEC_DB_HI)
-            y = rect.top() + y_t * rect.height()
-            pt = QPointF(rect.left() + i, y)
-            path.moveTo(pt) if i == 0 else path.lineTo(pt)
+        t = np.arange(n) / (n - 1)
+        f = 10.0 ** (lo + t * (hi - lo))
+        idx = np.clip(np.searchsorted(freqs, f), 0, len(db) - 1)
+        mag = np.clip(db[idx], _SPEC_DB_LO, _SPEC_DB_HI)
+        y_t = (mag - _SPEC_DB_HI) / (_SPEC_DB_LO - _SPEC_DB_HI)
+        ys = rect.top() + y_t * rect.height()
+        xs = rect.left() + np.arange(n)
+        path = QPainterPath()
+        path.addPolygon(QPolygonF([QPointF(float(x), float(y))
+                                   for x, y in zip(xs, ys)]))
         fill = QPainterPath(path)
         fill.lineTo(rect.right(), rect.bottom())
         fill.lineTo(rect.left(), rect.bottom())
