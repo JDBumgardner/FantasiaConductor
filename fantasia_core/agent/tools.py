@@ -703,7 +703,7 @@ class AgentTools:
         if name == "list_plugin_presets":
             from fantasia_core import presets as pre
 
-            rows = pre.list_presets(args.get("plugin") or None)
+            rows = pre.list_presets(a.get("plugin") or None)
             return {"presets": [{"slug": r.slug, "name": r.name, "plugin": r.plugin,
                                  "bytes": r.bytes, "note": r.note} for r in rows]}
         if name in ("plugin_params", "set_plugin_param",

@@ -4,13 +4,13 @@
   "VST3",
   "AU"
  ],
- "verified": "2026-08-25",
- "how_to_use": "Read this before calling set_plugin_param on Vital. It records which value FORMAT each parameter actually accepts, measured by setting and reading back. The tool docstring recommends the plugin's text form; for Vital that is wrong more often than it is right.",
+ "verified": "2026-08-28",
+ "how_to_use": "Read this before calling set_plugin_param on Vital. It records which value FORMAT each parameter actually accepts, measured by setting and reading back. The tool docstring recommends the plugin's text form; for Vital that is wrong more often than it is right. The argument is 'name', not 'param' \u2014 the wrong key returns {'error': \"'name'\"}, a bare KeyError that is easy to read as a plugin fault.",
  "hosting_constraints": {
-  "one_instance_per_plugin_name": "Tracks that share the SAME plugin string share one instance and one patch, and a param change re-renders all of them. Use distinct path strings (see multiple_instances_via_path) when you need different sounds per track.",
-  "set_params_before_writing_clips": "Each set_plugin_param re-renders all Vital tracks. Do patch design while those tracks have no clips (tracks_rerendered: 0) \u2014 it is effectively free then and slow afterwards.",
+  "one_instance_per_plugin_name": "OBSOLETE. Every track now carries its own patch (Track.plugin_state) and renders through one shared instance with that patch swapped in, so tracks sharing the plugin string 'Vital' no longer share a sound. Set 'plugin' to the plain name; the path-spelling trick below is no longer needed.",
+  "set_params_before_writing_clips": "A set_plugin_param re-renders only the track it names, not every Vital track. Still cheapest before the track has clips.",
   "editor_crash": "Observed SIGSEGV in Vital's own GUI thread (SynthEditor::render(Canvas&) -> Renderer::run), which kills the whole app and any unsaved project. Triggered while a second client drove the same shared instance. Avoid driving Vital from two sessions at once, and prefer keeping its editor window closed during bulk clip writes.",
-  "multiple_instances_via_path": "IMPORTANT: the one-patch-per-name limit is avoidable. load() keys _LOADED on the exact string you pass, and uses it directly when os.path.exists() is true. So passing distinct PATH strings yields independent instances, each with its own patch, and set_track accepts a path in 'plugin'. Verified with three simultaneous Vital patches: name 'Vital' (VST3), '/Library/Audio/Plug-Ins/Components/Vital.component' (AU), and '/Library/Audio/Plug-Ins/VST3/./Vital.vst3' (same VST3 binary, different key string). Any path variant that still resolves gives another instance. Each re-renders only ITS OWN tracks, so per-track patches also make param changes much cheaper.",
+  "multiple_instances_via_path": "OBSOLETE, and now harmful: distinct path strings still yield separate instances (~50MB each) but buy nothing, since patches are per track already. Old projects carrying spelled paths are normalised to the plain name on load.",
   "au_build_returns_blank_display": "The AU build ('...Vital.component') returns an empty 'value' string from set_plugin_param and plugin_params. Verify by 'raw' instead. The VST3 build returns proper display text.",
   "au_cannot_be_snapshotted": {
    "symptom": "save_plugin_preset on Vital.component returns 'plugin returned no state to save'; preset_bytes is empty. A track on the AU therefore saves with plugin_state = '' and LOSES ITS PATCH when the app restarts, silently -- the project file looks complete.",
@@ -26,12 +26,13 @@
    "done_2026_08_25": "Recovered the Digital Tiger bass this way. It turned out to be factory init plus 4 parameters (filter_1_cutoff 0.6, filter_1_resonance 0.3, oscillator_1_detune_power 0.65, oscillator_2_switch off) with no routings; all 903 matched after.",
    "ordering_trap": "_resync_plugin_tracks stamps state onto tracks whose 'plugin' ALREADY equals that name, so load_plugin_preset before set_track leaves plugin_state empty (the load reports tracks_rerendered: 0, which is the tell). Switch the track first, or load again after.",
    "prefer": "Use VST3 path variants for anything the agent will drive. The AU's only advantage is being another instance, and path variants give that too."
-  }
+  },
+  "patching_a_freshly_assigned_track": "Fixed 2026-08-28: capture_state used to mint a fresh instance rather than read the one the change was written to, so the FIRST set_plugin_param on a track with no plugin_state yet was captured as a factory default and lost. It took a second pass to stick. If you see a first setting not take, this regressed."
  },
  "value_format_rules": {
   "default": "Send a raw 0-1 float. Then READ THE RETURNED 'value' \u2014 set_plugin_param echoes what the plugin actually stored, so a wrong format is visible immediately.",
   "choice_and_switch": "Use raw 1.0 / 0.0. Text names FAIL SILENTLY: sending 'On' set the switch to Off and still returned ok:true.",
-  "percent_params": "Send a FRACTION, not a percent string or a raw: 0.48 -> '48%'. The stored raw is sqrt(fraction), so 0.48 reads back as raw 0.6928. A 'NN%' string also works on the VST3 build and is REQUIRED for reverb_size.",
+  "percent_params": "Send sqrt(target fraction): the DISPLAY percent is the raw value squared, so 0.6928 -> '48%'. An earlier note here said to send the fraction itself; that lands on target^2 (0.42 -> '17.64%'). A 'NN%' string also works on the VST3 build and is REQUIRED for reverb_size.",
   "stepped_or_scaled": "transpose, unison voices, tempo divisions and filter cutoff all need raw 0-1; their text forms were misparsed by large factors.",
   "time_params": "reverb_decay_time misparsed BOTH forms. Set by trial and read back.",
   "envelope_times": "Two observed behaviours. TEXT-parsed: value maps linearly to seconds over 0-32s, so send seconds/32. RAW: value is the 0-1 parameter and the curve is exponential \u2014 raw 0.02 -> 5us, 0.25 -> 0.125s, 0.30 -> 0.259s, 0.33 -> 0.379s, 0.36 -> 0.537s, 0.44 -> 1.2s, 0.67 -> 6.4s. Probe to find which one you are in.",
@@ -53,7 +54,8 @@
     "lfo_1_sync_type json 0.0 = 'Trigger' (1 Sync, 2 Envelope, ...)"
    ],
    "how_to_enumerate": "Load the plugin, walk raw_value over i/(num_steps-1) and read string_value; the index is i."
-  }
+  },
+  "output_level": "Vital is much quieter than the built-in synth at init. 'volume' raw 0.92 reads '+2.5dB' and gets a track into the same range; prefer that over +20dB of track gain."
  },
  "measured": [
   {
@@ -103,11 +105,17 @@
   },
   {
    "key": "oscillator_1_unison_detune",
-   "send": 0.48,
+   "send": 0.6928,
    "got": "48%",
    "text_form_fails": {
     "sent": "30%",
     "got": "3000%"
+   },
+   "note": "Display percent is raw SQUARED, so send sqrt(target): sqrt(0.48)=0.6928 reads '48%'. Sending the fraction 0.42 reads '17.64%' (=0.42^2), not '42%'. Verified across five tracks 2026-08-28, all landing within 0.005%.",
+   "fraction_form_misleads": {
+    "sent": 0.42,
+    "got": "17.64%",
+    "expected_by_old_note": "42%"
    }
   },
   {
