@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, QPoint, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -41,21 +41,29 @@ from ui.numeric_popup import (
     parse_pan,
 )
 
+class _NoWheelSlider(QSlider):
+    """Faders must not steal the wheel — that scroll pans the arrangement."""
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        event.ignore()
+
+
 _OUT_IDLE = f"color:{theme.FG_DIM}; font-size:11px; font-weight:700;"
 _OUT_LIVE = f"color:{theme.CYAN}; font-size:11px; font-weight:700;"
 _READOUT_EVERY = 8  # ~240ms at the 30ms playhead tick — readable, cheap
 
 _FADER_STYLE = (
+    f"QSlider#gainFader {{ background: transparent; }}"
     f"QSlider#gainFader::groove:horizontal {{"
-    f"  height: 7px; background: {theme.BG_DEEP};"
-    f"  border: 1px solid {theme.BORDER}; border-radius: 3px;"
+    f"  height: 8px; background: {theme.BG_DEEP};"
+    f"  border: 1px solid {theme.CYAN}; border-radius: 1px;"
     f"}}"
     f"QSlider#gainFader::sub-page:horizontal {{"
-    f"  background: {theme.CYAN}; border-radius: 3px;"
+    f"  background: {theme.CYAN}; border-radius: 1px;"
     f"}}"
     f"QSlider#gainFader::handle:horizontal {{"
     f"  background: {theme.FG_BRIGHT}; border: 1px solid {theme.CYAN};"
-    f"  width: 9px; margin: -5px 0; border-radius: 1px;"
+    f"  width: 8px; margin: -4px 0; border-radius: 0px;"
     f"}}"
 )
 
@@ -86,8 +94,8 @@ class LevelMeter(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setFixedHeight(7)
-        self.setMinimumWidth(48)
+        self.setFixedHeight(8)
+        self.setMinimumWidth(80)
         self.level = 0.0
         self.held = 0.0
 
@@ -116,6 +124,78 @@ class LevelMeter(QWidget):
         p.end()
 
 
+class PanDial(QWidget):
+    """Circular pan pot: vertical chord at the L–R position (100L … C … 100R)."""
+
+    valueChanged = Signal(int)  # -100..100
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(22, 22)
+        self.setCursor(Qt.PointingHandCursor)
+        self._value = 0
+        self._drag_origin: Optional[QPoint] = None
+        self._drag_start = 0
+        self.setToolTip("Pan — drag, or double-click to type 2L / 3R / C")
+
+    def value(self) -> int:
+        return self._value
+
+    def setValue(self, value: int) -> None:  # noqa: N802
+        clamped = max(-100, min(100, int(value)))
+        if clamped == self._value:
+            return
+        self._value = clamped
+        self.update()
+        self.valueChanged.emit(self._value)
+
+    def paintEvent(self, event) -> None:  # noqa: N802, ARG002
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = self.rect().adjusted(2, 2, -3, -3)
+        ring = QColor(theme.CYAN)
+        p.setPen(QPen(ring, 1.4))
+        p.setBrush(QColor(theme.BG_DEEP))
+        p.drawEllipse(r)
+        # Feasible range is the horizontal diameter. The setting line is the
+        # vertical chord through that point — perpendicular to 100L↔100R.
+        cx = r.left() + r.width() * (self._value + 100) / 200.0
+        dx = cx - r.center().x()
+        radius = r.width() / 2.0
+        half = (radius * radius - dx * dx) ** 0.5 if abs(dx) <= radius else 0.0
+        cy = r.center().y()
+        p.setPen(QPen(QColor(theme.FG_BRIGHT), 1.6, Qt.SolidLine, Qt.FlatCap))
+        p.drawLine(int(cx), int(cy - half), int(cx), int(cy + half))
+        # Hub so the chord reads as a pot, not a meter tick.
+        p.setPen(Qt.NoPen)
+        p.setBrush(ring)
+        p.drawEllipse(int(cx) - 2, int(cy) - 2, 4, 4)
+        p.end()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.LeftButton:
+            self._drag_origin = event.pos()
+            self._drag_start = self._value
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self._drag_origin is not None:
+            dx = event.pos().x() - self._drag_origin.x()
+            self.setValue(self._drag_start + int(round(dx * 2.2)))
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        self._drag_origin = None
+        super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        event.ignore()
+
+
 class TrackHeader(QWidget):
     """Header for a single track."""
 
@@ -132,14 +212,16 @@ class TrackHeader(QWidget):
         self.track_id = track.id
         self.setFixedHeight(TRACK_H)
         self.setObjectName("trackHeader")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAutoFillBackground(False)
         self._selected = False
         self._build(track)
         self._install_selection_filter()
 
     def _build(self, track: Track) -> None:
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 6, 8, 6)
-        outer.setSpacing(4)
+        outer.setContentsMargins(8, 5, 8, 5)
+        outer.setSpacing(3)
 
         self._fx_types = [insert_type(e) for e in track.fx]
         self._is_drum = getattr(track, "is_drum", False)
@@ -205,11 +287,13 @@ class TrackHeader(QWidget):
             self.solo_btn.setEnabled(False)
             self.solo_btn.setToolTip("Solo is per-track; mute the Master to silence the mix")
 
-        self.vol = QSlider(Qt.Horizontal)
+        self.vol = _NoWheelSlider(Qt.Horizontal)
         self.vol.setObjectName("gainFader")
+        self.vol.setFocusPolicy(Qt.ClickFocus)
         self.vol.setStyleSheet(_FADER_STYLE)
         self.vol.setRange(-60, 12)  # linear dB ≈ equal-loudness steps
         self.vol.setValue(int(round(track.gain_db)))
+        self.vol.setMinimumWidth(80)
         self.vol.setToolTip("Volume (dB) — linear in dB, matching perceived loudness")
         self.meter = LevelMeter()
         self._meter_amp = 0.0
@@ -218,33 +302,31 @@ class TrackHeader(QWidget):
         self._readout_age = 0
         self._out_live = False
         self.fader_db = QLabel(self._fmt_set(track.gain_db))
-        self.fader_db.setFixedWidth(36)
+        self.fader_db.setFixedWidth(32)
         self.fader_db.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.fader_db.setStyleSheet(
             f"color:{theme.FG_BRIGHT}; font-size:11px; font-weight:700;")
         self.out_db = QLabel("—  —")
-        self.out_db.setFixedWidth(68)
+        self.out_db.setFixedWidth(56)
         self.out_db.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.out_db.setStyleSheet(_OUT_IDLE)
         self.out_db.setToolTip("Current / max output (dBFS) while playing")
 
-        self.pan = QSlider(Qt.Horizontal)
-        self.pan.setRange(-100, 100)
+        self.pan = PanDial()
         self.pan.setValue(int(track.pan * 100))
-        self.pan.setFixedWidth(56)
-        self.pan.setToolTip("Pan (L/R) — double-click to type 2L / 3R / C")
         self.pan_db = QLabel(format_pan(track.pan))
         self.pan_db.setFixedWidth(28)
         self.pan_db.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.pan_db.setStyleSheet(
-            f"color:{theme.FG_BRIGHT}; font-size:11px; font-weight:700;")
+            f"color:{theme.CYAN}; font-size:11px; font-weight:700;")
         self.pan_db.setToolTip("Pan — 2L / 3R / C")
         self._apply_header_chrome()
         self._bind_typein()
 
-        # --- lay out ---
+        # Name row carries M/S so the fader + meter can span the header.
         name_row = QHBoxLayout()
         name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setSpacing(4)
         if not self._is_master:
             self._swatch = QLabel()
             self._swatch.setFixedSize(12, 12)
@@ -256,10 +338,13 @@ class TrackHeader(QWidget):
             name_row.addWidget(self._swatch)
         name_row.addWidget(self.name_edit, 1)
         name_row.addWidget(self.fx_badge)
+        name_row.addWidget(self.mute_btn)
+        name_row.addWidget(self.solo_btn)
         outer.addLayout(name_row)
+
         vol_col = QVBoxLayout()
         vol_col.setContentsMargins(0, 0, 0, 0)
-        vol_col.setSpacing(1)
+        vol_col.setSpacing(2)
         vol_col.addWidget(self.vol)
         vol_col.addWidget(self.meter)
         readouts = QVBoxLayout()
@@ -267,15 +352,16 @@ class TrackHeader(QWidget):
         readouts.setSpacing(0)
         readouts.addWidget(self.fader_db)
         readouts.addWidget(self.out_db)
+        pan_col = QVBoxLayout()
+        pan_col.setContentsMargins(0, 0, 0, 0)
+        pan_col.setSpacing(0)
+        pan_col.addWidget(self.pan, 0, Qt.AlignHCenter)
+        pan_col.addWidget(self.pan_db, 0, Qt.AlignHCenter)
         controls = QHBoxLayout()
         controls.setSpacing(4)
-        controls.addWidget(self.mute_btn)
-        controls.addWidget(self.solo_btn)
         controls.addLayout(vol_col, 1)
         controls.addLayout(readouts)
-        controls.addWidget(QLabel("Pan"))
-        controls.addWidget(self.pan)
-        controls.addWidget(self.pan_db)
+        controls.addLayout(pan_col)
         outer.addLayout(controls)
 
         # --- connect signals last, so setup above never emits ---
@@ -372,21 +458,45 @@ class TrackHeader(QWidget):
             self.setStyleSheet(
                 f"QWidget#trackHeader {{ background:{theme.HEADER_SELECTED};"
                 f" border-bottom: 1px solid {theme.HEADER_SELECTED_EDGE};"
-                f" border-left: 3px solid {theme.HEADER_SELECTED_EDGE};{extra} }}"
+                f" border-left: 4px solid {theme.HEADER_SELECTED_EDGE};{extra} }}"
             )
         else:
             self.setStyleSheet(
                 f"QWidget#trackHeader {{ background:{theme.BG_PANEL};"
                 f" border-bottom: 1px solid {theme.LANE_DIVIDER_CSS};"
-                f" border-left: 3px solid transparent;{extra} }}"
+                f" border-left: 4px solid transparent;{extra} }}"
             )
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802, ARG002
+        # QWidget only honours a stylesheet fill with WA_StyledBackground, and
+        # even then children can hide it. Paint the armed row ourselves.
+        p = QPainter(self)
+        r = self.rect()
+        if self._selected:
+            p.fillRect(r, QColor(theme.HEADER_SELECTED))
+            p.fillRect(0, 0, 4, r.height(), QColor(theme.HEADER_SELECTED_EDGE))
+            p.setPen(QPen(QColor(theme.HEADER_SELECTED_EDGE), 1))
+            p.drawLine(0, r.height() - 1, r.width(), r.height() - 1)
+        else:
+            p.fillRect(r, QColor(theme.BG_PANEL))
+            p.fillRect(0, 0, 4, r.height(), QColor(theme.BG_PANEL))
+            p.setPen(QPen(QColor(theme.LANE_DIVIDER_CSS), 1))
+            p.drawLine(0, r.height() - 1, r.width(), r.height() - 1)
+        if self._is_master:
+            p.setPen(QPen(QColor(theme.CYAN), 1))
+            p.drawLine(0, 0, r.width(), 0)
+        p.end()
 
     def set_selected(self, selected: bool) -> None:
+        if self._selected == selected:
+            return
         self._selected = selected
         self.setProperty("selected", selected)
         self._apply_header_chrome()
         self.style().unpolish(self)
         self.style().polish(self)
+        self.update()
 
     def sync_mute_solo(self, track: Track) -> None:
         """Match M/S buttons to the model without emitting toggle commands."""
@@ -438,6 +548,28 @@ class TrackHeader(QWidget):
 
     def _on_name_editing_finished(self) -> None:
         self._end_rename(commit=True)
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        """Scroll the arrangement, never the fader."""
+        panel = self._header_scroll_area()
+        if panel is not None:
+            bar = panel.verticalScrollBar()
+            step = event.angleDelta().y()
+            if event.modifiers() & Qt.ShiftModifier:
+                bar = panel.horizontalScrollBar()
+            bar.setValue(bar.value() - step)
+            event.accept()
+            return
+        event.ignore()
+
+    def _header_scroll_area(self):
+        parent = self.parent()
+        while parent is not None:
+            if isinstance(parent, TrackHeaderPanel):
+                return parent
+            parent = parent.parent()
+        window = self.window()
+        return getattr(window, "header_panel", None)
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         et = event.type()
@@ -579,9 +711,9 @@ class TrackHeaderPanel(QScrollArea):
         super().__init__(parent)
         # Resizable rather than fixed: the splitter can widen this to read long
         # track names, or narrow it to give the timeline room.
-        self.setMinimumWidth(150)
-        self.setMaximumWidth(460)
-        self.resize(240, self.height())
+        self.setMinimumWidth(220)
+        self.setMaximumWidth(520)
+        self.resize(360, self.height())
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # driven by sync

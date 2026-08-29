@@ -22,8 +22,21 @@ def test_loop_does_not_wrap_before_the_brace():
     assert cursor == 8
 
 
-def test_cursor_past_loop_end_snaps_in():
+def test_cursor_past_loop_end_plays_through():
+    """Play always starts at the locator. Past the brace, do not snap in."""
     pieces, cursor = loop_render_plan(80, 10, True, 10, 30)
-    assert 10 <= pieces[0][0] < 30
-    assert sum(n for _s, n in pieces) == 10
-    assert 10 <= cursor < 30
+    assert pieces == [(80, 10)]
+    assert cursor == 90
+
+
+def test_play_before_the_loop_enters_then_wraps():
+    # Locator at 0, loop [20, 40). A 50-frame block crosses the end and wraps.
+    pieces, cursor = loop_render_plan(0, 50, True, 20, 40)
+    assert pieces == [(0, 40), (20, 10)]
+    assert cursor == 30
+
+
+def test_play_inside_the_loop_wraps_at_the_end():
+    pieces, cursor = loop_render_plan(25, 20, True, 20, 40)
+    assert pieces == [(25, 15), (20, 5)]
+    assert cursor == 25
