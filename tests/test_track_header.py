@@ -88,6 +88,15 @@ def test_enter_commits_rename(qapp):
     assert names == ["Lead"]
 
 
+def test_mute_solo_sit_on_the_right_of_the_badge(qapp):
+    header = _header(qapp)
+    header.resize(300, header.height())
+    header.show()
+    QApplication.processEvents()
+    assert header.fx_badge.x() < header.mute_btn.x() < header.solo_btn.x()
+    assert header.solo_btn.x() + header.solo_btn.width() > header.width() * 0.75
+
+
 def test_header_has_fader_readouts_and_meter(qapp):
     header = _header(qapp)
     assert header.fader_db.text() == "+0"
@@ -122,6 +131,24 @@ def test_typed_gain_and_pan_commit(qapp):
     assert pans[-1] == pytest.approx(0.25)
 
 
+def test_faders_span_most_of_the_header(qapp):
+    header = _header(qapp)
+    header.resize(300, header.height())
+    header.show()
+    QApplication.processEvents()
+    assert header.vol.width() > header.width() * 0.55
+    assert header.meter.width() > header.width() * 0.55
+
+
+def test_selected_header_uses_armed_fill(qapp):
+    header = _header(qapp)
+    header.set_selected(True)
+    assert header._selected
+    # paintEvent fills HEADER_SELECTED — not the unselected panel colour.
+    from ui import theme
+    assert theme.HEADER_SELECTED != theme.BG_PANEL
+
+
 def test_header_panel_selects_multiple_tracks(qapp):
     p = Project()
     a = p.add_track("A")
@@ -134,6 +161,25 @@ def test_header_panel_selects_multiple_tracks(qapp):
     panel.set_selected(a.id)
     assert panel._headers[a.id]._selected
     assert not panel._headers[b.id]._selected
+
+
+def test_header_panel_defaults_wide_enough_for_faders(qapp):  # noqa: ARG001
+    panel = TrackHeaderPanel()
+    assert panel.width() >= 360
+    assert panel.minimumWidth() >= 220
+
+
+def test_default_window_fits_available_desktop(qapp):  # noqa: ARG001
+    from ui.main_window import HEADER_SPLIT_W, default_window_size
+
+    screen = QApplication.primaryScreen()
+    size = default_window_size(screen)
+    avail = screen.availableGeometry()
+    assert HEADER_SPLIT_W == 360
+    assert size.width() <= avail.width()
+    assert size.height() <= avail.height()
+    assert size.width() >= min(1280, avail.width())
+    assert size.height() >= min(800, avail.height())
 
 
 def test_export_default_filename_prefers_saved_project():

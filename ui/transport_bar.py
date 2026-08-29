@@ -54,16 +54,24 @@ def _deck_icon(kind: str, color: str, glow: bool = False, size: int = 32) -> QIc
     elif kind == "stop":
         p.fillRect(r.adjusted(1, 1, -1, -1), c)
     elif kind == "loop":
+        # Clockwise circuit: up the left, across the top, down the right,
+        # back along the bottom. Arrow sits on the right edge pointing down.
         p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(r, 2, 2)
-        # Angular return chevron at the top-right.
-        chev = QPainterPath()
-        chev.moveTo(r.right() - 2, r.top() + r.height() * 0.15)
-        chev.lineTo(r.right() + 2, r.top() + r.height() * 0.38)
-        chev.lineTo(r.right() - 6, r.top() + r.height() * 0.38)
-        chev.closeSubpath()
+        circuit = QPainterPath()
+        circuit.moveTo(r.left(), r.bottom() - 3)
+        circuit.lineTo(r.left(), r.top())
+        circuit.lineTo(r.right(), r.top())
+        circuit.lineTo(r.right(), r.bottom())
+        circuit.lineTo(r.left() + 4, r.bottom())
+        p.drawPath(circuit)
+        arrow = QPainterPath()
+        ax, ay = r.right(), r.top() + r.height() * 0.42
+        arrow.moveTo(ax - 3.6, ay - 1)
+        arrow.lineTo(ax + 3.6, ay - 1)
+        arrow.lineTo(ax, ay + 5.5)
+        arrow.closeSubpath()
         p.setBrush(c)
-        p.drawPath(chev)
+        p.drawPath(arrow)
     elif kind == "metro":
         p.setBrush(Qt.NoBrush)
         # Two pulse ticks + a base — a click track, not a treble clef.

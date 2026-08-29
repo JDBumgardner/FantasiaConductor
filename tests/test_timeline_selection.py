@@ -67,7 +67,7 @@ def test_shift_click_keeps_multiple_midi_clips_selected(qapp):  # noqa: ARG001
     assert set(view.selected_clip_ids()) == {a.id, b.id}
 
 
-def test_clicking_unselected_midi_clip_locates_to_start(qapp):  # noqa: ARG001
+def test_clicking_unselected_midi_clip_does_not_move_locator(qapp):  # noqa: ARG001
     view = TimelineView()
     p = Project()
     t = p.add_track("A")
@@ -81,7 +81,8 @@ def test_clicking_unselected_midi_clip_locates_to_start(qapp):  # noqa: ARG001
     view.playhead = 0.0
     item = _clip_items(view)[clip.id]
     _click_clip(view, item)
-    assert abs(view.start_position - clip.start) < 1e-6
+    assert set(view.selected_clip_ids()) == {clip.id}
+    assert view.start_position == 0.0
 
 
 def test_clicking_selected_midi_clip_locates_to_click(qapp):  # noqa: ARG001
@@ -100,6 +101,68 @@ def test_clicking_selected_midi_clip_locates_to_click(qapp):  # noqa: ARG001
     _click_clip(view, item)
     assert clip.start < view.start_position < clip.end
     assert abs(view.start_position - view.snap(view.start_position)) < 1e-6
+
+
+def test_reveal_locator_pans_when_offscreen(qapp):  # noqa: ARG001
+    view = TimelineView()
+    p = Project()
+    p.add_track("A")
+    view.set_project(p)
+    view.rebuild()
+    view.resize(400, 240)
+    view.show()
+    QApplication.processEvents()
+    view.start_position = 12.0  # 12s × 80 pps is past a 400px viewport
+    assert view.mapFromScene(view.start_position * view.pps, 0).x() > view.viewport().width()
+    view.reveal_locator()
+    loc_x = view.mapFromScene(view.start_position * view.pps, 0).x()
+    assert 0 <= loc_x <= view.viewport().width()
+
+
+def test_arrow_keys_nudge_locator_even_when_a_clip_is_selected(qapp):  # noqa: ARG001
+    view = TimelineView()
+    p = Project(tempo=120.0)
+    t = p.add_track("A")
+    clip = p.add_clip(t.id, 0.0, 2.0, "a", content_type="midi")
+    view.set_project(p)
+    view.rebuild()
+    view.resize(900, 280)
+    view.show()
+    QApplication.processEvents()
+    view.select_clips([clip.id])
+    view.start_position = 1.0
+    scroll_before = view.horizontalScrollBar().value()
+    view.setFocus()
+    QTest.keyClick(view, Qt.Key_Right)
+    QApplication.processEvents()
+    step = view._grid_seconds()
+    assert step is not None and step > 0
+    assert view.start_position == pytest.approx(1.0 + step)
+    assert view.horizontalScrollBar().value() == scroll_before
+    QTest.keyClick(view, Qt.Key_Left)
+    QApplication.processEvents()
+    assert view.start_position == pytest.approx(1.0)
+
+
+def test_zoom_keeps_locator_at_the_same_viewport_x(qapp):  # noqa: ARG001
+    view = TimelineView()
+    p = Project()
+    p.add_track("A")
+    view.set_project(p)
+    view.rebuild()
+    view.resize(800, 240)
+    view.show()
+    QApplication.processEvents()
+    view.start_position = 8.0
+    view.horizontalScrollBar().setValue(int(4.0 * view.pps))
+    QApplication.processEvents()
+    before = view.mapFromScene(view.start_position * view.pps, 0).x()
+    old_pps = view.pps
+    view.zoom_in()
+    QApplication.processEvents()
+    after = view.mapFromScene(view.start_position * view.pps, 0).x()
+    assert view.pps == pytest.approx(old_pps * 1.25)
+    assert after == pytest.approx(before, abs=2)
 
 
 def test_clip_color_inherits_track_until_overridden(qapp):  # noqa: ARG001
