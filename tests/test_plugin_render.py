@@ -496,3 +496,32 @@ def test_preroll_skips_a_plugin_that_is_not_loaded_yet(fake_plugin, monkeypatch)
     assert plg.is_resident("Vital") is False
     monkeypatch.setattr(plg, "_LOADED", {(plg.resolve("Vital"), plg.RENDER_OWNER): object()})
     assert plg.is_resident("Vital") is True
+
+
+def test_pruning_keeps_every_render_worker_instance(fake_plugin, monkeypatch):
+    """Only worker 0 uses RENDER_OWNER exactly; the rest are RENDER_OWNER-1,
+    -2 ... Protecting only the exact string let a project load destroy every
+    worker instance but the first, and a worker cannot rebuild one."""
+    from fantasia_core import plugins as plg
+
+    path = plg.resolve("Vital")
+    loaded = {(path, plg.render_slot(i)): object() for i in range(4)}
+    loaded[(path, "t1")] = object()
+    monkeypatch.setattr(plg, "_LOADED", loaded)
+
+    assert plg.owners() == {"t1"}, "a worker slot was mistaken for a track"
+    assert plg.prune(set()) == 1                    # only the track's goes
+    assert len(loaded) == 4
+    assert all(plg.is_render_slot(k[1]) for k in loaded)
+
+
+def test_loading_a_song_keeps_the_worker_pool(fake_plugin, monkeypatch):
+    from fantasia_core import plugins as plg
+    from fantasia_core.engine.plugin_render import reset
+
+    path = plg.resolve("Vital")
+    loaded = {(path, plg.render_slot(i)): object() for i in range(3)}
+    loaded[(path, "t7")] = object()
+    monkeypatch.setattr(plg, "_LOADED", loaded)
+    reset(PluginRenderer(1000))
+    assert len(loaded) == 3, "reset took the render workers with it"

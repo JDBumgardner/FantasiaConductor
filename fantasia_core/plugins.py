@@ -171,6 +171,17 @@ def unload(path_or_name: Optional[str] = None, owner: Optional[str] = None) -> N
 RENDER_OWNER = "\0render"
 
 
+def is_render_slot(owner) -> bool:
+    """Whether an owner key belongs to the render pool rather than a track.
+
+    Worker 0 uses RENDER_OWNER and the rest use RENDER_OWNER-1, -2 ... Checking
+    only for the exact string let a project load prune every worker instance but
+    the first, after which a worker would try to construct one — which pedalboard
+    refuses off the main thread — and the render came back silent.
+    """
+    return isinstance(owner, str) and owner.startswith(RENDER_OWNER)
+
+
 def render_slot(index: int = 0) -> str:
     """The slot a render worker uses. Workers may not share one instance —
     pedalboard's process call is not re-entrant — so each gets its own."""
@@ -239,7 +250,8 @@ def is_resident(path_or_name: str) -> bool:
 
 def owners() -> set:
     """Track ids that currently hold an instance."""
-    return {k[1] for k in _LOADED if k[1] is not None and k[1] != RENDER_OWNER}
+    return {k[1] for k in _LOADED
+            if k[1] is not None and not is_render_slot(k[1])}
 
 
 def prune(keep: set) -> int:
@@ -252,7 +264,7 @@ def prune(keep: set) -> int:
     two: ownership by id, swept when the project changes.
     """
     dead = [k for k in _LOADED
-            if k[1] is not None and k[1] != RENDER_OWNER and k[1] not in keep]
+            if k[1] is not None and not is_render_slot(k[1]) and k[1] not in keep]
     for k in dead:
         del _LOADED[k]
     return len(dead)
