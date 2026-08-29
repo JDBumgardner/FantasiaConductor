@@ -125,6 +125,14 @@ def default_soundfont() -> Optional[str]:
 
 class MidiRenderer:
     def __init__(self, soundfont: Optional[str], sample_rate: int = 44100) -> None:
+        # A missing soundfont is a legitimate state — MIDI just renders silent
+        # and the app still runs. Something that is not a path at all is a
+        # caller bug, and silently degrading to silence hides it: the mix comes
+        # out missing every MIDI track with no error anywhere.
+        if soundfont is not None and not isinstance(soundfont, (str, os.PathLike)):
+            raise TypeError(
+                f"soundfont must be a path or None, got {type(soundfont).__name__} "
+                f"({soundfont!r}) — the signature is MidiRenderer(soundfont, sample_rate)")
         self.soundfont = soundfont
         self.sr = sample_rate
         self._fs = None

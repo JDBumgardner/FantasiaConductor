@@ -221,3 +221,22 @@ def test_saturator_adds_harmonics_without_raising_peak():
     y = _fx_run({"type": "saturator", "params": {"drive": 15, "output": -9}}, pure)
     assert _band(y, 600, 1200) > 50 * max(_band(pure, 600, 1200), 1e-9)
     assert np.max(np.abs(y)) <= np.max(np.abs(pure)) + 1e-3
+
+
+def test_midi_renderer_rejects_a_soundfont_that_is_not_a_path():
+    """MidiRenderer(44100) — passing the sample rate positionally — used to be
+    accepted, report unavailable, and render every MIDI track silent."""
+    import pytest
+
+    from fantasia_core.engine.midi_render import MidiRenderer
+
+    with pytest.raises(TypeError, match="soundfont must be a path"):
+        MidiRenderer(44100)
+
+
+def test_midi_renderer_still_accepts_no_soundfont():
+    """Not having one installed is a normal state, not an error."""
+    from fantasia_core.engine.midi_render import MidiRenderer
+
+    assert MidiRenderer(None).available() is False
+    assert MidiRenderer("/nope/missing.sf2").available() is False
