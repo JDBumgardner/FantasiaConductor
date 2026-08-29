@@ -254,9 +254,16 @@ class MakeMidiClipCommand(Command):
 class SetClipNotesCommand(Command):
     """Replace a MIDI clip's note list (used by the piano-roll editor)."""
 
-    def __init__(self, clip_id: str, notes: list, label: str = "Edit notes") -> None:
+    def __init__(
+        self,
+        clip_id: str,
+        notes: list,
+        label: str = "Edit notes",
+        mergeable: bool = False,
+    ) -> None:
         self.clip_id = clip_id
         self.notes = list(notes)
+        self.mergeable = mergeable
         self._before = _UNSET
         self.label = label
 
@@ -277,6 +284,12 @@ class SetClipNotesCommand(Command):
                 clip.notes = list(notes)
             else:
                 clip.notes = list(self._before)
+
+    def merge_key(self):
+        return ("clip_notes", self.clip_id) if self.mergeable else None
+
+    def merge(self, other: "SetClipNotesCommand") -> None:
+        self.notes = list(other.notes)
 
 
 class SetClipSourceCommand(Command):

@@ -10,6 +10,7 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from fantasia_core.document.model import Project  # noqa: E402
+from ui.main_window import export_default_filename  # noqa: E402
 from ui.track_header import TrackHeader  # noqa: E402
 
 
@@ -85,3 +86,19 @@ def test_enter_commits_rename(qapp):
     QApplication.processEvents()
     assert header.name_edit.isReadOnly()
     assert names == ["Lead"]
+
+
+def test_header_has_fader_readouts_and_meter(qapp):
+    header = _header(qapp)
+    assert header.fader_db.text() == "+0"
+    assert header.out_db.text() == "—  —"
+    header.set_meter(0.5, playing=True)
+    assert "−6" in header.out_db.text() or "-6" in header.out_db.text()
+    header.reset_meter()
+    assert header.out_db.text() == "—  —"
+
+
+def test_export_default_filename_prefers_saved_project():
+    assert export_default_filename("/tmp/Neon Nights.fcp", "Scratch", "wav") == "Neon Nights.wav"
+    assert export_default_filename(None, "Demo", "mp3") == "Demo.mp3"
+    assert export_default_filename(None, "", "wav") == "mix.wav"

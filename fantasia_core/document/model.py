@@ -380,6 +380,17 @@ class Project:
                 end = max(end, clip.end)
         return end
 
+    def tail_seconds(self, bars: int = 4) -> float:
+        """Ring-out after the last clip so reverbs/delays can decay."""
+        return float(self.seconds_per_beat() * max(int(self.beats_per_bar), 1) * max(int(bars), 0))
+
+    def playback_end(self) -> float:
+        """Last clip end plus four buffer bars (0.0 if the arrangement is empty)."""
+        body = float(self.duration)
+        if body <= 0.0:
+            return 0.0
+        return body + self.tail_seconds()
+
     def seconds_per_beat(self) -> float:
         return 60.0 / self.tempo if self.tempo > 0 else 0.5
 

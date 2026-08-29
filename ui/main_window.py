@@ -491,6 +491,16 @@ class _ExportDialog(QDialog):
 _CONTINUOUS_ATTRS = {"gain_db", "pan"}
 
 
+def export_default_filename(saved_path: Optional[str], project_name: str, ext: str) -> str:
+    """Suggested mix filename: saved project stem, else the project name."""
+    if saved_path:
+        stem = os.path.splitext(os.path.basename(saved_path))[0].strip()
+        if stem:
+            return f"{stem}.{ext}"
+    name = (project_name or "mix").strip() or "mix"
+    return f"{name}.{ext}"
+
+
 class _TranscribeWorker(QThread):
     """Runs basic-pitch off the UI thread; emits the resulting notes."""
 
@@ -1842,6 +1852,11 @@ class MainWindow(QMainWindow):
         self._play_timer = QTimer(self)
         self._play_timer.setInterval(30)  # ~33 fps playhead updates
         self._play_timer.timeout.connect(self._on_tick)
+        self._note_warm_timer = QTimer(self)
+        self._note_warm_timer.setSingleShot(True)
+        self._note_warm_timer.setInterval(90)
+        self._note_warm_timer.timeout.connect(self._flush_note_warm)
+        self._pending_note_clip_id: Optional[str] = None
 
         self._build_central()
         self._build_actions()
@@ -2381,6 +2396,7 @@ class MainWindow(QMainWindow):
             self._play_timer.start()
             # Re-queue from the playhead: what is about to sound goes first.
             self._queue_plugin_render(self.project)
+            self.transport.set_playback_state(True, in_tail=False)
             self.statusBar().showMessage(
                 "Playing" if ready else "Playing — some clips are still rendering")
         else:
@@ -2396,6 +2412,10 @@ class MainWindow(QMainWindow):
         self.timeline.playback_active = False
         self.timeline.set_playhead(self.timeline.start_position)
         self.engine.set_playhead_seconds(self.timeline.start_position)
+        self.transport.set_playback_state(False)
+        self.header_panel.reset_meters()
+        if self.master_header is not None:
+            self.master_header.reset_meter()
 
     def _on_go_to_start(self) -> None:
         if self._focus_is_text():
@@ -2445,6 +2465,14 @@ class MainWindow(QMainWindow):
 
     def _on_tick(self) -> None:
         self.timeline.set_playhead(self.engine.playhead)
+        playing = bool(self.engine.is_playing)
+        body = float(self.project.duration)
+        in_tail = playing and body > 0 and self.engine.playhead >= body - 1e-4
+        self.transport.set_playback_state(playing, in_tail=in_tail)
+        peaks = self.engine.level_tap.consume()
+        self.header_panel.set_meters(peaks, playing)
+        if self.master_header is not None:
+            self.master_header.set_meter(float(peaks.get(MASTER_ID, 0.0)), playing)
         # The analyzer runs at a third of the playhead's rate. A spectrum does
         # not need 33fps, and each frame costs a few milliseconds of Qt
         # rasterising two antialiased fills over the whole plot.
@@ -2452,7 +2480,7 @@ class MainWindow(QMainWindow):
         if (self.editor.isVisible() and self.editor.stack.currentIndex() == 2
                 and self._eq_tick % self.EQ_ANALYZER_EVERY == 0):
             self._update_eq_spectrum()
-        if not self.engine.is_playing:  # reached the end on its own
+        if not playing:  # reached the end on its own
             self._play_timer.stop()
             self._return_to_start()
             self.statusBar().showMessage("Stopped")
@@ -2501,7 +2529,11 @@ class MainWindow(QMainWindow):
         self.timeline.setFocus(Qt.OtherFocusReason)
 
     def _playback_start_seconds(self) -> float:
-        """Play from the locator (static playhead on the arrangement)."""
+        """Play from the edited MIDI clip when the piano roll has focus."""
+        if self._piano_has_focus() and self._editing_clip_id:
+            _, clip = self.project.find_clip(self._editing_clip_id)
+            if clip is not None:
+                return float(clip.start)
         return float(self.timeline.start_position)
 
     def _target_track_ids(self) -> list[str]:
@@ -3355,13 +3387,26 @@ class MainWindow(QMainWindow):
         self.timeline.rebuild()
         return cmd.created_clip
 
-    def _on_notes_changed(self, clip_id: str, notes: list) -> None:
-        self.bus.dispatch(SetClipNotesCommand(clip_id, notes))
-        self._warm()  # re-render this clip via whichever engine the track uses
+    def _on_notes_changed(self, clip_id: str, notes: list, coalesce: bool = False) -> None:
+        self.bus.dispatch(SetClipNotesCommand(clip_id, notes, mergeable=bool(coalesce)))
         _, clip = self.project.find_clip(clip_id)
         self.timeline.viewport().update()  # refresh the timeline note preview
         self.piano.refresh_title(clip)
-        self._update_piano_waveform(clip_id)  # keep the overlay in sync with edits
+        # Re-render is expensive (FluidSynth / synth / waveform). Coalesced
+        # nudges wait until the key-repeat burst ends so Shift+arrows stay snappy.
+        self._pending_note_clip_id = clip_id
+        if coalesce:
+            self._note_warm_timer.start()
+        else:
+            self._note_warm_timer.stop()
+            self._flush_note_warm()
+
+    def _flush_note_warm(self) -> None:
+        clip_id = self._pending_note_clip_id
+        self._pending_note_clip_id = None
+        self._warm()
+        if clip_id:
+            self._update_piano_waveform(clip_id)
 
     def _preview_pitch(self, pitch: int) -> None:
         """Audition a note on the editing track's instrument (one-shot playback)."""
@@ -3423,8 +3468,8 @@ class MainWindow(QMainWindow):
 
     def _piano_has_focus(self) -> bool:
         fw = QApplication.focusWidget()
-        view = self.piano.view
-        return fw is not None and (fw is view or view.isAncestorOf(fw))
+        panel = self.piano
+        return fw is not None and (fw is panel or panel.isAncestorOf(fw))
 
     def _on_copy_clip(self) -> None:
         if self._try_text_edit("copy"):
@@ -4822,8 +4867,12 @@ class MainWindow(QMainWindow):
             if scope == "stems":
                 self._export_stems(ext, subtype, loudness)
             else:
+                default = export_default_filename(
+                    self._current_path, self.project.name, ext)
+                if self._current_path:
+                    default = os.path.join(os.path.dirname(self._current_path), default)
                 path, _ = QFileDialog.getSaveFileName(
-                    self, "Export Mix", f"{self.project.name or 'mix'}.{ext}",
+                    self, "Export Mix", default,
                     f"{ext.upper()} (*.{ext})")
                 if not path:
                     return

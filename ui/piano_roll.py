@@ -178,7 +178,7 @@ class NoteItem(QGraphicsRectItem):
 
 
 class PianoRollView(QGraphicsView):
-    notes_changed = Signal(str, list)
+    notes_changed = Signal(str, list, bool)  # clip_id, notes, coalesce
     copy_requested = Signal()
     cut_requested = Signal()
     paste_requested = Signal()
@@ -641,7 +641,7 @@ class PianoRollView(QGraphicsView):
             if (item.note.pitch, round(item.note.start, 4)) in selected:
                 item.setSelected(True)
 
-    def commit(self) -> None:
+    def commit(self, coalesce: bool = False) -> None:
         if self.clip_id is None:
             return
         if self._pending_unmoved():
@@ -652,7 +652,7 @@ class PianoRollView(QGraphicsView):
             Note(i.note.pitch, i.note.start, i.note.duration, i.note.velocity)
             for i in self._items
         ]
-        self.notes_changed.emit(self.clip_id, notes)
+        self.notes_changed.emit(self.clip_id, notes, coalesce)
         if self.fold:
             self._relayout_lanes()
         self.view_metrics_changed.emit()
@@ -1157,7 +1157,7 @@ class PianoRollView(QGraphicsView):
             midi_ops.transpose_in_scale(sel, steps, pcs, lo, hi)
             for i in self._items:
                 i.refresh()
-            self.commit()
+            self.commit(coalesce=True)
             self.ensure_selection_visible()
             event.accept()
             return
@@ -1172,7 +1172,7 @@ class PianoRollView(QGraphicsView):
                     i.note.start = self.snap_time(i.note.start)
             for i in self.selected_items():
                 i.refresh()
-            self.commit()
+            self.commit(coalesce=True)
             self.ensure_selection_visible()
             event.accept()
             return
@@ -1349,7 +1349,7 @@ class PianoRollView(QGraphicsView):
 
 
 class PianoRollPanel(QWidget):
-    notes_changed = Signal(str, list)
+    notes_changed = Signal(str, list, bool)  # clip_id, notes, coalesce
     copy_requested = Signal()
     cut_requested = Signal()
     paste_requested = Signal()

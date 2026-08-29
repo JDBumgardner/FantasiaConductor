@@ -547,7 +547,9 @@ class TimelineView(QGraphicsView):
         if self._project is None:
             return
         n = max(len(self._project.tracks), 1)
-        content_seconds = max(self._project.duration + 8.0, 30.0)
+        tail = getattr(self._project, "playback_end", None)
+        end = float(tail() if callable(tail) else self._project.duration)
+        content_seconds = max(end + 4.0, 30.0)
         width = content_seconds * self.pps
         height = RULER_H + n * TRACK_H + TRACK_H  # trailing empty lane
         self._scene.setSceneRect(0, 0, width, height)

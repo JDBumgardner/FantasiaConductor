@@ -21,6 +21,7 @@ from fantasia_core.engine.fx import FxHost
 from fantasia_core.engine.metronome import make_click_bank, mix_metronome
 from fantasia_core.engine import dropouts as drop
 from fantasia_core.engine.mixer import render_block
+from fantasia_core.engine.levels import LevelTap
 from fantasia_core.engine.spectrum import SpectrumTap
 
 try:  # optional at import time
@@ -159,6 +160,7 @@ class PlaybackEngine:
         # Analyzer tap: the callback only memcpy's. FFT lives on the UI timer.
         self.spectrum_tap = SpectrumTap(4096)
         self.spectrum_track_id = None  # which channel the EQ analyzer is watching
+        self.level_tap = LevelTap()
 
     # ---- state -----------------------------------------------------------
     def set_project(self, project) -> None:  # noqa: ANN001
@@ -203,7 +205,9 @@ class PlaybackEngine:
         self._block_frames = 0
 
     def _end_frame(self) -> int:
-        return int(self.project.duration * self.sr)
+        end = getattr(self.project, "playback_end", None)
+        seconds = float(end() if callable(end) else getattr(self.project, "duration", 0.0) or 0.0)
+        return int(seconds * self.sr)
 
     # ---- audio callback --------------------------------------------------
     @property
@@ -255,6 +259,7 @@ class PlaybackEngine:
                 warp_compute=False,
                 spectrum_tap=self.spectrum_tap,
                 spectrum_track_id=self.spectrum_track_id,
+                level_tap=self.level_tap,
                 stats=self._stats,
             )
             if self.metronome_enabled:
@@ -352,6 +357,7 @@ class PlaybackEngine:
         self._underruns = 0
         self.dropouts.reset()
         self.dropouts.mark_start(perf_counter())
+        self.level_tap.reset()
         self._playing = True
         return True
 

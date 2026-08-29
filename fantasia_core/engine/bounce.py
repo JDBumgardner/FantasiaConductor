@@ -15,7 +15,9 @@ from fantasia_core.engine.mixer import render_block
 def bounce_to_array(project, pool, sr: int, block: int = 8192, midi_renderer=None,  # noqa: ANN001
                     synth_renderer=None, plugin_renderer=None,
                     apply_master: bool = True) -> np.ndarray:
-    total = int(project.duration * sr)
+    end = getattr(project, "playback_end", None)
+    seconds = float(end() if callable(end) else project.duration)
+    total = int(seconds * sr)
     out = np.zeros((max(total, 0), 2), dtype=np.float32)
     if hasattr(pool, "preload"):
         pool.preload(project)

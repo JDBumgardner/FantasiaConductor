@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -26,11 +27,27 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from fantasia_core.engine.levels import amp_to_db
+
 from fantasia_core.document.fx_insert import insert_type
 from fantasia_core.document.model import MASTER_ID, Track
 from ui import theme
 from ui.gm_instruments import DRUM_KITS, GM_FAMILIES, gm_name
 from ui.metrics import RULER_H, TRACK_H
+
+_FADER_STYLE = (
+    f"QSlider#gainFader::groove:horizontal {{"
+    f"  height: 7px; background: {theme.BG_DEEP};"
+    f"  border: 1px solid {theme.BORDER}; border-radius: 3px;"
+    f"}}"
+    f"QSlider#gainFader::sub-page:horizontal {{"
+    f"  background: {theme.CYAN}; border-radius: 3px;"
+    f"}}"
+    f"QSlider#gainFader::handle:horizontal {{"
+    f"  background: {theme.FG_BRIGHT}; border: 1px solid {theme.CYAN};"
+    f"  width: 9px; margin: -5px 0; border-radius: 1px;"
+    f"}}"
+)
 
 # Widget-local sheet: a parent QWidget background (the header / scroll
 # content) otherwise swallows QPushButton:checked fills from the window sheet.
@@ -52,6 +69,41 @@ _MS_BUTTON_STYLE = (
     f"  border: 1px solid {theme.PINK};"
     f"}}"
 )
+
+
+class LevelMeter(QWidget):
+    """Horizontal peak meter. ``level`` / ``held`` are 0..1 linear amplitudes."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setFixedHeight(7)
+        self.setMinimumWidth(48)
+        self.level = 0.0
+        self.held = 0.0
+
+    def set_levels(self, current: float, held: float) -> None:
+        self.level = max(0.0, min(1.0, float(current)))
+        self.held = max(self.level, min(1.0, float(held)))
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802, ARG002
+        p = QPainter(self)
+        r = self.rect().adjusted(0, 1, -1, -1)
+        p.fillRect(r, QColor(theme.BG_DEEP))
+        p.setPen(QPen(QColor(theme.BORDER), 1))
+        p.drawRect(r)
+        inner = r.adjusted(1, 1, -1, -1)
+        if self.level > 0:
+            fill = QColor(theme.CYAN if self.level < 0.89 else theme.NEON_ORANGE)
+            if self.level >= 0.99:
+                fill = QColor(theme.RED)
+            p.fillRect(
+                inner.x(), inner.y(),
+                max(1, int(inner.width() * self.level)), inner.height(), fill)
+        if self.held > 0.02:
+            x = inner.x() + max(0, int(inner.width() * self.held) - 1)
+            p.fillRect(x, inner.y(), 2, inner.height(), QColor(theme.FG_BRIGHT))
+        p.end()
 
 
 class TrackHeader(QWidget):
@@ -147,9 +199,24 @@ class TrackHeader(QWidget):
             )
 
         self.vol = QSlider(Qt.Horizontal)
-        self.vol.setRange(-60, 12)  # dB
-        self.vol.setValue(int(track.gain_db))
-        self.vol.setToolTip("Volume (dB)")
+        self.vol.setObjectName("gainFader")
+        self.vol.setStyleSheet(_FADER_STYLE)
+        self.vol.setRange(-60, 12)  # linear dB ≈ equal-loudness steps
+        self.vol.setValue(int(round(track.gain_db)))
+        self.vol.setToolTip("Volume (dB) — linear in dB, matching perceived loudness")
+        self.meter = LevelMeter()
+        self._meter_amp = 0.0
+        self._meter_max = 0.0
+        self.fader_db = QLabel(self._fmt_set(track.gain_db))
+        self.fader_db.setFixedWidth(34)
+        self.fader_db.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.fader_db.setStyleSheet(
+            f"color:{theme.FG_BRIGHT}; font-size:10px; font-weight:700;")
+        self.out_db = QLabel("—  —")
+        self.out_db.setFixedWidth(52)
+        self.out_db.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.out_db.setStyleSheet(f"color:{theme.FG_DIM}; font-size:9px;")
+        self.out_db.setToolTip("Current / max output (dBFS) while playing")
 
         self.pan = QSlider(Qt.Horizontal)
         self.pan.setRange(-100, 100)
@@ -172,12 +239,22 @@ class TrackHeader(QWidget):
         name_row.addWidget(self.name_edit, 1)
         name_row.addWidget(self.fx_badge)
         outer.addLayout(name_row)
+        vol_col = QVBoxLayout()
+        vol_col.setContentsMargins(0, 0, 0, 0)
+        vol_col.setSpacing(1)
+        vol_col.addWidget(self.vol)
+        vol_col.addWidget(self.meter)
+        readouts = QVBoxLayout()
+        readouts.setContentsMargins(0, 0, 0, 0)
+        readouts.setSpacing(0)
+        readouts.addWidget(self.fader_db)
+        readouts.addWidget(self.out_db)
         controls = QHBoxLayout()
         controls.setSpacing(4)
         controls.addWidget(self.mute_btn)
         controls.addWidget(self.solo_btn)
-        controls.addWidget(QLabel("Vol"))
-        controls.addWidget(self.vol, 1)
+        controls.addLayout(vol_col, 1)
+        controls.addLayout(readouts)
         controls.addWidget(QLabel("Pan"))
         controls.addWidget(self.pan)
         outer.addLayout(controls)
@@ -190,12 +267,43 @@ class TrackHeader(QWidget):
         self.solo_btn.toggled.connect(
             lambda on: self.solo_toggled.emit(self.track_id, on)
         )
-        self.vol.valueChanged.connect(
-            lambda v: self.gain_changed.emit(self.track_id, float(v))
-        )
+        self.vol.valueChanged.connect(self._on_vol_changed)
         self.pan.valueChanged.connect(
             lambda v: self.pan_changed.emit(self.track_id, v / 100.0)
         )
+
+    def _fmt_set(self, db: float) -> str:
+        return f"{db:+.0f}"
+
+    def _fmt_out(self, db: float) -> str:
+        if db <= -59.5:
+            return "−∞"
+        return f"{db:+.0f}"
+
+    def _on_vol_changed(self, v: int) -> None:
+        self.fader_db.setText(self._fmt_set(float(v)))
+        self.gain_changed.emit(self.track_id, float(v))
+
+    def set_meter(self, amp: float, playing: bool) -> None:
+        """``amp`` is linear peak for this tick. Decays visually when quiet."""
+        if not playing:
+            self.reset_meter()
+            return
+        self._meter_amp = max(float(amp), self._meter_amp * 0.72)
+        self._meter_max = max(self._meter_max, float(amp))
+        self.meter.set_levels(self._meter_amp, self._meter_max)
+        self.out_db.setText(
+            f"{self._fmt_out(amp_to_db(self._meter_amp))}  "
+            f"{self._fmt_out(amp_to_db(self._meter_max))}"
+        )
+        self.out_db.setStyleSheet(f"color:{theme.CYAN}; font-size:9px;")
+
+    def reset_meter(self) -> None:
+        self._meter_amp = 0.0
+        self._meter_max = 0.0
+        self.meter.set_levels(0.0, 0.0)
+        self.out_db.setText("—  —")
+        self.out_db.setStyleSheet(f"color:{theme.FG_DIM}; font-size:9px;")
 
     def set_selected(self, selected: bool) -> None:
         self._selected = selected
@@ -463,6 +571,14 @@ class TrackHeaderPanel(QScrollArea):
             event.accept()
             return
         super().keyPressEvent(event)
+
+    def set_meters(self, peaks: dict, playing: bool) -> None:  # noqa: ANN001
+        for tid, header in self._headers.items():
+            header.set_meter(float(peaks.get(tid, 0.0)), playing)
+
+    def reset_meters(self) -> None:
+        for header in self._headers.values():
+            header.reset_meter()
 
     def sync_mute_solo(self, project) -> None:  # noqa: ANN001
         for track in project.tracks:

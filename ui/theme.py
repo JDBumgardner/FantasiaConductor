@@ -53,6 +53,7 @@ BLUE = "#5a8bff"
 PURPLE = "#b46bff"
 GREEN = "#4ff2a6"
 ORANGE = "#ff9e64"
+NEON_ORANGE = "#ff6a1a"   # live playback / transport liveness
 YELLOW = "#ffd76b"
 RED = "#ff4d6d"
 

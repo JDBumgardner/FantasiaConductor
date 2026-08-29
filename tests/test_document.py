@@ -42,6 +42,16 @@ def test_project_duration():
     assert p.duration == 4.5
 
 
+def test_playback_end_adds_four_buffer_bars():
+    p = Project(tempo=120.0, beats_per_bar=4)
+    assert p.playback_end() == 0.0
+    t = p.add_track("A")
+    p.add_clip(t.id, 0.0, 2.0, "c")
+    # 4 bars × 4 beats × 0.5s = 8s of tail after the last clip.
+    assert p.tail_seconds() == 8.0
+    assert p.playback_end() == 10.0
+
+
 def test_dict_round_trip():
     p = _sample_project()
     restored = project_from_dict(project_to_dict(p))

@@ -11,6 +11,7 @@ from fantasia_core.commands import (
     RemoveTrackCommand,
     SetClipAttrCommand,
     SetClipGeometryCommand,
+    SetClipNotesCommand,
     SetClipSourceCommand,
     SetTrackAttrCommand,
     SetTrackFxCommand,
@@ -186,6 +187,21 @@ def test_set_attr_and_toggle():
     assert t.mute is True
     bus.undo()
     assert t.mute is False
+
+
+def test_mergeable_note_nudges_are_one_undo():
+    from fantasia_core.document import Note
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    c = bus.dispatch(AddClipCommand(
+        t.id, 0.0, 2.0, "m", content_type="midi", notes=[Note(60, 0.0, 0.5)],
+    )).created_clip
+    bus.dispatch(SetClipNotesCommand(c.id, [Note(60, 0.0, 0.75)], mergeable=True))
+    bus.dispatch(SetClipNotesCommand(c.id, [Note(60, 0.0, 1.0)], mergeable=True))
+    assert c.notes[0].duration == 1.0
+    bus.undo()
+    assert c.notes[0].duration == 0.5
 
 
 def test_mergeable_slider_is_one_undo():

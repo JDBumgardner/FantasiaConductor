@@ -93,7 +93,7 @@ def test_bounce_matches_length():
     p.add_clip(t2.id, 1.0, 3.0, "c2", source_path=BASS)
     pool.preload(p)
     mix = bounce_to_array(p, pool, 44100)
-    assert mix.shape == (int(p.duration * 44100), 2)  # spans to the last clip end
+    assert mix.shape == (int(p.playback_end() * 44100), 2)  # last clip + 4-bar tail
     assert np.max(np.abs(mix)) > 0.0
 
 
