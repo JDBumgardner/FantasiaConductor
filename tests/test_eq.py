@@ -182,3 +182,27 @@ def test_stock_eq_insert_matches_legacy_peak():
     ]}}, x)
     assert _band(legacy, 4000, 6000) / high0 < 0.4
     assert _band(stock, 4000, 6000) / high0 < 0.4
+
+
+def test_every_advertised_band_type_survives_normalising():
+    """BAND_TYPES is the enum the agent tool offers; a name it accepts and then
+    silently turns into something else is worse than one it rejects."""
+    from fantasia_core.engine.eq import BAND_TYPES, normalize_band
+
+    for kind in BAND_TYPES:
+        assert normalize_band({"type": kind})["type"] == kind, kind
+
+
+def test_spellings_and_legacy_names_still_map():
+    from fantasia_core.engine.eq import normalize_band
+
+    for given, want in (("lowshelf", "low_shelf"), ("eq_low_shelf", "low_shelf"),
+                        ("High-Shelf", "high_shelf"), ("hpf", "low_cut"),
+                        ("lowpass", "high_cut"), ("peak", "bell")):
+        assert normalize_band({"type": given})["type"] == want, given
+
+
+def test_an_unknown_type_still_falls_back_to_bell():
+    from fantasia_core.engine.eq import normalize_band
+
+    assert normalize_band({"type": "wobble"})["type"] == "bell"

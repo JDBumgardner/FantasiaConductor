@@ -117,7 +117,10 @@ def normalize_band(raw: Optional[dict] = None) -> dict:
         "lowpass": "high_cut", "lpf": "high_cut", "high_cut": "high_cut",
         "notch": "notch",
     }
-    kind = aliases.get(kind, "bell")
+    # A canonical name maps to itself: the alias table lists spellings, and
+    # falling straight back to "bell" turned low_shelf/high_shelf — the names
+    # the API advertises — silently into bells.
+    kind = aliases.get(kind, kind)
     if kind not in BAND_TYPES:
         kind = "bell"
     freq = raw.get("freq", raw.get("cutoff", 1000.0))
