@@ -208,8 +208,13 @@ class _EqPlot(QWidget):
         """
         from PySide6.QtGui import QPixmap
 
-        pm = QPixmap(self.size())
-        pm.setDevicePixelRatio(self.devicePixelRatioF())
+        # Allocate in DEVICE pixels and then declare the ratio. Passing the
+        # logical size and setting a ratio of 2 gives a pixmap that covers half
+        # the widget, which is what left the grid stopping short of the curve.
+        dpr = self.devicePixelRatioF()
+        pm = QPixmap(max(1, int(round(self.width() * dpr))),
+                     max(1, int(round(self.height() * dpr))))
+        pm.setDevicePixelRatio(dpr)
         pm.fill(QColor(theme.TIMELINE_BG))
         rect = _plot_rect(self)
         g = QPainter(pm)
@@ -252,7 +257,10 @@ class _EqPlot(QWidget):
         idx = np.clip(np.searchsorted(self._freqs, f), 0, len(self._db) - 1)
         mag = np.clip(self._db[idx], DB_MIN, DB_MAX)
         ys = rect.top() + ((mag - DB_MAX) / (DB_MIN - DB_MAX)) * rect.height()
-        xs = rect.left() + np.arange(n)
+        # Span the plot exactly, as the spectrum curve does: stepping by whole
+        # pixels leaves the last point short of the axis, so the curve reads a
+        # few pixels off-frequency from the grid and the handles drawn on it.
+        xs = rect.left() + t * rect.width()
         path = QPainterPath()
         path.addPolygon(QPolygonF([QPointF(float(x), float(y))
                                    for x, y in zip(xs, ys)]))
@@ -428,7 +436,7 @@ class _EqPlot(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         rect = _plot_rect(self)
-        if self._grid is None or self._grid.size() != self.size():
+        if self._grid is None or self._grid.deviceIndependentSize().toSize() != self.size():
             self._build_grid()
         p.drawPixmap(0, 0, self._grid)
 

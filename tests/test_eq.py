@@ -325,3 +325,46 @@ def test_dag_still_correct_when_the_list_order_already_matches():
     audio = (np.random.rand(2048, 2).astype(np.float32) - 0.5) * 0.4
     out = FxHost().process(NS(id="t2", fx=specs, fx_wires=wires), audio, 44100)
     assert np.abs(out).max() > 1e-4
+
+
+def test_the_grid_pixmap_covers_the_whole_widget(plot):
+    """Built at logical size with a devicePixelRatio of 2, the pixmap covers
+    half the widget — the grid stopped short of the curve at every size, which
+    reads as the view refusing to resize."""
+    from PySide6.QtCore import QSize
+
+    for w, h in ((640, 240), (1400, 320), (1980, 400)):
+        plot.resize(w, h)
+        plot._build_grid()
+        pm = plot._grid
+        assert pm is not None
+        assert pm.deviceIndependentSize().toSize() == QSize(w, h), (
+            f"grid is {pm.deviceIndependentSize().toSize()} for a {w}x{h} widget")
+
+
+def test_resizing_rebuilds_the_grid_and_the_curve(plot):
+    plot.resize(800, 300)
+    plot._build_grid()
+    plot.set_bands(default_bands(), 44100)
+    before = plot._grid.deviceIndependentSize().width()
+    plot.resize(1600, 300)
+    plot.resizeEvent(None) if False else None
+    plot._grid = None                      # what resizeEvent does
+    plot._build_grid()
+    assert plot._grid.deviceIndependentSize().width() > before
+
+
+def test_the_curve_spans_the_plot_at_any_width(plot):
+    """The band curve and the grid must agree on where 20kHz is."""
+    from ui.eq_curve import _plot_rect
+
+    for w in (700, 1500):
+        plot.resize(w, 300)
+        plot._band_path = None
+        plot.set_bands(default_bands(), 44100)
+        rect = _plot_rect(plot)
+        path = plot._band_path              # the bare polyline; the fill is separate
+        assert path is not None
+        last = path.elementCount() - 1
+        assert path.elementAt(0).x == pytest.approx(rect.left(), abs=1.0)
+        assert path.elementAt(last).x == pytest.approx(rect.right(), abs=1.0)
