@@ -3658,7 +3658,8 @@ class MainWindow(QMainWindow):
         self.timeline.viewport().update()
         return {"ok": True, "clip_id": args["clip_id"]}
 
-    def _resync_plugin_tracks(self, plugin_name: str) -> int:
+    def _resync_plugin_tracks(self, plugin_name: str,
+                              only_track: Optional[str] = None) -> int:
         """Save a plugin's current state onto the tracks using it and re-render.
 
         Called after anything changes the plugin out from under the cache — an
@@ -3670,6 +3671,8 @@ class MainWindow(QMainWindow):
         for track in self.project.tracks:
             if getattr(track, "plugin", "") != plugin_name:
                 continue
+            if only_track and track.id != only_track:
+                continue
             try:
                 state = capture_state(plugin_name, track.id)
             except Exception:  # noqa: BLE001
@@ -3680,7 +3683,7 @@ class MainWindow(QMainWindow):
         if hit:
             pr = getattr(self, "plugin_renderer", None)
             if pr is not None:
-                pr.invalidate(plugin_name)
+                pr.invalidate(plugin_name, only_track)
             self._warm()
             self._rebuild_all()
         return hit
@@ -3716,7 +3719,7 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001
             state = ""
         if state and state != getattr(track, "plugin_state", ""):
-            self._resync_plugin_tracks(name)
+            self._resync_plugin_tracks(name, track.id)
             self.statusBar().showMessage(f"{name} patch saved with the project", 5000)
         else:
             self.statusBar().showMessage(f"{name} closed", 3000)
@@ -3759,8 +3762,34 @@ class MainWindow(QMainWindow):
             return {"error": str(exc)}
         if not plg.available():
             return {"error": "plugin hosting needs pedalboard"}
+        # Which instance? Each track has its own, so a bare plugin name would
+        # load a thirteenth belonging to no track: the change would appear to
+        # work and affect nothing.
+        track_id = str(args.get("track_id") or "")
+        plugin_name = str(args.get("plugin") or "")
+        if track_id:
+            _t, _c = None, None
+            for t in self.project.tracks:
+                if t.id == track_id:
+                    _t = t
+                    break
+            if _t is None:
+                return {"error": f"no track {track_id}"}
+            if not getattr(_t, "plugin", ""):
+                return {"error": f"track {_t.name!r} has no plugin instrument"}
+            plugin_name = _t.plugin
+        elif plugin_name:
+            owners = [t for t in self.project.tracks
+                      if getattr(t, "plugin", "") == plugin_name]
+            if len(owners) > 1:
+                return {"error": f"{len(owners)} tracks use {plugin_name}; pass track_id "
+                                 f"to say which — they each have their own patch"}
+            if owners:
+                track_id = owners[0].id
+        if not plugin_name:
+            return {"error": "give a track_id, or a plugin name"}
         try:
-            plugin = plg.load(str(args["plugin"]))
+            plugin = plg.load(plugin_name, owner=track_id or None)
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
         try:
@@ -3827,8 +3856,9 @@ class MainWindow(QMainWindow):
             # Changing a knob is only half the job: the clips were rendered with
             # the old sound and would keep playing it. Save the new state on
             # every track using this plugin, drop their cached audio, re-render.
-            touched = self._resync_plugin_tracks(str(args["plugin"]))
-            return {"ok": True, **result, "tracks_rerendered": touched}
+            touched = self._resync_plugin_tracks(plugin_name, track_id or None)
+            return {"ok": True, **result, "track_id": track_id,
+                    "tracks_rerendered": touched}
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
 

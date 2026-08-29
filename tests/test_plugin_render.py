@@ -209,3 +209,25 @@ def test_state_is_restored_per_track(fake_plugin):
     r.render(clip, "Vital", a, owner="t1")
     r.render(clip, "Vital", b, owner="t2")
     assert fake_plugin["restore"] == [b"one", b"two"]
+
+
+def test_invalidate_can_be_narrowed_to_one_track(fake_plugin):
+    """A dozen tracks on one synth means clearing them all re-renders every clip
+    to reflect a change that touched one."""
+    r = PluginRenderer(1000)
+    clip = _Clip([_Note(60, 0, 1)])
+    r.render(clip, "Vital", "", owner="t1")
+    r.render(clip, "Vital", "", owner="t2")
+    r.invalidate("Vital", owner="t1")
+    assert r.cached(clip, "Vital", "", "t1") is None
+    assert r.cached(clip, "Vital", "", "t2") is not None
+
+
+def test_invalidate_without_an_owner_still_clears_the_plugin(fake_plugin):
+    r = PluginRenderer(1000)
+    clip = _Clip([_Note(60, 0, 1)])
+    r.render(clip, "Vital", "", owner="t1")
+    r.render(clip, "Other", "", owner="t1")
+    r.invalidate("Vital")
+    assert r.cached(clip, "Vital", "", "t1") is None
+    assert r.cached(clip, "Other", "", "t1") is not None

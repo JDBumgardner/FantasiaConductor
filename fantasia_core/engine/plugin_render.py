@@ -100,15 +100,23 @@ class PluginRenderer:
         for clip, plugin, state, owner in self.pending(project):
             self.render(clip, plugin, state, owner)
 
-    def invalidate(self, plugin: Optional[str] = None) -> None:
-        if plugin is None:
+    def invalidate(self, plugin: Optional[str] = None,
+                   owner: Optional[str] = None) -> None:
+        """Drop cached audio. Narrow it with ``owner`` when one track changed.
+
+        Without the owner this clears every track using the plugin, which on a
+        project with a dozen tracks on one synth means re-rendering all of them
+        to reflect a change that affected one.
+        """
+        if plugin is None and owner is None:
             self._cache.clear()
             self._states.clear()
-        else:
-            for k in [k for k in self._cache if k[0] == plugin]:
-                del self._cache[k]
-            for k in [k for k in self._states if k[0] == plugin]:
-                del self._states[k]
+            return
+        for store in (self._cache, self._states):
+            for k in [k for k in store
+                      if (plugin is None or k[0] == plugin)
+                      and (owner is None or k[1] == owner)]:
+                del store[k]
 
 
 def capture_state(plugin_name: str, owner: Optional[str] = None) -> str:

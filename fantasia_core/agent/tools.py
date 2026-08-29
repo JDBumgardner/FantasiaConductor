@@ -201,14 +201,16 @@ class AgentTools:
                  "required": ["text"]}},
             {"name": "list_plugins", "description": "List installed VST3/AU plugins (synths and effects). A hosted synth like Vital brings its own engine, presets and interface, so prefer one over the built-in synth when the user wants a specific sound. Returns each plugin's name to pass as 'plugin' elsewhere.",
              "input_schema": {"type": "object", "properties": {"refresh": {"type": "boolean"}}}},
-            {"name": "plugin_params", "description": "Search a plugin's parameters and read their current values. Big synths expose hundreds, so ALWAYS pass a 'query' (e.g. 'filter cutoff', 'osc 1 level', 'reverb') rather than listing everything. Values come back as the plugin displays them ('440 Hz', 'on'), which is also what set_plugin_param accepts.",
-             "input_schema": {"type": "object", "required": ["plugin"], "properties": {
-                 "plugin": {"type": "string", "description": "plugin name from list_plugins"},
+            {"name": "plugin_params", "description": "Search a plugin's parameters and read their current values. Big synths expose hundreds, so ALWAYS pass a 'query' (e.g. 'filter cutoff', 'osc 1 level', 'reverb') rather than listing everything. Values come back as the plugin displays them ('440 Hz', 'on'), which is also what set_plugin_param accepts. Pass 'track_id': every track has its own instance of a plugin with its own patch, so the answer depends on which track you mean.",
+             "input_schema": {"type": "object", "properties": {
+                 "track_id": {"type": "string", "description": "the track whose instance to read — required when several tracks use the same plugin"},
+                 "plugin": {"type": "string", "description": "plugin name from list_plugins; only needed without track_id"},
                  "query": {"type": "string", "description": "words that must all appear in the parameter name"},
                  "limit": {"type": "integer", "description": "max rows, default 40"}}}},
-            {"name": "set_plugin_param", "description": "Set one plugin parameter. Prefer the plugin's own text form ('880 Hz', '-6 dB', 'on') — the plugin converts it, which is more reliable than guessing a 0-1 value. A raw 0-1 number also works. Call plugin_params first to find the exact name.",
-             "input_schema": {"type": "object", "required": ["plugin", "name", "value"], "properties": {
-                 "plugin": {"type": "string"}, "name": {"type": "string"},
+            {"name": "set_plugin_param", "description": "Set one plugin parameter on ONE track. Prefer the plugin's own text form ('880 Hz', '-6 dB', 'on') — the plugin converts it, which is more reliable than guessing a 0-1 value. A raw 0-1 number also works. Call plugin_params first to find the exact name. Each track has its own instance and patch, so 'track_id' says which sound to change; without it, a plugin used by several tracks is ambiguous and the call is refused rather than changing the wrong one.",
+             "input_schema": {"type": "object", "required": ["name", "value"], "properties": {
+                 "track_id": {"type": "string", "description": "the track to change"},
+                 "plugin": {"type": "string", "description": "only needed without track_id"}, "name": {"type": "string"},
                  "value": {"description": "text like '880 Hz', or a number 0-1"}}}},
             {"name": "list_plugin_presets", "description": "List saved plugin presets — whole patches captured from a plugin's own window and recallable by name. This is how a sound that CANNOT be built from parameters alone becomes available: Vital's modulation routings, wavetable choices and sample slots are not automatable parameters, so an agent can tune a knob but cannot invent a routing. Pass 'plugin' to filter to one plugin's presets.",
              "input_schema": {"type": "object", "properties": {
