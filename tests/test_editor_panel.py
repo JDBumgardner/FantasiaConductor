@@ -150,3 +150,18 @@ def test_signal_chain_and_graph_follow_the_track(panel):
     dock.show_graph(t)
     assert SOURCE in dock.graph.view._nodes
     assert "Lead" in dock.graph._title.text()
+
+
+def test_synth_panel_has_three_oscillators(panel):
+    from fantasia_core.commands import AddTrackCommand, CommandBus
+    from fantasia_core.document import Project
+
+    dock, _ = panel
+    t = CommandBus(Project()).dispatch(AddTrackCommand("Lead")).created_track
+    dock.show_synth(t)
+    assert dock.stack.currentIndex() == 1
+    assert dock.synth.osc1 is not None
+    assert dock.synth.osc2 is not None
+    assert dock.synth.osc3 is not None
+    assert "cutoff" in dock.synth._sliders
+    assert dock.synth._name.text() == "Lead"

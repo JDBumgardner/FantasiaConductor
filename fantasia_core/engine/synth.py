@@ -1,10 +1,10 @@
 """A small subtractive synthesizer (pure NumPy) for synth tracks.
 
-Signal path per note: 2 oscillators (mix + detune) → resonant low-pass filter
-(with a coarse envelope sweep) → ADSR amplitude envelope → gain. A clip's notes
-are summed. Like the MIDI renderer, results are cached and only rendered off the
-audio thread (:meth:`render`/:meth:`warm`); the audio callback reads the cache
-(:meth:`cached`).
+Signal path per note: 3 oscillators (slightly detuned saw stack by default)
+→ resonant low-pass filter (with a coarse envelope sweep) → ADSR amplitude
+envelope → gain. A clip's notes are summed. Like the MIDI renderer, results
+are cached and only rendered off the audio thread (:meth:`render`/:meth:`warm`);
+the audio callback reads the cache (:meth:`cached`).
 
 The patch is a plain dict so it serializes with the track and drives the synth
 panel UI directly.
@@ -19,19 +19,22 @@ import numpy as np
 
 WAVEFORMS = ["sine", "saw", "square", "triangle"]
 
+# Default voice: three slightly detuned saws through a low-pass so a new
+# MIDI track is audible without being a raw buzzy stack.
 DEFAULT_PATCH: Dict[str, object] = {
     "osc1": "saw",
-    "osc2": "square",
-    "mix": 0.4,          # 0 = osc1 only, 1 = osc2 only
-    "detune": 0.12,      # osc2 detune in semitones
+    "osc2": "saw",
+    "osc3": "saw",
+    "mix": 1.0,          # 0 = osc1 only, 1 = equal detuned trio
+    "detune": 0.12,      # osc2/osc3 spread in semitones (±)
     "attack": 0.01,      # s
-    "decay": 0.25,       # s
-    "sustain": 0.7,      # 0..1
-    "release": 0.25,     # s
-    "cutoff": 3500.0,    # Hz (base)
-    "resonance": 0.3,    # 0..1
-    "env_amount": 2500.0,  # Hz added at envelope peak
-    "gain": 0.5,         # 0..1
+    "decay": 0.22,       # s
+    "sustain": 0.68,     # 0..1
+    "release": 0.20,     # s
+    "cutoff": 1600.0,    # Hz (base) — audible, still filtered
+    "resonance": 0.28,   # 0..1
+    "env_amount": 800.0,  # Hz added at envelope peak
+    "gain": 0.48,        # 0..1
 }
 
 
@@ -112,9 +115,12 @@ def render_note(patch, pitch: int, dur: float, sr: int) -> np.ndarray:
         return np.zeros(0, dtype=np.float32)
     t = np.arange(n) / sr
     mix = float(patch["mix"])
+    detune = float(patch["detune"])
     o1 = _osc(str(patch["osc1"]), freq, t)
-    o2 = _osc(str(patch["osc2"]), freq * (2.0 ** (float(patch["detune"]) / 12.0)), t)
-    sig = ((1.0 - mix) * o1 + mix * o2).astype(np.float32)
+    o2 = _osc(str(patch.get("osc2", "saw")), freq * (2.0 ** (detune / 12.0)), t)
+    o3 = _osc(str(patch.get("osc3", "saw")), freq * (2.0 ** (-detune / 12.0)), t)
+    trio = (o1 + o2 + o3) / 3.0
+    sig = ((1.0 - mix) * o1 + mix * trio).astype(np.float32)
     env = _adsr(patch, dur, n, sr)
     sig = _filter(sig, patch, env, sr)
     sig *= env * float(patch["gain"])

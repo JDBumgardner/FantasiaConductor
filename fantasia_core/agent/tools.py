@@ -65,7 +65,7 @@ def _clean_patch(patch: dict) -> dict:
     """Keep only valid synth params, coercing types."""
     out = {}
     for key, val in (patch or {}).items():
-        if key in ("osc1", "osc2"):
+        if key in ("osc1", "osc2", "osc3"):
             if val in WAVEFORMS:
                 out[key] = val
         elif key in _SYNTH_NUMERIC:
@@ -258,13 +258,13 @@ class AgentTools:
                  "gain": {"type": "number", "description": "dB"},
                  "q": {"type": "number"},
                  "enabled": {"type": "boolean"}}, "required": ["track_id", "band"]}},
-            {"name": "set_synth_param", "description": "Set one synth patch parameter on a synth track (osc1/osc2: sine|saw|square|triangle; mix,sustain,resonance,gain 0-1; detune semitones; attack,decay,release seconds; cutoff,env_amount Hz).",
+            {"name": "set_synth_param", "description": "Set one synth patch parameter on a synth track (osc1/osc2/osc3: sine|saw|square|triangle; mix 0=osc1 only … 1=detuned trio; detune semitones; attack,decay,release seconds; cutoff,env_amount Hz; sustain,resonance,gain 0-1).",
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"}, "key": {"type": "string"}, "value": {}},
                  "required": ["track_id", "key", "value"]}},
             {"name": "get_synth_patch", "description": "Get the full current synth patch of a synth track.",
              "input_schema": {"type": "object", "properties": {"track_id": {"type": "string"}}, "required": ["track_id"]}},
-            {"name": "set_synth_patch", "description": "Design a sound: set the whole synth patch at once (merges with the current patch). Params: osc1/osc2 (sine|saw|square|triangle), mix/sustain/resonance/gain (0-1), detune (semitones), attack/decay/release (seconds), cutoff/env_amount (Hz). Use this to create a sound from a description; add_fx layers reverb/delay/filters on top.",
+            {"name": "set_synth_patch", "description": "Design a sound: set the whole synth patch at once (merges with the current patch). Params: osc1/osc2/osc3 (sine|saw|square|triangle), mix (0=osc1 only, 1=detuned trio), detune (semitones), attack/decay/release (seconds), cutoff/env_amount (Hz), sustain/resonance/gain (0-1). New tracks already use a filtered saw trio; use this to reshape it. add_fx layers reverb/delay/filters on top.",
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"}, "patch": {"type": "object"}}, "required": ["track_id", "patch"]}},
             {"name": "add_clip", "description": "Add an empty clip to a track. Position it MUSICALLY with bar (1-based measure) + bars (length in measures) — preferred — or in seconds with start/duration. Returns its id; fill it with write_midi.",

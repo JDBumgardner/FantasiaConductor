@@ -70,6 +70,7 @@ from fantasia_core.commands import (
     SetTempoCommand,
     SetTrackAttrCommand,
     SetTrackFxCommand,
+    SetTrackSynthCommand,
     SetTrackSynthParamCommand,
     SplitClipCommand,
 )
@@ -84,6 +85,7 @@ from fantasia_core.document import (
 from fantasia_core.document.serialize import load_project, save_project
 from fantasia_core.engine import (
     AudioPool,
+    DEFAULT_PATCH,
     MidiRenderer,
     PlaybackEngine,
     Recorder,
@@ -103,6 +105,7 @@ from ui.search_panel import SearchPanel
 from ui.gm_instruments import DRUM_KITS, gm_name
 from ui.editor_dock import EditorDock
 from ui.hotkeys import HotkeysDialog
+from ui.metrics import RULER_H, TRACK_H
 from ui.timeline_view import TimelineView
 from ui.track_header import TrackHeader, TrackHeaderPanel
 from ui.transport_bar import TransportBar
@@ -163,6 +166,13 @@ QTextEdit, QListWidget {{ background: {theme.TIMELINE_BG}; color: {theme.FG};
     selection-color: #12030c; }}
 QListWidget::item:selected {{ background: {theme.BG_SELECTED}; color: {theme.FG_BRIGHT}; }}
 QListWidget::item:alternate {{ background: {theme.BG_PANEL}; }}
+
+QTreeWidget {{ background: {theme.BG_DEEP}; color: {theme.FG_BRIGHT};
+    alternate-background-color: {theme.BG_ELEVATED};
+    border: 1px solid {theme.BORDER}; }}
+QTreeWidget::item {{ color: {theme.FG_BRIGHT}; }}
+QTreeWidget::item:alternate {{ background: {theme.BG_ELEVATED}; color: {theme.FG_BRIGHT}; }}
+QTreeWidget::item:selected {{ background: {theme.BUTTON_CHECKED}; color: {theme.BUTTON_CHECKED_FG}; }}
 
 QComboBox, QSpinBox, QDoubleSpinBox {{ background: {theme.BG_ELEVATED}; color: {theme.FG};
     border: 1px solid {theme.BORDER}; border-radius: 4px; padding: 2px 6px; }}
@@ -1758,7 +1768,9 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(_STYLESHEET)
 
         self.project = Project(name="Untitled")
-        self.project.add_track("Track 1")  # one-time setup (not undoable)
+        track = self.project.add_track("Track 1")  # one-time setup (not undoable)
+        track.is_synth = True
+        track.synth = dict(DEFAULT_PATCH)
         self.bus = CommandBus(self.project)
         self.pool = AudioPool(self.project.sample_rate)
         self.midi = MidiRenderer(default_soundfont(), self.project.sample_rate)
@@ -1821,6 +1833,7 @@ class MainWindow(QMainWindow):
         self._note_clipboard: list = []
         self._syncing = False
         self._eq_writing = False
+        self._lane_menu_time: Optional[float] = None
 
         self.render_progress.connect(self._on_render_progress_ui)
         self._play_timer = QTimer(self)
@@ -2041,6 +2054,11 @@ class MainWindow(QMainWindow):
         self._fill_grid_menu(self.menu_grid)
         self.grid_context_menu = QMenu("Grid", self)
         self._fill_grid_menu(self.grid_context_menu)
+        self.act_add_midi_clip = QAction("Add MIDI Clip", self)
+        self.act_add_midi_clip.setToolTip("Empty 4-bar MIDI clip at the click")
+        first = self.grid_context_menu.actions()[0] if self.grid_context_menu.actions() else None
+        self.grid_context_menu.insertAction(first, self.act_add_midi_clip)
+        self.grid_context_menu.insertSeparator(first)
         view_menu.addSeparator()
         self.act_hotkeys = QAction("&Hotkeys…", self, shortcut="F1")
         view_menu.addAction(self.act_hotkeys)
@@ -2101,6 +2119,7 @@ class MainWindow(QMainWindow):
         self.act_focus_agent.triggered.connect(self._on_focus_agent)
         self.act_focus_search.triggered.connect(self._on_focus_search)
         self.act_hotkeys.triggered.connect(self._on_hotkeys)
+        self.act_add_midi_clip.triggered.connect(self._on_add_midi_clip)
 
         self.transport.play_requested.connect(self._toggle_play)
         self.transport.stop_requested.connect(self._on_stop)
@@ -3051,7 +3070,31 @@ class MainWindow(QMainWindow):
             self.timeline.viewport().update()
 
     def _on_grid_menu(self, global_pos) -> None:  # noqa: ANN001
+        view_pt = self.timeline.mapFromGlobal(global_pos)
+        scene = self.timeline.mapToScene(view_pt)
+        self._lane_menu_time = max(0.0, self.timeline.snap(scene.x() / self.timeline.pps))
+        row = int((scene.y() - RULER_H) // TRACK_H)
+        if 0 <= row < len(self.project.tracks):
+            self._set_selected_track(self.project.tracks[row].id)
         self.grid_context_menu.exec(global_pos)
+
+    def _on_add_midi_clip(self) -> None:
+        if self.selected_track_id is None or self.selected_track_id == MASTER_ID:
+            if not self.project.tracks:
+                return
+            self.selected_track_id = self.project.tracks[0].id
+        start = self._lane_menu_time
+        if start is None:
+            start = float(self.timeline.playhead)
+        duration = self.project.seconds_per_beat() * self.project.beats_per_bar * 4
+        cmd = self.bus.dispatch(AddClipCommand(
+            self.selected_track_id, start, duration, name="MIDI", content_type="midi",
+        ))
+        self._lane_menu_time = None
+        self.timeline.rebuild()
+        if cmd.created_clip is not None:
+            self.timeline.select_clips([cmd.created_clip.id])
+        self.statusBar().showMessage("Added 4-bar MIDI clip")
 
     def _dispatch_attr(self, track_id: str, attr: str, value) -> None:
         self.bus.dispatch(
@@ -4514,7 +4557,10 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Removed {track.name} — Undo (Cmd+Z) to restore")
             return
         if action == "toggle_synth":
-            self.bus.dispatch(SetTrackAttrCommand(track_id, "is_synth", not track.is_synth))
+            turning_on = not track.is_synth
+            self.bus.dispatch(SetTrackAttrCommand(track_id, "is_synth", turning_on))
+            if turning_on and not track.synth:
+                self.bus.dispatch(SetTrackSynthCommand(track_id, dict(DEFAULT_PATCH)))
             self._warm()
             state = "on" if track.is_synth else "off"
             self.statusBar().showMessage(f"Synth voice {state} — {track.name}")

@@ -101,20 +101,21 @@ def test_insert_graph_tools_address_by_id():
 def test_design_synth_patch():
     t = _tools()
     tid = t.execute("add_track", {})["track_id"]
-    t.execute("set_track", {"track_id": tid, "is_synth": True})
+    before = dict(t.bus.project.track_by_id(tid).synth)
+    assert t.bus.project.track_by_id(tid).is_synth is True
     # design a warm pad; junk keys and bad values are dropped/coerced
     r = t.execute("set_synth_patch", {"track_id": tid, "patch": {
-        "osc1": "saw", "osc2": "triangle", "attack": "0.5", "cutoff": 1500,
+        "osc1": "saw", "osc2": "triangle", "osc3": "sine", "attack": "0.5", "cutoff": 1500,
         "resonance": 0.2, "bogus": 9, "osc1_bad": "wobble"}})
     patch = t.bus.project.track_by_id(tid).synth
-    assert patch["osc1"] == "saw" and patch["osc2"] == "triangle"
+    assert patch["osc1"] == "saw" and patch["osc2"] == "triangle" and patch["osc3"] == "sine"
     assert patch["attack"] == 0.5 and patch["cutoff"] == 1500.0
     assert "bogus" not in patch and "osc1_bad" not in patch
     # returned patch is the full effective patch (defaults merged in)
     assert "sustain" in r["patch"]
-    # undoable
+    # undoable — restores the stock default trio, not an empty dict
     t.execute("undo", {})
-    assert "osc1" not in t.bus.project.track_by_id(tid).synth
+    assert t.bus.project.track_by_id(tid).synth == before
 
 
 def test_bar_beat_notes_are_rebased_to_the_clip():

@@ -31,7 +31,11 @@ class AddTrackCommand(Command):
 
     def do(self, project) -> None:  # noqa: ANN001
         if self._track is None:
+            from fantasia_core.engine.synth import DEFAULT_PATCH
+
             self._track = project.add_track(self.name)
+            self._track.is_synth = True
+            self._track.synth = dict(DEFAULT_PATCH)
             self._index = len(project.tracks) - 1
         else:
             project.insert_track(self._index, self._track)

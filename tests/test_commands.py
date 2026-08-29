@@ -35,6 +35,16 @@ def test_add_track_undo_redo_keeps_id():
     assert bus.project.tracks[0].id == tid  # id stable across redo
 
 
+def test_add_track_defaults_to_stock_synth():
+    from fantasia_core.engine.synth import DEFAULT_PATCH
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand("Lead")).created_track
+    assert t.is_synth is True
+    assert t.synth["osc1"] == t.synth["osc2"] == t.synth["osc3"] == "saw"
+    assert t.synth["cutoff"] == DEFAULT_PATCH["cutoff"]
+
+
 def test_remove_track_restores_contents():
     bus = _bus()
     t = bus.dispatch(AddTrackCommand("Bass")).created_track
