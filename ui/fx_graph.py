@@ -12,14 +12,19 @@ from PySide6.QtGui import (
     QPen,
 )
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsPathItem,
+    QGraphicsProxyWidget,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsView,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -35,12 +40,33 @@ from fantasia_core.document.fx_insert import (
     insert_type,
     linear_order,
 )
+from fantasia_core.document.fx_params import (
+    SYNTH_PARAM_SPECS,
+    ParamSpec,
+    read_param,
+    specs_for,
+)
 from fantasia_core.document.model import MASTER_ID, Track
+from fantasia_core.engine.synth import DEFAULT_PATCH
 from ui import theme
 
-NODE_W, NODE_H = 160.0, 64.0
+NODE_W, NODE_H = 196.0, 64.0
 PORT_R = 6.5
-COL_GAP, ROW_GAP = 220.0, 96.0
+COL_GAP, ROW_GAP = 248.0, 280.0
+HEADER_H = 22.0
+ROW_H = 22.0
+MAX_PARAM_BODY = 200.0
+
+_PARAM_STYLE = (
+    f"QWidget {{ background: transparent; color: {theme.FG}; }}"
+    f"QLabel {{ color: {theme.FG_DIM}; font-size: 10px; }}"
+    f"QDoubleSpinBox, QComboBox {{"
+    f"  background: {theme.BG_PANEL}; color: {theme.FG_BRIGHT};"
+    f"  border: 1px solid {theme.BORDER}; border-radius: 2px;"
+    f"  padding: 0px 2px; font-size: 10px; min-height: 16px; }}"
+    f"QCheckBox {{ color: {theme.FG_BRIGHT}; spacing: 0px; }}"
+    f"QScrollArea {{ background: transparent; border: none; }}"
+)
 
 
 def _instrument_label(track: Track) -> str:
@@ -56,6 +82,99 @@ def _instrument_label(track: Track) -> str:
     return "Soundfont / clips"
 
 
+class _ParamPanel(QWidget):
+    """Name-left / value-right editors for a stock device."""
+
+    changed = Signal(str, object)  # key, value
+
+    def __init__(self, specs: tuple[ParamSpec, ...], parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._specs = specs
+        self._controls: dict[str, QWidget] = {}
+        self.setStyleSheet(_PARAM_STYLE)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        body = QWidget()
+        col = QVBoxLayout(body)
+        col.setContentsMargins(2, 0, 2, 2)
+        col.setSpacing(1)
+        for spec in specs:
+            row = QWidget()
+            row.setFixedHeight(int(ROW_H) - 2)
+            h = QHBoxLayout(row)
+            h.setContentsMargins(2, 0, 2, 0)
+            h.setSpacing(4)
+            name = QLabel(spec.label)
+            name.setFixedWidth(62)
+            h.addWidget(name)
+            ctrl = self._make_control(spec)
+            h.addWidget(ctrl, 1)
+            self._controls[spec.key] = ctrl
+            col.addWidget(row)
+        col.addStretch(0)
+        if len(specs) > 6:
+            scroller = QScrollArea()
+            scroller.setWidgetResizable(True)
+            scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroller.setWidget(body)
+            scroller.setFixedHeight(int(MAX_PARAM_BODY))
+            outer.addWidget(scroller)
+            self._body_h = MAX_PARAM_BODY
+        else:
+            outer.addWidget(body)
+            self._body_h = max(len(specs), 1) * ROW_H
+        self.setFixedWidth(int(NODE_W) - 8)
+        self.setFixedHeight(int(self._body_h))
+
+    def _make_control(self, spec: ParamSpec) -> QWidget:
+        if spec.kind == "choice":
+            box = QComboBox()
+            for c in spec.choices:
+                box.addItem(c)
+            box.setFocusPolicy(Qt.ClickFocus)
+            box.currentTextChanged.connect(
+                lambda text, key=spec.key: self.changed.emit(key, text)
+            )
+            return box
+        if spec.kind == "bool":
+            box = QCheckBox()
+            box.setFocusPolicy(Qt.ClickFocus)
+            box.toggled.connect(lambda on, key=spec.key: self.changed.emit(key, bool(on)))
+            return box
+        spin = QDoubleSpinBox()
+        spin.setRange(spec.minimum, spec.maximum)
+        spin.setDecimals(spec.decimals)
+        spin.setSingleStep(max(10 ** (-spec.decimals), (spec.maximum - spec.minimum) / 200.0))
+        if spec.suffix:
+            spin.setSuffix(spec.suffix)
+        spin.setButtonSymbols(QDoubleSpinBox.NoButtons)
+        spin.setAlignment(Qt.AlignRight)
+        spin.setFocusPolicy(Qt.ClickFocus)
+        spin.valueChanged.connect(lambda val, key=spec.key: self.changed.emit(key, float(val)))
+        return spin
+
+    def load_values(self, params: dict) -> None:
+        for spec in self._specs:
+            ctrl = self._controls.get(spec.key)
+            if ctrl is None:
+                continue
+            val = read_param(params, spec)
+            blocked = ctrl.blockSignals(True)
+            if isinstance(ctrl, QComboBox):
+                idx = ctrl.findText(str(val))
+                if idx >= 0:
+                    ctrl.setCurrentIndex(idx)
+            elif isinstance(ctrl, QCheckBox):
+                ctrl.setChecked(bool(val))
+            elif isinstance(ctrl, QDoubleSpinBox):
+                try:
+                    ctrl.setValue(float(val))
+                except (TypeError, ValueError):
+                    pass
+            ctrl.blockSignals(blocked)
+
+
 class _Port(QGraphicsEllipseItem):
     def __init__(self, node: "_Node", incoming: bool) -> None:
         super().__init__(-PORT_R, -PORT_R, PORT_R * 2, PORT_R * 2)
@@ -69,10 +188,16 @@ class _Port(QGraphicsEllipseItem):
 
 
 class _Node(QGraphicsRectItem):
-    def __init__(self, nid: str, title: str, subtitle: str, kind: str) -> None:
-        super().__init__(0, 0, NODE_W, NODE_H)
+    def __init__(self, nid: str, title: str, subtitle: str, kind: str,
+                 specs: tuple[ParamSpec, ...] = ()) -> None:
+        height = NODE_H
+        if specs:
+            body = MAX_PARAM_BODY if len(specs) > 6 else max(len(specs), 1) * ROW_H
+            height = HEADER_H + body + 6
+        super().__init__(0, 0, NODE_W, height)
         self.nid = nid
         self.kind = kind
+        self._panel: Optional[_ParamPanel] = None
         self.setFlag(QGraphicsItem.ItemIsMovable, nid not in (SOURCE, OUT))
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
@@ -85,8 +210,15 @@ class _Node(QGraphicsRectItem):
         self.out_port = _Port(self, False)
         self.in_port.setParentItem(self)
         self.out_port.setParentItem(self)
-        self.in_port.setPos(0, NODE_H / 2)
-        self.out_port.setPos(NODE_W, NODE_H / 2)
+        mid = height / 2
+        self.in_port.setPos(0, mid)
+        self.out_port.setPos(NODE_W, mid)
+        if specs:
+            panel = _ParamPanel(specs)
+            proxy = QGraphicsProxyWidget(self)
+            proxy.setWidget(panel)
+            proxy.setPos(4, HEADER_H + 2)
+            self._panel = panel
 
     def header_color(self) -> QColor:
         if self.nid == SOURCE:
@@ -106,7 +238,7 @@ class _Node(QGraphicsRectItem):
         ))
         painter.setBrush(QColor(theme.BG_ELEVATED))
         painter.drawRoundedRect(r, 8, 8)
-        head = QRectF(r.x(), r.y(), r.width(), 22)
+        head = QRectF(r.x(), r.y(), r.width(), HEADER_H)
         painter.setBrush(self.header_color())
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(head, 8, 8)
@@ -114,10 +246,11 @@ class _Node(QGraphicsRectItem):
         painter.setPen(QColor(theme.BG_DEEP))
         painter.setFont(theme.ui_font(9, bold=True))
         painter.drawText(head.adjusted(8, 0, -8, 0), Qt.AlignVCenter | Qt.AlignLeft, self._title)
-        painter.setPen(QColor(theme.FG_DIM))
-        painter.setFont(theme.ui_font(8))
-        painter.drawText(QRectF(r.x() + 8, r.y() + 26, r.width() - 16, 30),
-                         Qt.AlignLeft | Qt.AlignTop, self._subtitle)
+        if self._panel is None:
+            painter.setPen(QColor(theme.FG_DIM))
+            painter.setFont(theme.ui_font(8))
+            painter.drawText(QRectF(r.x() + 8, r.y() + 26, r.width() - 16, 30),
+                             Qt.AlignLeft | Qt.AlignTop, self._subtitle)
 
     def out_scene(self) -> QPointF:
         return self.out_port.scenePos()
@@ -157,6 +290,7 @@ class FxGraphView(QGraphicsView):
     connect_requested = Signal(str, str)
     disconnect_requested = Signal(str, str)
     device_activated = Signal(str, str)
+    param_changed = Signal(str, str, object)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -173,8 +307,47 @@ class FxGraphView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
 
     def set_track(self, track: Optional[Track]) -> None:
+        same = (
+            track is not None
+            and self._track is not None
+            and self._structure_sig(track) == self._structure_sig(self._track)
+            and set(self._nodes) >= {SOURCE, OUT}
+        )
         self._track = track
+        if same:
+            self._sync_params()
+            return
         self._rebuild()
+
+    def _structure_sig(self, track: Track) -> tuple:
+        fx = tuple((insert_id(e), insert_type(e)) for e in (track.fx or []))
+        wires = tuple(sorted(
+            (w.src, w.dst)
+            for w in effective_wires(track.fx, getattr(track, "fx_wires", None))
+        ))
+        src = (
+            bool(getattr(track, "is_synth", False)),
+            bool(getattr(track, "is_drum", False)),
+            str(getattr(track, "plugin", "") or ""),
+            bool(getattr(track, "is_master", False)),
+        )
+        return (track.id, fx, wires, src)
+
+    def _sync_params(self) -> None:
+        track = self._track
+        if track is None:
+            return
+        src = self._nodes.get(SOURCE)
+        if src is not None and src._panel is not None:
+            src._panel.load_values({**DEFAULT_PATCH, **(getattr(track, "synth", None) or {})})
+        by_id = {insert_id(e): e for e in track.fx if insert_id(e)}
+        for nid, node in self._nodes.items():
+            if node._panel is None or nid in (SOURCE, OUT):
+                continue
+            spec = by_id.get(nid)
+            if spec is None:
+                continue
+            node._panel.load_values(getattr(spec, "params", None) or {})
 
     def _rebuild(self) -> None:
         self._scene.clear()
@@ -189,16 +362,36 @@ class FxGraphView(QGraphicsView):
 
         positions = self._layout(track)
         source_sub = _instrument_label(track)
-        self._add_node(SOURCE, "Source", source_sub, "instrument", positions[SOURCE])
+        src_specs = (
+            SYNTH_PARAM_SPECS
+            if getattr(track, "is_synth", False) and not getattr(track, "plugin", "")
+            and not getattr(track, "is_master", False)
+            else ()
+        )
+        src_node = self._add_node(SOURCE, "Source", source_sub, "instrument",
+                                  positions[SOURCE], src_specs)
+        if src_node._panel is not None:
+            src_node._panel.load_values({**DEFAULT_PATCH, **(getattr(track, "synth", None) or {})})
+            src_node._panel.changed.connect(
+                lambda key, val: self.param_changed.emit(SOURCE, key, val)
+            )
         order = linear_order(track.fx, getattr(track, "fx_wires", None))
         by_id = {insert_id(e): e for e in track.fx if insert_id(e)}
         for nid in order:
             spec = by_id.get(nid)
             if spec is None:
                 continue
-            sub = "bypassed" if insert_bypassed(spec) else insert_type(spec)
+            kind = insert_type(spec)
+            params = getattr(spec, "params", None) or {}
+            specs = specs_for(kind, params)
+            sub = "bypassed" if insert_bypassed(spec) else kind
             pos = positions.get(nid, (COL_GAP, ROW_GAP))
-            node = self._add_node(nid, device_label(spec), sub, insert_type(spec), pos)
+            node = self._add_node(nid, device_label(spec), sub, kind, pos, specs)
+            if node._panel is not None:
+                node._panel.load_values(params)
+                node._panel.changed.connect(
+                    lambda key, val, ident=nid: self.param_changed.emit(ident, key, val)
+                )
             x = getattr(spec, "x", 0.0) or 0.0
             y = getattr(spec, "y", 0.0) or 0.0
             if x or y:
@@ -230,8 +423,8 @@ class FxGraphView(QGraphicsView):
             pos[nid] = (x, 80.0 + slot * ROW_GAP)
         return pos
 
-    def _add_node(self, nid, title, subtitle, kind, pos) -> _Node:  # noqa: ANN001
-        node = _Node(nid, title, subtitle, kind)
+    def _add_node(self, nid, title, subtitle, kind, pos, specs=()) -> _Node:  # noqa: ANN001
+        node = _Node(nid, title, subtitle, kind, specs)
         node.setPos(pos[0], pos[1])
         self._scene.addItem(node)
         self._nodes[nid] = node
@@ -333,6 +526,7 @@ class FxGraphEditor(QWidget):
     connect_requested = Signal(str, str)
     disconnect_requested = Signal(str, str)
     device_activated = Signal(str, str)
+    param_changed = Signal(str, str, object)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -347,8 +541,8 @@ class FxGraphEditor(QWidget):
         self._title.setStyleSheet(f"color: {theme.FG}; font-weight: 700;")
         row.addWidget(self._title)
         row.addStretch(1)
-        hint = QLabel("Drag a port to wire · Delete removes a node (auto-reconnects) "
-                      "· Right-click a cable to break it · Ctrl+wheel zoom")
+        hint = QLabel("Drag a port to wire · Edit params on a node · Delete removes "
+                      "(auto-reconnects) · Right-click a cable to break it · Ctrl+wheel zoom")
         hint.setStyleSheet(f"color: {theme.FG_DIM}; font-size: 10px;")
         row.addWidget(hint)
         plus = QToolButton()
@@ -367,6 +561,7 @@ class FxGraphEditor(QWidget):
         self.view.connect_requested.connect(self.connect_requested)
         self.view.disconnect_requested.connect(self.disconnect_requested)
         self.view.device_activated.connect(self.device_activated)
+        self.view.param_changed.connect(self.param_changed)
         outer.addWidget(self.view, 1)
 
     def set_track(self, track: Optional[Track]) -> None:

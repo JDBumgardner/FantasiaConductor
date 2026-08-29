@@ -9,6 +9,7 @@ from fantasia_core.commands.base import Command, CommandBus
 from fantasia_core.commands.clip_cmds import (
     AddClipCommand,
     DuplicateClipsCommand,
+    JoinMidiClipsCommand,
     MakeMidiClipCommand,
     RemoveClipCommand,
     SetClipAttrCommand,
@@ -51,6 +52,7 @@ __all__ = [
     "SetTrackSynthParamCommand",
     "AddClipCommand",
     "DuplicateClipsCommand",
+    "JoinMidiClipsCommand",
     "MakeMidiClipCommand",
     "RemoveClipCommand",
     "SetClipAttrCommand",

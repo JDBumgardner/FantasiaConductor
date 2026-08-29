@@ -85,6 +85,7 @@ class TrackHeader(QWidget):
         self._instrument = getattr(track, "instrument", 0)
         self._plugin = getattr(track, "plugin", "") or ""
         self._is_master = track.id == MASTER_ID or getattr(track, "is_master", False)
+        self._color = getattr(track, "color", theme.MAGENTA) or theme.MAGENTA
 
         # --- create widgets and set state from the model (no signals yet) ---
         self.name_edit = QLineEdit(track.name)
@@ -159,6 +160,15 @@ class TrackHeader(QWidget):
         # --- lay out ---
         name_row = QHBoxLayout()
         name_row.setContentsMargins(0, 0, 0, 0)
+        if not self._is_master:
+            self._swatch = QLabel()
+            self._swatch.setFixedSize(12, 12)
+            self._swatch.setToolTip("Track color — right-click to change")
+            self._swatch.setStyleSheet(
+                f"background:{self._color}; border:1px solid {theme.BORDER};"
+                f" border-radius:2px;"
+            )
+            name_row.addWidget(self._swatch)
         name_row.addWidget(self.name_edit, 1)
         name_row.addWidget(self.fx_badge)
         outer.addLayout(name_row)
@@ -305,6 +315,14 @@ class TrackHeader(QWidget):
             mapping[plug] = "plugin_instrument"
             if self._plugin:
                 mapping[menu.addAction(f"Open {self._plugin} Interface…")] = "plugin_editor"
+
+            menu.addSeparator()
+            color_menu = menu.addMenu("Set Color")
+            for name, hex_color in theme.TRACK_PALETTE:
+                act = color_menu.addAction(theme.swatch_icon(hex_color), name)
+                act.setCheckable(True)
+                act.setChecked(self._color.lower() == hex_color.lower())
+                mapping[act] = f"color:{hex_color}"
 
             menu.addSeparator()
         if self._fx_types:

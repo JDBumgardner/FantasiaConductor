@@ -619,7 +619,7 @@ class AgentTools:
                                                    name=a.get("name", "Clip")))
             clip = cmd.created_clip
             if not clip:
-                return {"error": "track not found"}
+                return {"error": "could not add clip (missing track or MIDI overlap)"}
             first = int(round(start / bar_len)) + 1 if bar_len else 1
             return {"clip_id": clip.id, "bar": first,
                     "bars": round(dur / bar_len, 3) if bar_len else None}
@@ -647,6 +647,12 @@ class AgentTools:
                                  f"clip (it covers bars {first_bar}-{last_bar}). "
                                  f"Use bar/beat positions inside that range, or make "
                                  f"the clip longer."}
+            if name == "write_midi" and not clip.is_midi:
+                track, _ = p.find_clip(a["clip_id"])
+                if track is not None and track.midi_overlaps(
+                    clip.start, clip.duration, exclude_id=clip.id
+                ):
+                    return {"error": "MIDI clips on a track cannot overlap"}
             cmd = (MakeMidiClipCommand if name == "write_midi" else SetClipNotesCommand)
             self.bus.dispatch(cmd(a["clip_id"], notes))
             return {"ok": True, "num_notes": len(notes)}
@@ -668,7 +674,8 @@ class AgentTools:
                 notes=notes, gain_db=c.gain_db,
                 fade_in=c.fade_in, fade_out=c.fade_out, reversed=c.reversed,
                 pitch_semitones=c.pitch_semitones))
-            return {"clip_id": cmd.created_clip.id} if cmd.created_clip else {"error": "track not found"}
+            return {"clip_id": cmd.created_clip.id} if cmd.created_clip else {
+                "error": "could not add clip (missing track or MIDI overlap)"}
         if name == "duplicate_track":
             src = p.track_by_id(a["track_id"])
             if src is None:

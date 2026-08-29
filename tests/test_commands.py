@@ -263,6 +263,103 @@ def test_duplicate_clips_places_after_selection_span():
     assert all(bus.project.find_clip(cid)[1] is not None for cid in cmd.created_ids)
 
 
+def test_midi_clips_cannot_overlap_on_same_track():
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    a = bus.dispatch(AddClipCommand(t.id, 0.0, 2.0, "a", content_type="midi")).created_clip
+    assert a is not None
+    overlap = bus.dispatch(AddClipCommand(t.id, 1.0, 2.0, "b", content_type="midi"))
+    assert overlap.created_clip is None
+    assert len(t.clips) == 1
+    touching = bus.dispatch(AddClipCommand(t.id, 2.0, 2.0, "c", content_type="midi")).created_clip
+    assert touching is not None
+    assert len(t.clips) == 2
+    # Audio may still overlap MIDI.
+    audio = bus.dispatch(AddClipCommand(t.id, 0.5, 1.0, "x", source_path="/x.wav")).created_clip
+    assert audio is not None
+    bus.dispatch(SetClipGeometryCommand(touching.id, 1.0, 2.0))
+    assert touching.start == 2.0  # snaps adjacent instead of overlapping
+
+
+def test_midi_move_snaps_to_nearest_side():
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    bus.dispatch(AddClipCommand(t.id, 0.0, 2.0, "a", content_type="midi"))
+    b = bus.dispatch(AddClipCommand(t.id, 5.0, 2.0, "b", content_type="midi")).created_clip
+    bus.dispatch(SetClipGeometryCommand(b.id, 1.0, 2.0))
+    assert abs(b.start - 2.0) < 1e-9
+    a = next(c for c in t.clips if c.id != b.id and c.is_midi)
+    bus.dispatch(SetClipGeometryCommand(a.id, 3.0, 2.0))
+    assert abs(a.start - 4.0) < 1e-9
+
+
+def test_new_tracks_cycle_unique_palette_colors():
+    from fantasia_core.document.colors import TRACK_CYCLE
+
+    bus = _bus()
+    colors = [bus.dispatch(AddTrackCommand()).created_track.color for _ in range(len(TRACK_CYCLE))]
+    assert colors == list(TRACK_CYCLE)
+
+
+def test_midi_clip_inherits_track_color_until_overridden():
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    c = bus.dispatch(AddClipCommand(t.id, 0.0, 1.0, "m", content_type="midi")).created_clip
+    assert c.color == ""
+    bus.dispatch(SetClipAttrCommand(c.id, "color", "#25e6d5"))
+    assert c.color == "#25e6d5"
+    bus.undo()
+    assert c.color == ""
+
+
+def test_join_midi_clips_spans_gaps_and_undoes():
+    from fantasia_core.commands import JoinMidiClipsCommand
+    from fantasia_core.document import Note
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    a = bus.dispatch(AddClipCommand(
+        t.id, 0.0, 1.0, "a", content_type="midi",
+        notes=[Note(60, 0.0, 0.5)],
+    )).created_clip
+    b = bus.dispatch(AddClipCommand(
+        t.id, 3.0, 1.0, "b", content_type="midi",
+        notes=[Note(64, 0.2, 0.4)],
+    )).created_clip
+    cmd = bus.dispatch(JoinMidiClipsCommand([a.id, b.id]))
+    joined = cmd.created_clip
+    assert joined is not None
+    assert joined.start == 0.0 and joined.duration == 4.0
+    assert [(n.pitch, n.start) for n in joined.notes] == [(60, 0.0), (64, 3.2)]
+    assert t.clip_by_id(a.id) is None and t.clip_by_id(b.id) is None
+    bus.undo()
+    assert t.clip_by_id(a.id) is not None and t.clip_by_id(b.id) is not None
+    assert t.clip_by_id(joined.id) is None
+    bus.redo()
+    assert t.clip_by_id(joined.id) is not None
+    assert len([c for c in t.clips if c.is_midi]) == 1
+
+
+def test_join_midi_refuses_foreign_clip_in_the_gap():
+    from fantasia_core.commands import JoinMidiClipsCommand
+    from fantasia_core.document import Note
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    a = bus.dispatch(AddClipCommand(
+        t.id, 0.0, 1.0, "a", content_type="midi", notes=[Note(60, 0.0, 0.5)],
+    )).created_clip
+    bus.dispatch(AddClipCommand(
+        t.id, 1.5, 0.5, "mid", content_type="midi", notes=[Note(62, 0.0, 0.4)],
+    ))
+    b = bus.dispatch(AddClipCommand(
+        t.id, 3.0, 1.0, "b", content_type="midi", notes=[Note(64, 0.0, 0.4)],
+    )).created_clip
+    cmd = bus.dispatch(JoinMidiClipsCommand([a.id, b.id]))
+    assert cmd.created_clip is None
+    assert len(t.clips) == 3
+
+
 def test_add_bypass_move_remove_fx():
     from fantasia_core.commands import (
         AddFxCommand, BypassFxCommand, MoveFxCommand, RemoveFxCommand,

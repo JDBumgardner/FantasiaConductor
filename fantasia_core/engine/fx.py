@@ -172,6 +172,12 @@ def _sync_one(plugin, spec: dict) -> None:
         _set_num(plugin, ("ratio",), p.get("ratio", 4.0))
         _set_num(plugin, ("attack_ms",), p.get("attack", 1.0))
         _set_num(plugin, ("release_ms",), p.get("release", 100.0))
+    elif kind == "saturator":
+        drive = float(p.get("drive", 5.0))
+        children = list(plugin) if plugin is not None else []
+        if children:
+            _set_num(children[0], ("drive_db",), drive)
+            _set_num(children[1], ("gain_db", "gain"), p.get("output", -drive * 0.6))
     elif kind == "eq":
         from fantasia_core.engine.eq import default_bands
 

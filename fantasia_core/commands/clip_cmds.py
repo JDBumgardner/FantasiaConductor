@@ -36,9 +36,16 @@ class AddClipCommand(Command):
             self._clip = project.add_clip(
                 self.track_id, self.start, self.duration, self.name, **self.kwargs
             )
-            self._index = len(track.clips) - 1
+            if self._clip is None:
+                return
+            self._index = track.clips.index(self._clip)
         else:
-            track.clips.insert(self._index, self._clip)
+            if getattr(self._clip, "is_midi", False) and track.midi_overlaps(
+                self._clip.start, self._clip.duration, exclude_id=self._clip.id
+            ):
+                return
+            idx = self._index if self._index is not None else len(track.clips)
+            track.clips.insert(idx, self._clip)
 
     def undo(self, project) -> None:  # noqa: ANN001
         track = project.track_by_id(self.track_id)
@@ -128,6 +135,7 @@ class SplitClipCommand(Command):
         self._index = None
         self._new_clip = None
         self._left_before = _UNSET
+        self._left_notes = None
         self.label = "Split clip"
 
     def do(self, project) -> None:  # noqa: ANN001
@@ -137,13 +145,32 @@ class SplitClipCommand(Command):
         if self._new_clip is None:
             self._track_id = track.id
             self._index = track.clips.index(clip)
-            self._left_before = (clip.duration, clip.fade_out, clip.source_duration)
+            self._left_before = (
+                clip.duration, clip.fade_out, clip.source_duration, list(clip.notes),
+            )
             left_dur = self.at - clip.start
             span = float(getattr(clip, "source_duration", 0.0) or 0.0)
             if span > 0 and clip.duration > 0:
                 left_src = left_dur * (span / clip.duration)
             else:
                 left_src = left_dur
+            right_notes: list = []
+            left_notes: list = list(clip.notes)
+            if clip.is_midi:
+                left_notes, right_notes = [], []
+                for n in clip.notes:
+                    n_end = n.start + n.duration
+                    if n_end <= left_dur + 1e-9:
+                        left_notes.append(n)
+                    elif n.start >= left_dur - 1e-9:
+                        right_notes.append(Note(
+                            n.pitch, n.start - left_dur, n.duration, n.velocity))
+                    else:
+                        left_notes.append(Note(
+                            n.pitch, n.start, left_dur - n.start, n.velocity))
+                        right_notes.append(Note(
+                            n.pitch, 0.0, n_end - left_dur, n.velocity))
+            self._left_notes = left_notes
             self._new_clip = Clip(
                 id=project.new_id("c"),
                 name=clip.name,
@@ -158,9 +185,13 @@ class SplitClipCommand(Command):
                 fade_out=clip.fade_out,
                 reversed=clip.reversed,
                 pitch_semitones=clip.pitch_semitones,
+                color=getattr(clip, "color", "") or "",
+                notes=right_notes,
             )
         clip.duration = self.at - clip.start
         clip.fade_out = 0.0
+        if self._left_notes is not None and clip.is_midi:
+            clip.notes = list(self._left_notes)
         if float(getattr(clip, "source_duration", 0.0) or 0.0) > 0 and self._new_clip is not None:
             clip.source_duration = float(self._left_before[2]) - float(self._new_clip.source_duration)
         track = project.track_by_id(self._track_id)
@@ -173,7 +204,8 @@ class SplitClipCommand(Command):
             track.clips.remove(self._new_clip)
         _, clip = project.find_clip(self.clip_id)
         if clip is not None and self._left_before is not _UNSET:
-            clip.duration, clip.fade_out, clip.source_duration = self._left_before
+            clip.duration, clip.fade_out, clip.source_duration, notes = self._left_before
+            clip.notes = list(notes)
 
 
 class MakeMidiClipCommand(Command):
@@ -190,8 +222,12 @@ class MakeMidiClipCommand(Command):
         self.label = "Write MIDI"
 
     def do(self, project) -> None:  # noqa: ANN001
-        _, clip = project.find_clip(self.clip_id)
+        track, clip = project.find_clip(self.clip_id)
         if clip is None:
+            return
+        if not clip.is_midi and track is not None and track.midi_overlaps(
+            clip.start, clip.duration, exclude_id=clip.id
+        ):
             return
         if self._before is _UNSET:
             self._before = (
@@ -314,6 +350,7 @@ def _clip_copy_kwargs(clip: Clip) -> dict:
         "lock_tempo": clip.lock_tempo,
         "orig_source_path": clip.orig_source_path,
         "lock_base_dur": clip.lock_base_dur,
+        "color": clip.color,
     }
 
 
@@ -374,9 +411,19 @@ class SetClipGeometryCommand(Command):
         self.label = "Move/resize clip"
 
     def do(self, project) -> None:  # noqa: ANN001
-        _, clip = project.find_clip(self.clip_id)
+        track, clip = project.find_clip(self.clip_id)
         if clip is None:
             return
+        if clip.is_midi and track is not None:
+            if abs(self.duration - clip.duration) < 1e-9:
+                snapped = track.nearest_midi_start(
+                    self.start, self.duration, exclude_id=clip.id)
+                if snapped is None:
+                    return
+                self.start = snapped
+            else:
+                self.duration = track.clamp_midi_duration(
+                    self.start, self.duration, exclude_id=clip.id)
         if self._before is _UNSET:
             self._before = (clip.start, clip.duration, clip.source_duration)
         # First audio resize freezes the file-native span so changing duration
@@ -391,3 +438,79 @@ class SetClipGeometryCommand(Command):
         _, clip = project.find_clip(self.clip_id)
         if clip is not None and self._before is not _UNSET:
             clip.start, clip.duration, clip.source_duration = self._before
+
+
+class JoinMidiClipsCommand(Command):
+    """Merge selected MIDI clips on one track into a single spanning clip.
+
+    The result covers ``min(start)…max(end)``, including empty gaps between
+    the selected clips. Refuses if the clips sit on different tracks, or if
+    an unselected MIDI clip occupies any part of that span.
+    """
+
+    def __init__(self, clip_ids: list[str]) -> None:
+        self.clip_ids = list(clip_ids)
+        self._track_id: Optional[str] = None
+        self._removed: list[tuple[int, Clip]] = []
+        self._joined: Optional[Clip] = None
+        self.label = "Join MIDI clips"
+
+    def do(self, project) -> None:  # noqa: ANN001
+        if self._joined is not None:
+            track = project.track_by_id(self._track_id)
+            if track is None:
+                return
+            for _, clip in self._removed:
+                if clip in track.clips:
+                    track.clips.remove(clip)
+            if self._joined not in track.clips:
+                track.clips.append(self._joined)
+            return
+        found: list[tuple[object, Clip]] = []
+        for cid in self.clip_ids:
+            track, clip = project.find_clip(cid)
+            if track is not None and clip is not None and clip.is_midi:
+                found.append((track, clip))
+        if len(found) < 2:
+            return
+        if len({track.id for track, _ in found}) != 1:
+            return
+        track = found[0][0]
+        clips = sorted((c for _, c in found), key=lambda c: (c.start, c.id))
+        start = min(c.start for c in clips)
+        end = max(c.end for c in clips)
+        selected = {c.id for c in clips}
+        if track.midi_overlaps(start, end - start, exclude_ids=selected):
+            return
+        notes = []
+        for clip in clips:
+            offset = clip.start - start
+            for n in clip.notes:
+                notes.append(Note(n.pitch, n.start + offset, n.duration, n.velocity))
+        notes.sort(key=lambda n: (n.start, n.pitch))
+        self._track_id = track.id
+        self._removed = [(track.clips.index(c), c) for c in clips]
+        for clip in clips:
+            if clip in track.clips:
+                track.clips.remove(clip)
+        extra = {}
+        if clips[0].color:
+            extra["color"] = clips[0].color
+        self._joined = project.add_clip(
+            track.id, start, end - start, name=clips[0].name,
+            content_type="midi", notes=notes, gain_db=clips[0].gain_db, **extra,
+        )
+
+    def undo(self, project) -> None:  # noqa: ANN001
+        track = project.track_by_id(self._track_id)
+        if track is None:
+            return
+        if self._joined is not None and self._joined in track.clips:
+            track.clips.remove(self._joined)
+        for idx, clip in sorted(self._removed, key=lambda item: item[0]):
+            if clip not in track.clips:
+                track.clips.insert(min(idx, len(track.clips)), clip)
+
+    @property
+    def created_clip(self):
+        return self._joined

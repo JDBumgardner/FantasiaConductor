@@ -78,10 +78,15 @@ class ClipItem(QGraphicsRectItem):
             start = self.clip.start
             end = self._view.snap((self.pos().x() + self.rect().width()) / pps)
             duration = max(end - start, MIN_CLIP_SECONDS)
+            if self.clip.is_midi:
+                duration = self._view.clamp_midi_resize(self.clip, duration)
         else:
-            # Moving: snap the start to grid, keep the length.
+            # Moving: snap the start to grid, keep the length, then park
+            # adjacent if that grid slot would overlap another MIDI clip.
             start = max(0.0, self._view.snap(self.pos().x() / pps))
             duration = max(self.clip.duration, MIN_CLIP_SECONDS)
+            if self.clip.is_midi:
+                start = self._view.clamp_midi_drag(self.clip, start)
         # Skip no-op edits (e.g. a plain click / double-click) so they don't
         # push empty geometry commands onto the undo stack.
         if abs(start - self.clip.start) < 1e-6 and abs(duration - self.clip.duration) < 1e-6:
@@ -99,7 +104,7 @@ class ClipItem(QGraphicsRectItem):
     # ---- painting --------------------------------------------------------
     def paint(self, painter: QPainter, option, widget=None) -> None:  # noqa: N802
         rect = self.rect()
-        color = QColor(self._view.track_color(self.clip.id))
+        color = QColor(self._view.clip_color(self.clip.id))
         empty = not self.clip.source_path and not self.clip.is_midi
         painter.setRenderHint(QPainter.Antialiasing, True)
 
@@ -146,7 +151,9 @@ class ClipItem(QGraphicsRectItem):
         pad = 4
         h = rect.height() - 2 * pad
         painter.setPen(Qt.NoPen)
-        painter.setBrush(theme.MIDI_PREVIEW)
+        preview = QColor(self._view.clip_color(self.clip.id))
+        preview.setAlpha(0xcc)
+        painter.setBrush(preview)
         for note in notes:
             x = rect.left() + (note.start / dur) * rect.width()
             w = max((note.duration / dur) * rect.width(), 2)
@@ -217,6 +224,19 @@ class ClipItem(QGraphicsRectItem):
             convert = menu.addAction("Convert Voice…")
             convert.setToolTip("Re-render this vocal in another voice, keeping the melody")
         menu.addSeparator()
+        color_menu = menu.addMenu("Set Color")
+        from ui.theme import TRACK_PALETTE, swatch_icon
+        color_actions: dict = {}
+        inherit = color_menu.addAction("Track color")
+        inherit.setCheckable(True)
+        inherit.setChecked(not (getattr(self.clip, "color", "") or ""))
+        color_actions[inherit] = "color:"
+        for name, hex_color in TRACK_PALETTE:
+            act = color_menu.addAction(swatch_icon(hex_color), name)
+            act.setCheckable(True)
+            act.setChecked((getattr(self.clip, "color", "") or "").lower() == hex_color.lower())
+            color_actions[act] = f"color:{hex_color}"
+        menu.addSeparator()
         act_split = menu.addAction("Split at Playhead")
         act_rev = menu.addAction("Reverse")
         act_rev.setCheckable(True)
@@ -267,6 +287,7 @@ class ClipItem(QGraphicsRectItem):
         if convert is not None:
             actions[convert] = "convert_voice"
         actions.update(vfx_map)
+        actions.update(color_actions)
         name = actions.get(menu.exec(event.screenPos()))
         if name == "import":
             self._view.import_into_clip_requested.emit(self.clip.id)
@@ -315,6 +336,12 @@ class ClipItem(QGraphicsRectItem):
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.LeftButton:
+            # Shift+click is handled on the view so QGraphicsScene cannot
+            # exclusive-select before we add this clip to the set.
+            if event.modifiers() & Qt.ShiftModifier:
+                self._mode = None
+                event.accept()
+                return
             if event.pos().x() >= self.rect().width() - RESIZE_EDGE:
                 self._mode = "resize"
             else:
@@ -325,12 +352,19 @@ class ClipItem(QGraphicsRectItem):
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._mode == "move":
             new_x = max(0.0, event.scenePos().x() - self._grab_offset)
+            if self.clip.is_midi:
+                start = self._view.snap(new_x / self._view.pps)
+                start = self._view.clamp_midi_drag(self.clip, start)
+                new_x = start * self._view.pps
             self.setPos(new_x, self.pos().y())
             event.accept()
             return
         if self._mode == "resize":
             new_w = max(MIN_CLIP_SECONDS * self._view.pps,
                         event.scenePos().x() - self.pos().x())
+            if self.clip.is_midi:
+                duration = self._view.clamp_midi_resize(self.clip, new_w / self._view.pps)
+                new_w = duration * self._view.pps
             r = self.rect()
             self.setRect(0.0, 0.0, new_w, r.height())
             event.accept()
@@ -407,6 +441,9 @@ class TimelineView(QGraphicsView):
         self._loop_drag_start = 0.0
         self._loop_drag_end = 0.0
         self._loop_press = QPoint()
+        # Lane interval selection: (track_id, t0, t1) in seconds; t0/t1 unsorted.
+        self.range_select: Optional[tuple[str, float, float]] = None
+        self._range_drag: Optional[dict] = None
         self._scene.selectionChanged.connect(self._on_selection_changed)
 
     # ---- project binding -------------------------------------------------
@@ -437,6 +474,34 @@ class TimelineView(QGraphicsView):
                     return track.color
         return theme.BLUE
 
+    def clip_color(self, clip_id: str) -> str:
+        if self._project is not None:
+            for track in self._project.tracks:
+                clip = track.clip_by_id(clip_id)
+                if clip is not None:
+                    override = getattr(clip, "color", "") or ""
+                    return override or track.color
+        return theme.BLUE
+
+    def clamp_midi_drag(self, clip, start: float) -> float:  # noqa: ANN001
+        start = max(0.0, float(start))
+        if self._project is None:
+            return start
+        track, found = self._project.find_clip(clip.id)
+        if track is None or found is None:
+            return start
+        snapped = track.nearest_midi_start(start, clip.duration, exclude_id=clip.id)
+        return clip.start if snapped is None else snapped
+
+    def clamp_midi_resize(self, clip, duration: float) -> float:  # noqa: ANN001
+        duration = max(MIN_CLIP_SECONDS, float(duration))
+        if self._project is None:
+            return duration
+        track, found = self._project.find_clip(clip.id)
+        if track is None or found is None:
+            return duration
+        return track.clamp_midi_duration(clip.start, duration, exclude_id=clip.id)
+
     # ---- grid / snapping -------------------------------------------------
     @property
     def snap_enabled(self) -> bool:
@@ -454,10 +519,13 @@ class TimelineView(QGraphicsView):
 
     def locate(self, seconds: float) -> None:
         """Set the play-start locator (snapped). Moves the cursor when stopped."""
+        old = self.start_position
         t = max(0.0, self.snap(seconds))
         self.start_position = t
         if not self.playback_active:
             self.set_playhead(t)
+        else:
+            self._invalidate_playhead(old, t)
 
     # ---- rebuild ---------------------------------------------------------
     def rebuild(self) -> None:
@@ -540,7 +608,10 @@ class TimelineView(QGraphicsView):
 
     # ---- selection -------------------------------------------------------
     def _on_selection_changed(self) -> None:
-        items = self._scene.selectedItems()
+        try:
+            items = self._scene.selectedItems()
+        except RuntimeError:
+            return
         if items and isinstance(items[0], ClipItem):
             self.clip_selected.emit(items[0].clip.id)
         else:
@@ -563,6 +634,23 @@ class TimelineView(QGraphicsView):
 
     def select_all_clips(self) -> None:
         self.select_clips(self._clip_items.keys())
+
+    def range_span(self) -> Optional[tuple[str, float, float]]:
+        """``(track_id, start, duration)`` of the lane interval, or ``None``."""
+        if self.range_select is None:
+            return None
+        tid, a, b = self.range_select
+        lo, hi = (a, b) if a <= b else (b, a)
+        if hi - lo < 1e-6:
+            return None
+        return tid, lo, hi - lo
+
+    def clear_range_select(self) -> None:
+        if self.range_select is None and self._range_drag is None:
+            return
+        self.range_select = None
+        self._range_drag = None
+        self.viewport().update()
 
     def selection_time_span(self) -> Optional[tuple[float, float]]:
         items = [i for i in self._scene.selectedItems() if isinstance(i, ClipItem)]
@@ -597,6 +685,11 @@ class TimelineView(QGraphicsView):
         # Accept both the Mac delete key (Backspace) and forward-delete.
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             self.delete_requested.emit()
+            event.accept()
+            return
+        if event.key() == Qt.Key_Escape:
+            self.clear_range_select()
+            self._scene.clearSelection()
             event.accept()
             return
         if event.modifiers() & Qt.ControlModifier:
@@ -639,7 +732,7 @@ class TimelineView(QGraphicsView):
                 step = self._project.seconds_per_beat() * max(self._project.beats_per_bar, 1)
             else:
                 step = 1.0
-        self.locate(max(0.0, self.playhead + steps * step))
+        self.locate(max(0.0, self.start_position + steps * step))
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
         item = self.itemAt(event.pos())
@@ -669,13 +762,33 @@ class TimelineView(QGraphicsView):
             return
 
         item = self.itemAt(event.position().toPoint())
-        if event.button() == Qt.LeftButton and not isinstance(item, ClipItem):
-            # Empty arrangement click sets the play-start locator (snapped).
+        clip_item = item
+        while clip_item is not None and not isinstance(clip_item, ClipItem):
+            clip_item = clip_item.parentItem()
+        if event.button() == Qt.LeftButton and isinstance(clip_item, ClipItem):
+            self.clear_range_select()
+            if event.modifiers() & Qt.ShiftModifier:
+                # Additive select — do not call super(): QGraphicsScene would
+                # exclusive-select and drop the rest of the set.
+                clip_item.setSelected(True)
+                event.accept()
+                return
             self.locate(max(0.0, scene_pos.x() / self.pps))
+        if event.button() == Qt.LeftButton and not isinstance(clip_item, ClipItem):
+            # Empty-lane press: wait to see if this is a drag (interval select)
+            # or a click (locate playhead). Do not locate until release.
             if self._project is not None:
                 row = int((scene_pos.y() - RULER_H) // TRACK_H)
                 if 0 <= row < len(self._project.tracks):
-                    self.track_selected.emit(self._project.tracks[row].id)
+                    t = max(0.0, self.snap(scene_pos.x() / self.pps))
+                    self._range_drag = {
+                        "tid": self._project.tracks[row].id,
+                        "origin": t,
+                        "press": event.position().toPoint(),
+                    }
+                    event.accept()
+                    return
+            self.locate(max(0.0, scene_pos.x() / self.pps))
 
         super().mousePressEvent(event)
 
@@ -700,6 +813,18 @@ class TimelineView(QGraphicsView):
             self.viewport().update()
             event.accept()
             return
+        if self._range_drag is not None:
+            scene_x = self.mapToScene(event.position().toPoint()).x()
+            t = max(0.0, self.snap(scene_x / self.pps))
+            origin = self._range_drag["origin"]
+            tid = self._range_drag["tid"]
+            press = self._range_drag["press"]
+            if (event.position().toPoint() - press).manhattanLength() > 4:
+                self._scene.clearSelection()
+                self.range_select = (tid, origin, t)
+                self.viewport().update()
+            event.accept()
+            return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
@@ -709,6 +834,29 @@ class TimelineView(QGraphicsView):
             self._loop_drag = None
             if not moved and mode in ("move", "start", "end") and self._project is not None:
                 self.loop_enabled_changed.emit(not self._project.loop_enabled)
+            event.accept()
+            return
+        if self._range_drag is not None:
+            drag = self._range_drag
+            self._range_drag = None
+            moved = (event.position().toPoint() - drag["press"]).manhattanLength() > 4
+            tid = drag["tid"]
+            origin = drag["origin"]
+            if not moved:
+                self.range_select = None
+                self.locate(origin)
+                self.track_selected.emit(tid)
+            else:
+                scene_x = self.mapToScene(event.position().toPoint()).x()
+                t = max(0.0, self.snap(scene_x / self.pps))
+                lo, hi = (origin, t) if origin <= t else (t, origin)
+                if hi - lo < 1e-6:
+                    self.range_select = None
+                    self.locate(origin)
+                else:
+                    self.range_select = (tid, lo, hi)
+                self.track_selected.emit(tid)
+            self.viewport().update()
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -728,6 +876,25 @@ class TimelineView(QGraphicsView):
             else:
                 color = _lane_color(i)
             painter.fillRect(QRectF(rect.left(), y0, rect.width(), TRACK_H), color)
+
+        # Hairline between adjacent lanes so stacked tracks read as distinct.
+        painter.setPen(QPen(theme.LANE_DIVIDER, 1))
+        for i in range(n):
+            y = RULER_H + (i + 1) * TRACK_H
+            painter.drawLine(int(rect.left()), int(y), int(rect.right()), int(y))
+
+        span = self.range_span()
+        if span is not None:
+            tid, t0, dur = span
+            row = next((i for i, tr in enumerate(self._project.tracks) if tr.id == tid), -1)
+            if row >= 0:
+                fill = QColor(theme.CYAN)
+                fill.setAlpha(48)
+                painter.fillRect(
+                    QRectF(t0 * self.pps, RULER_H + row * TRACK_H,
+                           dur * self.pps, TRACK_H),
+                    fill,
+                )
 
         start, end = self._loop_times()
         lx0, lx1 = start * self.pps, end * self.pps
@@ -780,6 +947,18 @@ class TimelineView(QGraphicsView):
             if bar_sec > 0 and not _on_period(interval, bar_sec) and not _on_period(bar_sec, interval):
                 _draw_step(bar_sec, classify=False)
 
+        span = self.range_span()
+        if span is not None:
+            tid, t0, dur = span
+            row = next((i for i, tr in enumerate(self._project.tracks) if tr.id == tid), -1)
+            if row >= 0:
+                painter.setPen(QPen(QColor(theme.CYAN), 1.4))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(QRectF(
+                    t0 * self.pps, RULER_H + row * TRACK_H,
+                    dur * self.pps, TRACK_H,
+                ))
+
     # ---- foreground: ruler pinned to viewport top -----------------------
     def drawForeground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
         if self._project is None:
@@ -824,7 +1003,11 @@ class TimelineView(QGraphicsView):
         painter.setFont(theme.ui_font(7, bold=on))
         painter.drawText(int(x0) + 6, int(bar_top + 9), "LOOP" if on else "loop")
 
-        # Playhead (full height + ruler marker).
+        # Locator (static cursor) vs playback playhead (moves while audio plays).
+        loc_x = self.start_position * self.pps
+        if self.playback_active and abs(self.start_position - self.playhead) > 1e-4:
+            painter.setPen(QPen(QColor(theme.CYAN), 1.4, Qt.DashLine))
+            painter.drawLine(int(loc_x), int(rect.top()), int(loc_x), int(rect.bottom()))
         px = self.playhead * self.pps
         painter.setPen(QPen(QColor(theme.PLAYHEAD), 2))
         painter.drawLine(int(px), int(rect.top()), int(px), int(rect.bottom()))
