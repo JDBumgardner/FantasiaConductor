@@ -18,7 +18,12 @@ from fantasia_core.commands.clip_cmds import (
     SplitClipCommand,
 )
 from fantasia_core.commands.track_cmds import (
+    AddFxCommand,
     AddTrackCommand,
+    BypassFxCommand,
+    ConnectFxCommand,
+    MoveFxCommand,
+    RemoveFxCommand,
     RemoveTrackCommand,
     SetTempoCommand,
     SetTrackAttrCommand,
@@ -30,7 +35,12 @@ from fantasia_core.commands.track_cmds import (
 __all__ = [
     "Command",
     "CommandBus",
+    "AddFxCommand",
     "AddTrackCommand",
+    "BypassFxCommand",
+    "ConnectFxCommand",
+    "MoveFxCommand",
+    "RemoveFxCommand",
     "RemoveTrackCommand",
     "SetTempoCommand",
     "SetTrackAttrCommand",

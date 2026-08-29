@@ -15,9 +15,13 @@ from typing import Callable, List, Optional
 
 from fantasia_core.commands import (
     AddClipCommand,
+    AddFxCommand,
     AddTrackCommand,
+    BypassFxCommand,
     MakeMidiClipCommand,
+    MoveFxCommand,
     RemoveClipCommand,
+    RemoveFxCommand,
     RemoveTrackCommand,
     SetClipAttrCommand,
     SetClipNotesCommand,
@@ -30,8 +34,17 @@ from fantasia_core.commands import (
     SplitClipCommand,
 )
 from fantasia_core.document import naming
-from fantasia_core.document.model import Note
+from fantasia_core.document.fx_insert import as_dict, as_insert
+from fantasia_core.document.model import MASTER_ID, Note
 from fantasia_core.engine import DEFAULT_PATCH, WAVEFORMS
+from fantasia_core.engine.eq import (
+    BAND_TYPES,
+    MAX_BANDS,
+    bands_from_fx,
+    default_bands,
+    fx_with_eq,
+    normalize_band,
+)
 
 _SYNTH_NUMERIC = {"mix", "detune", "attack", "decay", "sustain", "release",
                   "cutoff", "resonance", "env_amount", "gain"}
@@ -50,6 +63,21 @@ def _clean_patch(patch: dict) -> dict:
             except (TypeError, ValueError):
                 pass
     return out
+
+
+def _fx_brief(raw) -> dict:
+    d = as_dict(raw)
+    return {"id": d["id"], "type": d["type"], "bypassed": d["bypassed"]}
+
+
+def _fx_detail(raw) -> dict:
+    ins = as_insert(raw)
+    params = dict(ins.params)
+    bands = params.get("bands")
+    if isinstance(bands, list):
+        params["bands"] = [dict(b) for b in bands]
+    return {"id": ins.id, "type": ins.type, "bypassed": ins.bypassed, "params": params}
+
 
 _NOTE_SCHEMA = {
     "type": "object",
@@ -116,7 +144,7 @@ class AgentTools:
         defs = [
             {"name": "get_project", "description": "Get tempo, time signature, duration, playhead, and track count.",
              "input_schema": {"type": "object", "properties": {}}},
-            {"name": "list_tracks", "description": "List all tracks with their id, name, mode (drum/synth), instrument, mute/solo, gain, pan, and clip count.",
+            {"name": "list_tracks", "description": "List all tracks with their id, name, mode (drum/synth), instrument, mute/solo, gain, pan, clip count, FX inserts ({id, type, bypassed}), and whether they are the Master bus. The Master channel (id 'master') has no clips; it holds mix-bus FX.",
              "input_schema": {"type": "object", "properties": {}}},
             {"name": "list_clips", "description": "List clips, optionally filtered to one track. Returns id, track, name, start, duration, content_type (audio/midi/empty), note count.",
              "input_schema": {"type": "object", "properties": {"track_id": {"type": "string"}}}},
@@ -135,9 +163,12 @@ class AgentTools:
                  "plugin": {"type": "string", "description": "VST3/AU instrument name from list_plugins; wins over is_synth. Empty string returns the track to the built-in soundfont."},
                  "instrument": {"type": "integer"}}, "required": ["track_id"]}},
             {"name": "add_fx", "description": (
-                "Append an effect to a track's FX chain. Mixing order is EQ -> colour -> dynamics.\n"
-                "EQ: highpass/lowpass {cutoff Hz}; eq_peak {freq, gain dB, q} bell boost/cut; "
-                "eq_low_shelf / eq_high_shelf {freq, gain, q} tilt below/above a corner. "
+                "Append an effect to a track's insert graph (including the Master channel, track_id 'master'). "
+                "Returns insert_id — use that with list_fx / bypass_fx / move_fx / remove_fx. "
+                "Prefer the stock 8-band EQ (type 'eq') plus get_eq/set_eq_band for tone-shaping; "
+                "legacy single filters (eq_peak, highpass, …) still work.\n"
+                "EQ: eq {bands} is the stock parametric; or highpass/lowpass {cutoff Hz}; "
+                "eq_peak {freq, gain dB, q} bell; eq_low_shelf / eq_high_shelf {freq, gain, q}. "
                 "A high-pass around 100-150 Hz on non-bass tracks removes rumble.\n"
                 "Colour: saturator {drive dB, output dB} adds harmonics/warmth; distortion {drive}.\n"
                 "Dynamics: compressor {threshold dB, ratio, attack ms, release ms} evens out level "
@@ -147,12 +178,47 @@ class AgentTools:
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"},
                  "type": {"type": "string", "enum": [
-                     "highpass", "lowpass", "eq_peak", "eq_low_shelf", "eq_high_shelf",
+                     "eq", "highpass", "lowpass", "eq_peak", "eq_low_shelf", "eq_high_shelf",
                      "saturator", "distortion", "compressor", "limiter", "gate",
                      "reverb", "delay", "gain"]},
                  "params": {"type": "object"}}, "required": ["track_id", "type"]}},
-            {"name": "clear_fx", "description": "Remove all effects from a track.",
+            {"name": "list_fx", "description": (
+                "List inserts on a track (including Master). Each row is "
+                "{id, type, bypassed, params}. Address inserts by id, not by position."),
+             "input_schema": {"type": "object", "properties": {"track_id": {"type": "string"}},
+                              "required": ["track_id"]}},
+            {"name": "bypass_fx", "description": "Bypass or un-bypass one insert. Does not remove it.",
+             "input_schema": {"type": "object", "properties": {
+                 "track_id": {"type": "string"}, "insert_id": {"type": "string"},
+                 "bypassed": {"type": "boolean"}},
+                 "required": ["track_id", "insert_id", "bypassed"]}},
+            {"name": "move_fx", "description": (
+                "Reorder an insert on a track. index is the 0-based destination slot "
+                "(0 = first in the chain, closest to the source)."),
+             "input_schema": {"type": "object", "properties": {
+                 "track_id": {"type": "string"}, "insert_id": {"type": "string"},
+                 "index": {"type": "integer"}},
+                 "required": ["track_id", "insert_id", "index"]}},
+            {"name": "remove_fx", "description": "Remove one insert from a track by insert_id.",
+             "input_schema": {"type": "object", "properties": {
+                 "track_id": {"type": "string"}, "insert_id": {"type": "string"}},
+                 "required": ["track_id", "insert_id"]}},
+            {"name": "clear_fx", "description": "Remove all effects from a track (including Master).",
              "input_schema": {"type": "object", "properties": {"track_id": {"type": "string"}}, "required": ["track_id"]}},
+            {"name": "get_eq", "description": "Read the stock 8-band EQ on a track (including Master). Returns bands 1-8 with type (bell/low_shelf/high_shelf/low_cut/high_cut/notch), freq Hz, gain dB, q, enabled.",
+             "input_schema": {"type": "object", "properties": {"track_id": {"type": "string"}}, "required": ["track_id"]}},
+            {"name": "set_eq_band", "description": (
+                "Set one band (1-8) of the stock parametric EQ. Creates the EQ insert if needed. "
+                "type: bell, low_shelf, high_shelf, low_cut, high_cut, notch. "
+                "Omit a field to leave it unchanged. Same surface as dragging a numbered handle in the EQ view."),
+             "input_schema": {"type": "object", "properties": {
+                 "track_id": {"type": "string"},
+                 "band": {"type": "integer", "description": "1-8"},
+                 "type": {"type": "string", "enum": list(BAND_TYPES)},
+                 "freq": {"type": "number", "description": "Hz"},
+                 "gain": {"type": "number", "description": "dB"},
+                 "q": {"type": "number"},
+                 "enabled": {"type": "boolean"}}, "required": ["track_id", "band"]}},
             {"name": "set_synth_param", "description": "Set one synth patch parameter on a synth track (osc1/osc2: sine|saw|square|triangle; mix,sustain,resonance,gain 0-1; detune semitones; attack,decay,release seconds; cutoff,env_amount Hz).",
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"}, "key": {"type": "string"}, "value": {}},
@@ -334,7 +400,8 @@ class AgentTools:
     def execute(self, name: str, args: dict):
         args = args or {}
         result = self._dispatch(name, args)
-        _READS = ("get_project", "list_tracks", "list_clips", "get_clip_notes", "find_sound")
+        _READS = ("get_project", "list_tracks", "list_clips", "get_clip_notes",
+                  "find_sound", "get_eq", "list_fx")
         if name not in _READS and self._refresh:
             self._refresh()
         return result
@@ -346,10 +413,19 @@ class AgentTools:
                     "duration": round(p.duration, 3), "num_tracks": len(p.tracks),
                     "seconds_per_beat": round(p.seconds_per_beat(), 4)}
         if name == "list_tracks":
-            return [{"id": t.id, "name": t.name, "label": naming.track_label(t),
-                     "is_drum": t.is_drum, "is_synth": t.is_synth, "plugin": getattr(t, "plugin", ""),
-                     "instrument": t.instrument, "mute": t.mute, "solo": t.solo,
-                     "gain_db": t.gain_db, "pan": t.pan, "num_clips": len(t.clips)} for t in p.tracks]
+            def _row(t, is_master=False):
+                return {"id": t.id, "name": t.name, "label": naming.track_label(t),
+                        "is_drum": t.is_drum, "is_synth": t.is_synth,
+                        "plugin": getattr(t, "plugin", ""),
+                        "instrument": t.instrument, "mute": t.mute, "solo": t.solo,
+                        "gain_db": t.gain_db, "pan": t.pan, "num_clips": len(t.clips),
+                        "fx": [_fx_brief(e) for e in (t.fx or [])],
+                        "is_master": is_master}
+            rows = [_row(t) for t in p.tracks]
+            master = getattr(p, "master", None)
+            if master is not None:
+                rows.append(_row(master, is_master=True))
+            return rows
         if name == "list_clips":
             tid = a.get("track_id")
             rows = []
@@ -373,6 +449,8 @@ class AgentTools:
             cmd = self.bus.dispatch(AddTrackCommand(a.get("name")))
             return {"track_id": cmd.created_track.id, "name": cmd.created_track.name}
         if name == "remove_track":
+            if a["track_id"] == MASTER_ID:
+                return {"error": "the Master channel cannot be removed"}
             self.bus.dispatch(RemoveTrackCommand(a["track_id"]))
             return {"ok": True}
         if name == "set_track":
@@ -385,12 +463,65 @@ class AgentTools:
             t = p.track_by_id(a["track_id"])
             if t is None:
                 return {"error": "track not found"}
-            fx = list(t.fx) + [{"type": a["type"], "params": a.get("params", {})}]
-            self.bus.dispatch(SetTrackFxCommand(a["track_id"], fx, label=f"Add {a['type']}"))
-            return {"ok": True, "fx_count": len(fx)}
+            params = a.get("params") or {}
+            if a["type"] == "eq" and "bands" not in params:
+                params = {**params, "bands": default_bands()}
+            cmd = self.bus.dispatch(AddFxCommand(a["track_id"], a["type"], params))
+            return {"ok": True, "insert_id": cmd.insert_id, "fx_count": len(t.fx)}
+        if name == "list_fx":
+            t = p.track_by_id(a["track_id"])
+            if t is None:
+                return {"error": "track not found"}
+            return [_fx_detail(e) for e in (t.fx or [])]
+        if name == "bypass_fx":
+            t = p.track_by_id(a["track_id"])
+            if t is None:
+                return {"error": "track not found"}
+            if t.fx_index(a["insert_id"]) is None:
+                return {"error": "insert not found"}
+            self.bus.dispatch(BypassFxCommand(a["track_id"], a["insert_id"], bool(a["bypassed"])))
+            return {"ok": True, "insert_id": a["insert_id"], "bypassed": bool(a["bypassed"])}
+        if name == "move_fx":
+            t = p.track_by_id(a["track_id"])
+            if t is None:
+                return {"error": "track not found"}
+            if t.fx_index(a["insert_id"]) is None:
+                return {"error": "insert not found"}
+            self.bus.dispatch(MoveFxCommand(a["track_id"], a["insert_id"], int(a["index"])))
+            return {"ok": True, "insert_id": a["insert_id"],
+                    "index": t.fx_index(a["insert_id"])}
+        if name == "remove_fx":
+            t = p.track_by_id(a["track_id"])
+            if t is None:
+                return {"error": "track not found"}
+            if t.fx_index(a["insert_id"]) is None:
+                return {"error": "insert not found"}
+            self.bus.dispatch(RemoveFxCommand(a["track_id"], a["insert_id"]))
+            return {"ok": True}
         if name == "clear_fx":
             self.bus.dispatch(SetTrackFxCommand(a["track_id"], [], label="Clear FX"))
             return {"ok": True}
+        if name == "get_eq":
+            t = p.track_by_id(a["track_id"])
+            if t is None:
+                return {"error": "track not found"}
+            bands = bands_from_fx(t.fx)
+            return {"track_id": t.id, "bands": [
+                {"index": i, **b} for i, b in enumerate(bands, start=1)
+            ]}
+        if name == "set_eq_band":
+            t = p.track_by_id(a["track_id"])
+            if t is None:
+                return {"error": "track not found"}
+            idx = int(a["band"]) - 1
+            if idx < 0 or idx >= MAX_BANDS:
+                return {"error": f"band must be 1–{MAX_BANDS}"}
+            bands = bands_from_fx(t.fx)
+            patch = {k: a[k] for k in ("type", "freq", "gain", "q", "enabled") if k in a}
+            bands[idx] = normalize_band({**bands[idx], **patch})
+            fx = fx_with_eq(t.fx, bands)
+            self.bus.dispatch(SetTrackFxCommand(a["track_id"], fx, label=f"EQ band {idx + 1}"))
+            return {"ok": True, "band": {"index": idx + 1, **bands[idx]}}
         if name == "set_synth_param":
             self.bus.dispatch(SetTrackSynthParamCommand(a["track_id"], a["key"], a["value"]))
             return {"ok": True}
@@ -408,6 +539,8 @@ class AgentTools:
             return {"ok": True, "patch": {**DEFAULT_PATCH, **merged}}
 
         if name == "add_clip":
+            if a["track_id"] == MASTER_ID:
+                return {"error": "cannot add clips to the Master channel"}
             bar_len = p.beats_per_bar * p.seconds_per_beat()
             if "bar" in a or "bars" in a:
                 start = (int(a.get("bar", 1)) - 1) * bar_len

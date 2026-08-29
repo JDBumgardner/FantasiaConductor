@@ -7,7 +7,11 @@ by the playback callback, the offline bounce, and unit tests.
 
 Signal flow per track: clips (placement, source_offset, reverse, pitch, clip
 gain, fades) → summed into a track buffer → per-track FX chain → track gain +
-constant-power pan → summed into the master.
+constant-power pan → summed into the master → master FX → master gain + pan.
+
+An optional :class:`~fantasia_core.engine.spectrum.SpectrumTap` may snapshot a
+track's pre-FX audio (or the pre-master mix) for the EQ analyzer. The callback
+only memcpy's; FFT is the UI's job.
 """
 
 from __future__ import annotations
@@ -162,6 +166,8 @@ def render_block(
     project, pool, start_frame: int, num_frames: int, sr: int,
     fx_host=None, midi_renderer=None, synth_renderer=None, plugin_renderer=None,
     warp_compute: bool = True,
+    spectrum_tap=None, spectrum_track_id=None,
+    apply_master: bool = True,
 ) -> np.ndarray:  # noqa: ANN001
     """Render one stereo block of the full mix as ``float32`` ``(num_frames, 2)``."""
     out = np.zeros((num_frames, 2), dtype=np.float32)
@@ -175,11 +181,29 @@ def render_block(
             plugin_renderer,
             warp_compute=warp_compute,
         )
+        if spectrum_tap is not None and spectrum_track_id == track.id:
+            spectrum_tap.write(tb)
         if getattr(track, "fx", None) and fx_host is not None:
             tb = fx_host.process(track, tb, sr)
         tgain = db_to_lin(track.gain_db)
         lpan, rpan = _pan_gains(track.pan)
         out[:, 0] += tb[:, 0] * tgain * lpan
         out[:, 1] += tb[:, 1] * tgain * rpan
+
+    if apply_master:
+        master = getattr(project, "master", None)
+        if master is not None:
+            if spectrum_tap is not None and spectrum_track_id == getattr(master, "id", None):
+                spectrum_tap.write(out)
+            if getattr(master, "mute", False):
+                out[:] = 0.0
+                return out
+            if getattr(master, "fx", None) and fx_host is not None:
+                out = fx_host.process(master, out, sr)
+            mgain = db_to_lin(getattr(master, "gain_db", 0.0))
+            if mgain != 1.0 or getattr(master, "pan", 0.0):
+                lpan, rpan = _pan_gains(getattr(master, "pan", 0.0))
+                out[:, 0] *= mgain * lpan
+                out[:, 1] *= mgain * rpan
 
     return out

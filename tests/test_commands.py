@@ -150,7 +150,7 @@ def test_track_fx_set_and_undo():
     t = bus.dispatch(AddTrackCommand()).created_track
     assert t.fx == []
     bus.dispatch(SetTrackFxCommand(t.id, [{"type": "reverb", "params": {"wet": 0.4}}]))
-    assert len(t.fx) == 1 and t.fx[0]["type"] == "reverb"
+    assert len(t.fx) == 1 and t.fx[0].type == "reverb" and t.fx[0].id
     bus.dispatch(SetTrackFxCommand(t.id, t.fx + [{"type": "delay", "params": {}}]))
     assert len(t.fx) == 2
     bus.undo()
@@ -187,6 +187,22 @@ def test_mergeable_slider_is_one_undo():
     assert t.gain_db == -6.0
     bus.undo()  # single undo returns to the pre-drag value
     assert t.gain_db == 0.0
+
+
+def test_eq_drag_is_one_undo():
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    from fantasia_core.engine.eq import default_bands, fx_with_eq
+
+    bands = default_bands()
+    bus.dispatch(SetTrackFxCommand(t.id, fx_with_eq([], bands), label="EQ"))
+    for g in (1.0, 2.0, 3.5):
+        bands[2]["gain"] = g
+        bus.dispatch(SetTrackFxCommand(
+            t.id, fx_with_eq(t.fx, bands), label="EQ", mergeable=True))
+    assert t.fx[0].params["bands"][2]["gain"] == 3.5
+    bus.undo()  # coalesced drag
+    assert t.fx[0].params["bands"][2]["gain"] == 0.0
 
 
 def test_non_mergeable_toggles_are_separate():
@@ -235,3 +251,54 @@ def test_duplicate_clips_places_after_selection_span():
     assert all(bus.project.find_clip(cid)[1] is None for cid in cmd.created_ids)
     bus.redo()
     assert all(bus.project.find_clip(cid)[1] is not None for cid in cmd.created_ids)
+
+
+def test_add_bypass_move_remove_fx():
+    from fantasia_core.commands import (
+        AddFxCommand, BypassFxCommand, MoveFxCommand, RemoveFxCommand,
+    )
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    a = bus.dispatch(AddFxCommand(t.id, "reverb", {"wet": 0.4}))
+    b = bus.dispatch(AddFxCommand(t.id, "delay", {}))
+    assert a.insert_id and b.insert_id and a.insert_id != b.insert_id
+    assert [e.type for e in t.fx] == ["reverb", "delay"]
+    bus.dispatch(MoveFxCommand(t.id, b.insert_id, 0))
+    assert [e.type for e in t.fx] == ["delay", "reverb"]
+    bus.dispatch(BypassFxCommand(t.id, a.insert_id, True))
+    assert t.fx_by_id(a.insert_id).bypassed is True
+    bus.dispatch(RemoveFxCommand(t.id, a.insert_id))
+    assert [e.type for e in t.fx] == ["delay"]
+    bus.undo()
+    assert [e.type for e in t.fx] == ["delay", "reverb"]
+    bus.undo()
+    assert t.fx_by_id(a.insert_id).bypassed is False
+    bus.undo()
+    assert [e.type for e in t.fx] == ["reverb", "delay"]
+    bus.undo()
+    assert [e.type for e in t.fx] == ["reverb"]
+    bus.undo()
+    assert t.fx == []
+    bus.redo()
+    assert t.fx[0].id == a.insert_id
+
+
+def test_remove_fx_reconnects_explicit_wires():
+    from fantasia_core.commands import AddFxCommand, ConnectFxCommand, RemoveFxCommand
+    from fantasia_core.document.fx_insert import SOURCE, OUT, serial_wires
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    a = bus.dispatch(AddFxCommand(t.id, "reverb"))
+    b = bus.dispatch(AddFxCommand(t.id, "delay"))
+    c = bus.dispatch(AddFxCommand(t.id, "gain"))
+    t.fx_wires = serial_wires(t.fx)
+    bus.dispatch(RemoveFxCommand(t.id, b.insert_id))
+    keys = {(w.src, w.dst) for w in t.fx_wires}
+    assert (a.insert_id, c.insert_id) in keys
+    assert not any(b.insert_id in (w.src, w.dst) for w in t.fx_wires)
+    bus.dispatch(ConnectFxCommand(t.id, SOURCE, a.insert_id, True))  # already present
+    bus.dispatch(ConnectFxCommand(t.id, a.insert_id, OUT, False))
+    # disconnect a→out (if present); graph still has a→c→out
+    assert any(w.dst == OUT for w in t.fx_wires)
