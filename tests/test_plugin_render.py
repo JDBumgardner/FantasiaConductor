@@ -65,6 +65,18 @@ def fake_plugin(monkeypatch):
     monkeypatch.setattr(plg, "render_notes", render_notes)
     monkeypatch.setattr(plg, "restore_preset",
                         lambda p, d: calls["restore"].append(d) or True)
+
+    def render_chunked(plugin, notes, duration, sr, chunk, on_chunk, tail=1.0,
+                       off_main_thread=False):
+        calls["render"] += 1
+        pos, total = 0.0, float(duration) + float(tail)
+        while pos < total:
+            span = min(float(chunk), total - pos)
+            on_chunk(int(round(pos * sr)),
+                     np.ones((int(span * sr), 2), dtype=np.float32) * 0.5)
+            pos += span
+
+    monkeypatch.setattr(plg, "render_notes_chunked", render_chunked)
     return calls
 
 

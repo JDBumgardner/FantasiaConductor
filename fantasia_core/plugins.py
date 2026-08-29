@@ -177,18 +177,31 @@ def render_slot(index: int = 0) -> str:
     return RENDER_OWNER if index <= 0 else f"{RENDER_OWNER}-{index}"
 
 
-def preload_slots(path_or_name: str, count: int) -> int:
+def preload_slots(path_or_name: str, count: int,
+                  prime: Optional[bytes] = None) -> int:
     """Load the instances a worker pool will need. MUST run on the main thread.
 
     pedalboard refuses to construct a plugin from any other thread, so a worker
     that finds no instance cannot make one: it raises, the render is swallowed,
     and the track is simply silent with nothing to say why.
+
+    ``prime`` is a patch blob used to pay a one-time cost here rather than at
+    the moment someone presses play: the FIRST restore_preset on a fresh Vital
+    instance takes ~1460ms, every one after it ~8ms. Three unprimed workers
+    therefore cost ~4.4s on the first render, which is most of the wait before
+    playback can start.
     """
     made = 0
     for i in range(max(1, count)):
         slot = render_slot(i)
         if (resolve(path_or_name), slot) not in _LOADED:
-            load(path_or_name, owner=slot)
+            inst = load(path_or_name, owner=slot)
+            if prime:
+                try:
+                    restore_preset(inst, prime)
+                except Exception:  # noqa: BLE001 — priming is an optimisation
+                    pass
+            mark_clean(inst)
             made += 1
     return made
 
@@ -340,10 +353,99 @@ def notes_to_midi(notes: Sequence, offset: float = 0.0, channel: int = 0):
     return msgs
 
 
+def notes_to_midi_span(notes: Sequence, start: float, span: float,
+                       channel: int = 0):
+    """Messages for the slice ``[start, start + span)`` of a clip.
+
+    A note that began in an earlier slice contributes only its note-off, and one
+    that runs past the end contributes only its note-on — the plugin is carrying
+    the voice across the boundary. That is what makes a chunked render identical
+    to rendering the clip in one go, rather than a series of restarts.
+    """
+    msgs = []
+    for n in sorted(notes, key=lambda x: x.start):
+        pitch = int(max(0, min(127, n.pitch)))
+        vel = int(max(1, min(127, getattr(n, "velocity", 100))))
+        on = float(n.start) - start
+        off = on + float(n.duration)
+        if 0.0 <= on < span:
+            msgs.append((bytes([0x90 | channel, pitch, vel]), on))
+        if 0.0 <= off < span:
+            msgs.append((bytes([0x80 | channel, pitch, 0]), off))
+    return sorted(msgs, key=lambda m: m[1])
+
+
+def chunk_plan(total: float, first: float = 0.4, cap: float = 8.0) -> list:
+    """Slice lengths that start small and grow.
+
+    Latency and throughput want opposite things: playback can begin as soon as
+    the first slice exists, but every slice costs a call, so the tail should be
+    rendered in big ones. Doubling gets both — the first slice lands in tens of
+    milliseconds and the rest is nearly as cheap as one long render.
+    """
+    out, pos, span = [], 0.0, max(0.05, float(first))
+    while pos < total:
+        take = min(span, total - pos)
+        out.append(take)
+        pos += take
+        span = min(span * 2.0, float(cap))
+    return out
+
+
+# Instances that have rendered audio since their last reset or flush, and so
+# still have a tail that would leak into the next clip. An instance that has
+# only been loaded and had a patch restored has nothing to flush — and that is
+# exactly the state every worker is in when the play gate asks for its first
+# clip, where a needless 8ms each is most of the latency budget.
+_DIRTY: set = set()
+
+
+def mark_clean(plugin) -> None:
+    _DIRTY.discard(id(plugin))
+
+
+def _flush_if_dirty(plugin, sr: int) -> None:
+    if id(plugin) in _DIRTY:
+        plugin(notes_to_midi([]), duration=FLUSH_SECONDS,
+               sample_rate=float(sr), reset=False)
+        _DIRTY.discard(id(plugin))
+
+
+def render_notes_chunked(plugin, notes: Sequence, duration: float, sr: int,
+                         chunk: float, on_chunk, tail: float = 1.0,
+                         off_main_thread: bool = False) -> None:
+    """Render a clip in slices, calling ``on_chunk(offset_frames, audio)``.
+
+    The point is that the first slice is available in a fraction of the time the
+    whole clip takes, so playback can start against it. Slices run back to back
+    on one instance without a reset, so the result is the same continuous render
+    — unlike rendering a short preview separately, which shares no LFO phase
+    with the full render and cannot be swapped for it without an audible jump.
+    """
+    total = float(duration) + float(tail)
+    if off_main_thread:
+        _flush_if_dirty(plugin, sr)
+    pos, first = 0.0, True
+    for span in chunk_plan(total, first=float(chunk)):
+        msgs = notes_to_midi_span(notes, pos, span)
+        # reset only on the very first slice, and only when this thread may:
+        # every later slice must continue the voices the previous one left.
+        audio = plugin(msgs, duration=span, sample_rate=float(sr),
+                       reset=bool(first and not off_main_thread))
+        a = np.asarray(audio, dtype=np.float32)
+        a = a.T if a.ndim == 2 and a.shape[0] <= 2 else a
+        on_chunk(int(round(pos * sr)), a)
+        pos += span
+        first = False
+    _DIRTY.add(id(plugin))
+
+
 # How much silence to push through the plugin before a render when it cannot be
-# reset. Measured on Vital's longest-release patch: 0.5s still leaked, 1.0s took
-# the leading energy from 1.44 to 0.00001, and it costs ~34ms.
-FLUSH_SECONDS = 1.5
+# reset. Measured on Vital's longest-release patch: with no flush the previous
+# clip leaks in at 1.44 against a 0.019 baseline; 0.4s and 0.6s still leak, 0.8s
+# is clean and 1.0s leaves nothing measurable. Taken at 1.0 for margin — it is
+# ~8ms, and it sits in front of every render.
+FLUSH_SECONDS = 1.0
 
 
 def render_notes(plugin, notes: Sequence, duration: float, sr: int = 44100,
@@ -361,10 +463,10 @@ def render_notes(plugin, notes: Sequence, duration: float, sr: int = 44100,
     if not notes:
         return np.zeros((0, 2), dtype=np.float32)
     if off_main_thread:
-        plugin(notes_to_midi([]), duration=FLUSH_SECONDS,
-               sample_rate=float(sr), reset=False)
+        _flush_if_dirty(plugin, sr)
         audio = plugin(notes_to_midi(notes), duration=float(duration) + float(tail),
                        sample_rate=float(sr), reset=False)
+        _DIRTY.add(id(plugin))
     else:
         audio = plugin(notes_to_midi(notes), duration=float(duration) + float(tail),
                        sample_rate=float(sr))

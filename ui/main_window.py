@@ -2268,12 +2268,17 @@ class MainWindow(QMainWindow):
     # wait for it. Rendering runs ~46x realtime on two workers, so a couple of
     # seconds of audio is normally ready well inside the timeout; the timeout
     # only matters when a plugin is still loading.
-    GATE_WINDOW_S = 4.0
+    # Only enough audio to be ahead of the renderer, which runs ~46x realtime:
+    # 0.15s of lead buys ~7s of rendering before the playhead could catch up,
+    # and the queue keeps working the whole time. Measured lead once rolling is
+    # 16s, so the gate only ever has to cover the very first moment.
+    GATE_WINDOW_S = 0.15
     GATE_TIMEOUT_S = 8.0
     # How often to check whether the window is ready. This matters more than it
     # looks: the check walks every clip, and polling it tightly starves the very
     # workers it is waiting on. At 10ms the same gate took 4.9s; at 80ms, 2.0s.
-    GATE_POLL_MS = 80
+    GATE_POLL_MS = 5
+    MAX_RENDER_WORKERS = 5
 
     def _prefetch_window(self, start: float) -> None:
         """Queue the audio around a new playhead position, without waiting.
@@ -2893,16 +2898,23 @@ class MainWindow(QMainWindow):
         but each worker needs its own plugin instance at roughly 50MB, and this
         runs on an 8GB machine.
         """
-        svc = getattr(self, "_renderer_pool", None)
-        if svc is not None:
-            return svc
         if getattr(self, "plugin_renderer", None) is None:
             return None
+        # Sized to how many clips can sound at once: a worker renders one clip
+        # at a time, so a pool narrower than that leaves the last clips waiting
+        # a whole render. Five tracks took the play gate from 864ms to 143ms; a
+        # sixth bought nothing but ~50MB. The pool is built before a project is
+        # open, so it has to be able to widen once one is.
+        tracks = sum(1 for t in self.project.tracks if getattr(t, "plugin", ""))
+        want = max(2, min(self.MAX_RENDER_WORKERS, tracks))
+        svc = getattr(self, "_renderer_pool", None)
+        if svc is not None and svc.n_workers >= want:
+            return svc
         from fantasia_core.engine.render_service import RenderService
 
-        # Three rather than two: measurably faster to clear the play gate, and
-        # ~50MB per instance is affordable where a fourth stopped helping.
-        svc = RenderService(self.plugin_renderer, workers=3,
+        if svc is not None:
+            svc.stop()                    # widening: the queue is re-submitted below
+        svc = RenderService(self.plugin_renderer, workers=want,
                             on_progress=self._on_render_progress)
         svc.start()
         self._renderer_pool = svc

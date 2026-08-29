@@ -55,7 +55,7 @@ class RenderService:
             t.start()
             self._threads.append(t)
 
-    def prepare(self, plugins) -> int:
+    def prepare(self, plugins, primes: Optional[dict] = None) -> int:
         """Load each worker's instance. Call from the main thread only.
 
         Workers cannot construct a plugin themselves, so anything not loaded
@@ -63,10 +63,19 @@ class RenderService:
         """
         from fantasia_core import plugins as plg
 
+        import base64
+
         made = 0
         for name in {p for p in plugins if p}:
+            blob = None
+            raw = (primes or {}).get(name)
+            if raw:
+                try:
+                    blob = base64.b64decode(raw)
+                except Exception:  # noqa: BLE001
+                    blob = None
             try:
-                made += plg.preload_slots(name, self.n_workers)
+                made += plg.preload_slots(name, self.n_workers, prime=blob)
             except Exception as exc:  # noqa: BLE001
                 self._errors.append(f"preload {name}: {exc!r}"[:200])
         return made
@@ -88,7 +97,14 @@ class RenderService:
         """
         # Prepared here rather than left to the caller: a worker cannot build
         # a plugin instance, and forgetting this leaves silent tracks behind.
-        self.prepare({row[1] for row in jobs if len(row) > 1})
+        # Pass a patch along so each new instance can be primed; the first
+        # restore on a fresh one costs ~1460ms and would otherwise land on the
+        # first render, i.e. exactly when someone is waiting to hear something.
+        primes = {}
+        for row in jobs:
+            if len(row) > 2 and row[1] and row[2]:
+                primes.setdefault(row[1], row[2])
+        self.prepare({row[1] for row in jobs if len(row) > 1}, primes)
         added = 0
         with self._lock:
             for priority, row in enumerate(jobs):

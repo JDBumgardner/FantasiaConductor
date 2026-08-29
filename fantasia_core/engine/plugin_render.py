@@ -28,6 +28,10 @@ class PluginRenderer:
         self._cache: Dict[Tuple, np.ndarray] = {}
         self._states: Dict[tuple, str] = {}
         self._digests: Dict[str, str] = {}
+        # Seconds of each cached clip that have actually been rendered. A clip
+        # is published as soon as its first slice lands so playback can start
+        # against it, so "in the cache" no longer means "finished".
+        self._valid: Dict[tuple, float] = {}
         self.last_error = ""      # why the most recent render produced silence
         self.errors = 0
 
@@ -62,6 +66,24 @@ class PluginRenderer:
         return self._cache.get(self._key(clip, plugin, state, owner))
 
     # ---- rendering ----------------------------------------------------
+    # Render a long clip in slices this size. The gate then waits for one
+    # slice rather than a whole clip — five 32s clips is forty times the audio
+    # the first four seconds of playback actually needs.
+    CHUNK_SECONDS = 0.4
+
+    def complete(self, clip, plugin: str, state: str = "",
+                 owner: str = "") -> bool:  # noqa: ANN001
+        """Whether every second of this clip has been rendered."""
+        key = self._key(clip, plugin, state, owner)
+        if key not in self._cache:
+            return False
+        return self._valid.get(key, 0.0) >= float(clip.duration) - 1e-6
+
+    def valid_seconds(self, clip, plugin: str, state: str = "",
+                      owner: str = "") -> float:  # noqa: ANN001
+        """How much of this clip has audio, from its start."""
+        return self._valid.get(self._key(clip, plugin, state, owner), 0.0)
+
     def render(self, clip, plugin: str, state: str = "",
                owner: str = "", off_main_thread: bool = False,
                slot: Optional[str] = None) -> np.ndarray:  # noqa: ANN001
@@ -72,7 +94,7 @@ class PluginRenderer:
         """
         key = self._key(clip, plugin, state, owner)
         hit = self._cache.get(key)
-        if hit is not None:
+        if hit is not None and self._valid.get(key, 0.0) >= float(clip.duration) - 1e-6:
             return hit
         frames = max(int(clip.duration * self.sr), 0)
         buf = np.zeros((frames, 2), dtype=np.float32)
@@ -85,6 +107,29 @@ class PluginRenderer:
             if state and self._states.get((plugin, slot)) != state:
                 plg.restore_preset(inst, base64.b64decode(state))
                 self._states[(plugin, slot)] = state
+            if frames and clip.duration > self.CHUNK_SECONDS * 2:
+                # Publish the buffer up front and fill it slice by slice, so the
+                # first seconds are playable while the rest is still rendering.
+                buf = self._cache.get(key)
+                if buf is None or len(buf) != frames:
+                    buf = np.zeros((frames, 2), dtype=np.float32)
+                self._cache[key] = buf
+                self._valid[key] = 0.0
+
+                def _slice(offset, audio, _b=buf, _k=key):
+                    if audio.ndim == 1:
+                        audio = np.stack([audio, audio], axis=1)
+                    take = min(len(audio), frames - offset)
+                    if take > 0:
+                        _b[offset:offset + take] = audio[:take, :2]
+                        self._valid[_k] = (offset + take) / float(self.sr)
+
+                plg.render_notes_chunked(inst, clip.notes, clip.duration, self.sr,
+                                         chunk=self.CHUNK_SECONDS, on_chunk=_slice,
+                                         tail=self.tail,
+                                         off_main_thread=off_main_thread)
+                self._valid[key] = float(clip.duration)
+                return buf
             audio = plg.render_notes(inst, clip.notes, clip.duration, self.sr,
                                      tail=self.tail,
                                      off_main_thread=off_main_thread)
@@ -105,6 +150,7 @@ class PluginRenderer:
             self.errors += 1
             return buf
         self._cache[key] = buf
+        self._valid[key] = float(getattr(clip, "duration", 0.0))
         return buf
 
     def pending(self, project, from_time: Optional[float] = None) -> list:  # noqa: ANN001
@@ -128,7 +174,7 @@ class PluginRenderer:
             state = getattr(track, "plugin_state", "")
             for clip in track.clips:
                 if (clip.content_type == "midi"
-                        and self.cached(clip, plugin, state, track.id) is None):
+                        and not self.complete(clip, plugin, state, track.id)):
                     out.append((clip, plugin, state, track.id))
         if from_time is not None:
             out.sort(key=lambda row: _need_order(row[0], from_time))
@@ -154,8 +200,9 @@ class PluginRenderer:
         if plugin is None and owner is None:
             self._cache.clear()
             self._states.clear()
+            self._valid.clear()
             return
-        for store in (self._cache, self._states):
+        for store in (self._cache, self._states, self._valid):
             for k in [k for k in store
                       if (plugin is None or k[0] == plugin)
                       and (owner is None or k[1] == owner)]:
@@ -205,7 +252,11 @@ def missing_in_window(renderer, project, start: float, end: float) -> list:  # n
     for clip, plugin, state, owner in renderer.pending(project):
         c_start = float(getattr(clip, "start", 0.0))
         c_end = c_start + float(getattr(clip, "duration", 0.0))
-        if c_start < end and c_end > start:
+        if not (c_start < end and c_end > start):
+            continue
+        # Only the slice that sounds inside the window has to exist yet.
+        need_to = min(end, c_end) - c_start
+        if renderer.valid_seconds(clip, plugin, state, owner) < need_to - 1e-6:
             out.append((clip, plugin, state, owner))
     out.sort(key=lambda row: _need_order(row[0], start))
     return out
