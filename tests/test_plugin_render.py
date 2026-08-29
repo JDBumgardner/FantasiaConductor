@@ -379,3 +379,45 @@ def test_loading_a_song_forgets_the_patch_in_the_shared_instance(
     assert r._states
     reset(r)
     assert not r._states
+
+
+def test_capture_state_reads_the_instance_a_change_was_written_to(fake_plugin, monkeypatch):
+    """load(owner=...) would mint a fresh instance and capture its factory
+    default over the edit — and leave one instance per track behind, undoing
+    the sharing."""
+    from fantasia_core import plugins as plg
+    from fantasia_core.engine.plugin_render import capture_state
+
+    class Inst:
+        def __init__(self, tag): self.tag = tag
+
+    loaded = {}
+    monkeypatch.setattr(plg, "_LOADED", loaded)
+    monkeypatch.setattr(plg, "load",
+                        lambda name, owner=None: loaded.setdefault((name, owner), Inst(f"{name}:{owner}")))
+    monkeypatch.setattr(plg, "preset_bytes", lambda inst: inst.tag.encode())
+
+    written_to, _slot = plg.instance_for("Vital", "t1")
+    before = len(loaded)
+    got = base64.b64decode(capture_state("Vital", "t1")).decode()
+
+    assert got == written_to.tag
+    assert len(loaded) == before, "capture_state created an extra instance"
+
+
+def test_capture_state_reads_an_open_editors_own_instance(fake_plugin, monkeypatch):
+    """A track being edited has a dedicated instance; its patch lives there."""
+    from fantasia_core import plugins as plg
+    from fantasia_core.engine.plugin_render import capture_state
+
+    class Inst:
+        def __init__(self, tag): self.tag = tag
+
+    editing = Inst("the-editor-instance")
+    loaded = {(plg.resolve("Vital"), "t7"): editing}
+    monkeypatch.setattr(plg, "_LOADED", loaded)
+    monkeypatch.setattr(plg, "load",
+                        lambda name, owner=None: loaded.setdefault((name, owner), Inst("shared")))
+    monkeypatch.setattr(plg, "preset_bytes", lambda inst: inst.tag.encode())
+
+    assert base64.b64decode(capture_state("Vital", "t7")).decode() == "the-editor-instance"

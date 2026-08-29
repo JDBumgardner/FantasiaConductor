@@ -157,8 +157,15 @@ def prune(project, renderer: "PluginRenderer") -> int:  # noqa: ANN001
 
 
 def capture_state(plugin_name: str, owner: Optional[str] = None) -> str:
-    """A track's plugin state as base64, for saving with the project."""
+    """A track's plugin state as base64, for saving with the project.
+
+    Must read the instance a change was written to. ``load(owner=...)`` would
+    mint a fresh dedicated one instead — capturing a factory-default patch over
+    the edit, and quietly undoing the instance sharing by leaving one instance
+    per track behind.
+    """
     from fantasia_core import plugins as plg
 
-    data = plg.preset_bytes(plg.load(plugin_name, owner=owner))
+    inst, _slot = plg.instance_for(plugin_name, owner)
+    data = plg.preset_bytes(inst)
     return base64.b64encode(data).decode() if data else ""
