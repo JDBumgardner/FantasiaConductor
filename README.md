@@ -120,7 +120,31 @@ nothing. Rebuild it locally (needs `midi` + a soundfont; MusicGen textures need
 .venv/bin/python tools/build_sample_library.py --no-musicgen   # soundfont only, fast
 ```
 
-### 5. API key (only for the `agent` extra)
+### 5. Agent backend — a key, or your Claude Code subscription
+
+The in-app Agent panel can run either way:
+
+| Backend | Billing | Needs |
+| --- | --- | --- |
+| Claude Code | your existing subscription | the CLI + `pip install claude-agent-sdk` |
+| Anthropic API | per token, separately | an API key (below) |
+
+Claude Code is used automatically when it is installed; otherwise the panel
+falls back to the API key. Force the key with `FANTASIA_AGENT_BACKEND=api`.
+
+```bash
+npm i -g @anthropic-ai/claude-code
+pip install claude-agent-sdk
+```
+
+The Claude Code backend does not declare its own tools — it reaches the DAW
+through `tools/mcp_server.py`, the same server an outside MCP client uses, so
+there is one definition of what the agent can do. That also means the app must
+be running with its bridge up, and each request is a fresh session: it shares
+your authentication, not the conversation of a Claude Code window you have open
+elsewhere.
+
+#### API key (only for the `agent` extra)
 
 ```bash
 mkdir -p .fantasia_cache

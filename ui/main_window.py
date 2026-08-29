@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import base64
+import inspect
 import os
 import pathlib
 import sys
@@ -1766,8 +1767,12 @@ class _AgentWorker(QThread):
 
     def run(self) -> None:
         try:
+            kw = {}
+            if "on_note" in inspect.signature(self._session.run).parameters:
+                kw["on_note"] = self.note.emit     # Claude Code reports its tool calls
             final = self._session.run(self._message, on_text=self.text.emit,
-                                      execute_tool=self._execute, on_usage=self.usage.emit)
+                                      execute_tool=self._execute, on_usage=self.usage.emit,
+                                      **kw)
             self.done.emit(final or "")
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))
@@ -4077,20 +4082,48 @@ class MainWindow(QMainWindow):
         self._rebuild_all()
         self._sync_tempo_display()  # reflect any agent tempo change in the transport
 
+    def _agent_backend(self):
+        """Claude Code if it is installed, otherwise the API-key session.
+
+        Claude Code bills against the host subscription rather than a
+        pay-per-token key, and reaches the DAW through the same MCP server an
+        outside client uses, so there is one definition of the tools either way.
+        """
+        from fantasia_core.agent import claude_code as cc
+
+        if os.environ.get("FANTASIA_AGENT_BACKEND", "").lower() == "api":
+            return self.agent, None
+        if cc.available():
+            svc = getattr(self, "_cc_session", None)
+            if svc is None:
+                svc = cc.ClaudeCodeSession()
+                self._cc_session = svc
+            return svc, "via Claude Code (host subscription)"
+        return self.agent, None
+
     def _on_agent_send(self, message: str) -> None:
         if self._agent_busy:
             return
-        if not self.agent.available():
+        session, note = self._agent_backend()
+        if not session.available():
+            from fantasia_core.agent import claude_code as cc
+
             if not AgentSession.anthropic_available():
-                msg = "Agent needs the anthropic SDK — run: pip install -e '.[agent]'."
+                msg = ("Agent needs a backend. Either "
+                       "`pip install -e '.[agent]'` and set an API key, or "
+                       + cc.why_unavailable())
             else:
                 msg = ("No API key set. Use Agent ▸ Set API Key… to paste your Anthropic "
-                       "API key (saved locally, loaded on every launch).")
+                       "API key (saved locally, loaded on every launch). "
+                       "Alternatively: " + cc.why_unavailable())
             self.agent_panel.append("system", msg)
             return
+        if note and not getattr(self, "_said_backend", False):
+            self._said_backend = True
+            self.agent_panel.append("system", note)
         self._agent_busy = True
         self.agent_panel.set_busy(True)
-        worker = _AgentWorker(self.agent, message, search=self.search_service, seed=self._seed_folder)
+        worker = _AgentWorker(session, message, search=self.search_service, seed=self._seed_folder)
         worker.text.connect(lambda s: self.agent_panel.append("agent", s))
         worker.note.connect(lambda s: self.agent_panel.append("system", s))
         worker.usage.connect(self.agent_panel.update_usage)
