@@ -10,7 +10,11 @@ sound search**.
   - `document/` — the source of truth: `Project` / `Track` / `Clip`, serialization.
   - `commands/` — every edit is a reversible `Command` on a `CommandBus`
     (this is also exactly what the agent calls → undo/redo for free).
-  - `engine/` — audio buffers, mixer, `sounddevice` playback, FX, bounce.
+  - `engine/` — audio buffers, mixer, `sounddevice` playback, FX graph, bounce,
+    background clip rendering, and playback diagnostics.
+  - `plugins.py` + `plugin_notes/` — VST3/AU hosting, and measured notes on how
+    each hosted plugin's parameters actually behave.
+  - `svs.py` — DiffSinger singing synthesis from OpenUtau voicebanks.
   - `search/` — CLAP embeddings + LanceDB stores + one search service.
   - `agent/` — Claude tool-calling over the CommandBus + search.
 - **`ui/`** — PySide6 views; depends on `fantasia_core`, never the reverse.
@@ -75,7 +79,9 @@ sudo apt install librubberband-dev rubberband-cli       # stretch (extra: stretc
 | `generate` | `pip install -e '.[generate]'` | Text→audio via MusicGen |
 | `separate` | `pip install -e '.[separate]'` | Stem separation via Demucs |
 | `transcribe` | `pip install -e '.[transcribe]'` | Audio→MIDI via basic-pitch |
-| `voice` | `pip install -e '.[voice]'` | TTS / singing via Kokoro — **Apple Silicon only** |
+| `voice` | `pip install -e '.[voice]'` | TTS / speech via Kokoro — **Apple Silicon only** |
+| `svs` | `pip install -e '.[svs]'` | Singing synthesis from DiffSinger voicebanks |
+| `voiceconv` | `pip install -e '.[voiceconv]'` | Zero-shot voice conversion (Seed-VC) |
 | `stretch` | `pip install -e '.[stretch]'` | Time-stretch without pitch change |
 | `agent` | `pip install -e '.[agent]'` | Claude tool-calling |
 | `bridge` | `pip install -e '.[bridge]'` | MCP server (drive the app from Claude Code) |
@@ -131,6 +137,82 @@ Downloaded automatically on first use into the library caches
 - basic-pitch — bundled with the pip package, no download
 
 Expect a slow first run of each feature.
+
+## Singing
+
+`svs` renders sung vocals from a MIDI clip plus lyrics, using **DiffSinger
+voicebanks** in OpenUtau format. Banks are not in the repo — import one and it
+is unpacked into `.fantasia_cache/`:
+
+```bash
+pip install -e '.[svs]'
+```
+
+Then **Agent ▸ Singing Voicebanks…** (or `import_voicebank` from an agent),
+pointing at a downloaded `.zip`. `list_voicebanks` shows what is installed.
+Lyrics are one syllable per note, hyphenated across notes for multi-syllable
+words (`fan-ta-si-a`).
+
+`voice` (Kokoro) is a different thing — spoken TTS, not singing. `voiceconv`
+converts an existing vocal into another voice.
+
+## Instrument plugins (VST3 / AU)
+
+Any installed VST3 or AU instrument can play a MIDI track — set a track's
+`plugin` and its notes render through it. Hosting is `pedalboard`, which is
+already a base dependency, so there is nothing extra to install.
+
+Right-click a track header:
+
+```
+Plugin Instrument…            pick from what is installed
+Open <plugin> Interface…      the plugin's own window
+```
+
+Plugins are found in the usual OS locations; add more with
+`FANTASIA_PLUGIN_PATH`. `list_plugins` reports what was found.
+
+**Each track keeps its own patch.** The patch lives on the track as
+`plugin_state` and is saved with the project, while rendering runs through one
+shared instance with that patch swapped in — so twelve plugin tracks cost one
+instance, not twelve. A track whose editor is open gets its own instance for as
+long as the window is up.
+
+Clips render on background worker threads, nearest the playhead first. While
+that is catching up a clip can be briefly silent; `playback_health` says which
+clips are still waiting.
+
+### Plugin notes
+
+`fantasia_core/plugin_notes/` records what a plugin's parameters *actually*
+accept, measured against the running plugin rather than assumed. This matters
+more than it sounds: on Vital, sending `"On"` to a switch sets it Off and still
+reports success, envelope times follow `32 × raw⁴` rather than anything linear,
+and several values read back as the square of what you sent. Read the note for a
+plugin before automating it, and read back what `set_plugin_param` echoes.
+
+## FX and signal routing
+
+Every channel — and the Master bus — carries a chain of **inserts**, each with a
+stable id, so "this compressor" stays addressable across reorders.
+
+By default a chain is serial (`in → fx[0] → … → out`). Tracks can also carry
+explicit **wires** describing a directed graph, which the engine renders for
+real: copy on a split, mix on a join. That is how you get parallel wet/dry —
+the dry signal reaching the fader untouched alongside a reverb — rather than
+running everything in line.
+
+```
+in ─┬─► reverb ──► out          a send, not an insert: the dry path is intact
+    └────────────► out
+```
+
+Put a gain node at the head of each wet branch. A parallel branch summed at
+full level is a second copy of the part, not an effect.
+
+The node editor edits the graph by hand; `get_fx_routing` / `set_fx_routing`
+do it from an agent. A stock 8-band EQ (`get_eq` / `set_eq_band`) is available
+on every channel including Master, with a live analyzer.
 
 ## Project files
 
@@ -220,5 +302,16 @@ pytest
 
 ## Status
 
-Building the MVP milestone by milestone — see the plan for M0–M6. Symbolic/MIDI
-tracks, stem separation, AI audio generation, and the TS frontend are Phase 2.
+M0–M6 are in: document model, undoable commands, audio engine, classical editing
+tools, sound search, and agent hooks. Since then, MIDI tracks, stem separation,
+audio generation, singing synthesis and plugin hosting have all landed too.
+
+Still ahead:
+
+- **Gapless transport.** Pressing play mid-song can briefly leave a clip silent
+  while its audio is still rendering. `playback_health` measures it; the fix is
+  to refuse to open the stream until the first window is cached.
+- **Audio in its own process.** Not needed for stutter — the callback runs at
+  ~12ms of its 186ms budget — but it is what would let the buffer drop from
+  186ms to ~46ms, which matters for playing live into the app.
+- **TypeScript frontend** over a local API onto `fantasia_core`.
