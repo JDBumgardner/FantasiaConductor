@@ -118,6 +118,7 @@ class TransportBar(QWidget):
         self._build()
         self.setStyleSheet(_DECK_QSS)
         self._refresh_icons()
+        self._refresh_clock()
 
     def _mk_btn(self, tip: str, checkable: bool = False) -> QPushButton:
         btn = QPushButton()
@@ -150,6 +151,18 @@ class TransportBar(QWidget):
         self.time_label.setObjectName("timeReadout")
         self.time_label.setAlignment(Qt.AlignCenter)
         self.time_label.setMinimumWidth(96)
+        self.time_label.setToolTip("Playhead — minutes:seconds")
+
+        self._bars_sep = QLabel("▸")
+        self._bars_sep.setAlignment(Qt.AlignCenter)
+        self.bars_label = QLabel("001.1.00")
+        self.bars_label.setObjectName("barsReadout")
+        self.bars_label.setAlignment(Qt.AlignCenter)
+        self.bars_label.setMinimumWidth(84)
+        self.bars_label.setToolTip("Playhead — bar.beat (1-based)")
+        self._seconds = 0.0
+        self._bpb = 4
+        self._time_color = ""
 
         tempo_label = QLabel("Tempo")
         self.tempo_spin = QDoubleSpinBox()
@@ -166,6 +179,8 @@ class TransportBar(QWidget):
         layout.addWidget(self.metro_btn)
         layout.addSpacing(12)
         layout.addWidget(self.time_label)
+        layout.addWidget(self._bars_sep)
+        layout.addWidget(self.bars_label)
         layout.addStretch(1)
         layout.addWidget(tempo_label)
         layout.addWidget(self.tempo_spin)
@@ -193,6 +208,7 @@ class TransportBar(QWidget):
         self._repolish(self.play_btn)
         self._repolish(self.stop_btn)
         self._refresh_icons()
+        self._refresh_clock()
 
     def _repolish(self, widget: QWidget) -> None:
         widget.style().unpolish(widget)
@@ -236,14 +252,44 @@ class TransportBar(QWidget):
         blocked = self.tempo_spin.blockSignals(True)
         self.tempo_spin.setValue(float(bpm))
         self.tempo_spin.blockSignals(blocked)
+        self._refresh_clock()
+
+    def set_time_signature(self, beats_per_bar: int) -> None:
+        self._bpb = max(1, int(beats_per_bar))
+        self._refresh_clock()
 
     def set_time(self, seconds: float) -> None:
-        """Update the readout (called by playback in M3)."""
+        """Update the clock and bar.beat readout."""
+        self._seconds = max(0.0, float(seconds))
+        self._refresh_clock()
+
+    def _refresh_clock(self) -> None:
+        seconds = self._seconds
         minutes = int(seconds // 60)
         secs = seconds - minutes * 60
-        self.time_label.setText(f"{minutes:02d}:{secs:06.3f}")
+        clock = f"{minutes:02d}:{secs:06.3f}"
+        if self.time_label.text() != clock:
+            self.time_label.setText(clock)
+        bars = _format_bar_beat(seconds, self.tempo_spin.value(), self._bpb)
+        if self.bars_label.text() != bars:
+            self.bars_label.setText(bars)
         if self._playing:
             color = theme.NEON_ORANGE if self._in_tail else theme.ORANGE
         else:
             color = theme.CYAN
-        self.time_label.setStyleSheet(f"color:{color}; font-weight:700;")
+        if color != self._time_color:
+            self._time_color = color
+            sheet = f"color:{color}; font-weight:700;"
+            self.time_label.setStyleSheet(sheet)
+            self.bars_label.setStyleSheet(sheet)
+            self._bars_sep.setStyleSheet(f"color:{theme.PURPLE}; font-weight:700;")
+
+
+def _format_bar_beat(seconds: float, tempo: float, beats_per_bar: int) -> str:
+    """``001.1.00`` — bar.beat, both 1-based, beat to hundredths."""
+    bpb = max(1, int(beats_per_bar))
+    spb = 60.0 / tempo if tempo > 0 else 0.5
+    total = max(0.0, float(seconds)) / spb
+    bar = int(total // bpb) + 1
+    beat = (total % bpb) + 1.0
+    return f"{bar:03d}.{beat:04.2f}"

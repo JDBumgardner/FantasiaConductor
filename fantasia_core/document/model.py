@@ -394,6 +394,17 @@ class Project:
     def seconds_per_beat(self) -> float:
         return 60.0 / self.tempo if self.tempo > 0 else 0.5
 
+    def bar_beat(self, seconds: float) -> tuple[int, float]:
+        """Song time → ``(bar, beat)``, both 1-based. Beat includes a fraction."""
+        spb = self.seconds_per_beat()
+        bpb = max(int(self.beats_per_bar), 1)
+        if spb <= 0:
+            return 1, 1.0
+        total = max(0.0, float(seconds)) / spb
+        bar = int(total // bpb) + 1
+        beat = (total % bpb) + 1.0
+        return bar, beat
+
 
 # C major scale (semitone offsets from C) for seeding new MIDI clips.
 _C_MAJOR = [0, 2, 4, 5, 7, 9, 11, 12]
