@@ -7,6 +7,7 @@ tools are reached, and how the SDK's messages become panel text.
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -177,3 +178,52 @@ def test_the_session_cannot_edit_files_or_run_shell():
     assert allowed == ["mcp__fantasia"]
     for t in ("Bash", "Write", "Edit"):
         assert t in denied
+
+
+# ---- the API key must not hijack the subscription ------------------------
+def test_api_auth_is_removed_while_a_session_runs(monkeypatch):
+    """The app loads a saved ANTHROPIC_API_KEY into its own environment for the
+    other backend. A child inherits it, and Claude Code then bills the key
+    instead of the subscription — reporting "Credit balance is too low", which
+    is the exact opposite of why this backend exists.
+
+    Blanking is not enough: the SDK merges its env over the inherited one and
+    the CLI treats an empty value as still set, so the variable has to leave
+    the parent for the duration of the call.
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-something")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://example.invalid")
+
+    seen = {}
+
+    def fake_query(prompt, options):
+        seen["key"] = os.environ.get("ANTHROPIC_API_KEY")
+        seen["base"] = os.environ.get("ANTHROPIC_BASE_URL")
+        return iter([type("M", (), {"content": "ok"})()])
+
+    cc.ClaudeCodeSession(query=fake_query).run("hi", on_text=lambda _t: None)
+    assert seen["key"] is None, "the API key reached the spawned session"
+    assert seen["base"] is None
+    # and it is put back, because the other backend needs it
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-something"
+    assert os.environ["ANTHROPIC_BASE_URL"] == "https://example.invalid"
+
+
+def test_the_key_is_restored_even_when_the_session_fails(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-something")
+
+    def boom(prompt, options):
+        raise RuntimeError("nope")
+
+    with pytest.raises(RuntimeError):
+        cc.ClaudeCodeSession(query=boom).run("hi", on_text=lambda _t: None)
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-something"
+
+
+def test_credit_balance_error_is_explained_as_the_key_taking_over():
+    """The raw message blames a balance; the cause is an API key overriding the
+    subscription, so the explanation should point there rather than echo it."""
+    msg = cc.explain(RuntimeError(
+        "Claude Code returned an error result: Credit balance is too low")).lower()
+    assert "api key" in msg and "subscription" in msg
+    assert "anthropic_" in msg, "should name the kind of variable to look for"

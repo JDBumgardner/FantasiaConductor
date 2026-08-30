@@ -25,9 +25,11 @@ Two consequences worth knowing:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import pathlib
 import shutil
+import threading
 from typing import Callable, Iterable, Optional
 
 # Where the CLI usually lives when it is not simply on PATH.
@@ -75,6 +77,43 @@ def why_unavailable() -> str:
             "npm i -g @anthropic-ai/claude-code")
 
 
+# Auth that would take precedence over the claude.ai login. The app loads a
+# saved ANTHROPIC_API_KEY into its own environment for the API-key backend, and
+# a child process inherits it — at which point Claude Code silently switches to
+# API billing and reports "Credit balance is too low", which is the opposite of
+# why this backend exists.
+_ENV_LOCK = threading.Lock()
+_OVERRIDING_AUTH = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                    "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK",
+                    "CLAUDE_CODE_USE_VERTEX")
+
+
+@contextlib.contextmanager
+def _without_api_auth():
+    """Remove API auth from this process while a session is spawned.
+
+    Neither omitting the variables nor blanking them works: the SDK merges its
+    ``env`` over the inherited environment, and the CLI treats an empty value as
+    still set. The child inherits whatever the parent has, so the variables have
+    to genuinely leave it for the duration of the call.
+
+    Restored in a finally, and held under a lock because the API-key backend
+    reads the same variable.
+    """
+    with _ENV_LOCK:
+        saved = {k: os.environ.pop(k) for k in _OVERRIDING_AUTH if k in os.environ}
+        try:
+            yield
+        finally:
+            os.environ.update(saved)
+
+
+def child_env() -> dict:
+    """Overrides for the spawned session. Empty: the auth variables are removed
+    from this process instead, which is the only thing the CLI honours."""
+    return {}
+
+
 def mcp_config(repo_root: Optional[str] = None) -> dict:
     """How to spawn the DAW's MCP server, as the SDK wants it.
 
@@ -104,6 +143,11 @@ def explain(exc: Exception) -> str:
         return ("Claude Code is installed but not signed in. Run `claude` in a "
                 "terminal and use /login once — the desktop app's login is "
                 "separate from the CLI's.")
+    if "credit balance" in low:
+        return ("Claude Code billed an API key instead of your subscription. An "
+                "ANTHROPIC_* variable is overriding the claude.ai login — the "
+                "backend clears the ones it knows about, so check for another "
+                "set outside the app.")
     if "cli not found" in low or isinstance(exc, FileNotFoundError):
         return why_unavailable()
     if "bridge" in low or "connection refused" in low:
@@ -234,16 +278,17 @@ class ClaudeCodeSession:
         collected: list = []
         seen_tools: set = set()
         try:
-            stream = _iterate(query, user_message, options)
-            messages = list(stream) if False else stream
-            for message in messages:
-                for chunk in _text_of(message):
-                    collected.append(chunk)
-                    on_text(chunk)
-                name = _tool_name_of(message)
-                if name and name not in seen_tools and on_note is not None:
-                    seen_tools.add(name)
-                    on_note(f"calling {name.replace('mcp__fantasia__', '')}…")
+          with _without_api_auth():
+              stream = _iterate(query, user_message, options)
+              messages = list(stream) if False else stream
+              for message in messages:
+                  for chunk in _text_of(message):
+                      collected.append(chunk)
+                      on_text(chunk)
+                  name = _tool_name_of(message)
+                  if name and name not in seen_tools and on_note is not None:
+                      seen_tools.add(name)
+                      on_note(f"calling {name.replace('mcp__fantasia__', '')}…")
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(explain(exc)) from exc
         final = "".join(collected)
