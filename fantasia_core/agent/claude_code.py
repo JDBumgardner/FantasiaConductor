@@ -91,12 +91,67 @@ def mcp_config(repo_root: Optional[str] = None) -> dict:
     }
 
 
-SYSTEM = (
+def explain(exc: Exception) -> str:
+    """Turn an SDK failure into something the panel can act on.
+
+    The CLI has its own authentication, separate from the Claude desktop app,
+    so a fresh install answers every request with "Not logged in" until it is
+    signed in once.
+    """
+    text = str(exc)
+    low = text.lower()
+    if "not logged in" in low or "/login" in low:
+        return ("Claude Code is installed but not signed in. Run `claude` in a "
+                "terminal and use /login once — the desktop app's login is "
+                "separate from the CLI's.")
+    if "cli not found" in low or isinstance(exc, FileNotFoundError):
+        return why_unavailable()
+    if "bridge" in low or "connection refused" in low:
+        return ("Claude Code could not reach the DAW's tools. The app has to be "
+                "running with its control bridge up.")
+    return f"Claude Code failed: {text}"
+
+
+_NOTES_DIR = "fantasia_core/plugin_notes"
+
+BASE_SYSTEM = (
     "You are composing inside Fantasia Conductor, a running DAW. Use the "
     "fantasia tools to make changes; they go through the app's command bus, so "
     "everything you do is undoable. Prefer small, checkable steps, and say what "
     "you changed."
 )
+
+
+def plugin_notes_brief(repo_root=None) -> str:
+    """The measured parameter rules, folded into the system prompt.
+
+    These exist because a plugin will accept a value, report success, and store
+    something else. Leaving the agent to discover that by trial is how an
+    afternoon disappears — and it cannot read them itself, since this session is
+    restricted to the DAW's own tools.
+
+    Only the short rules are inlined. The full catalogue (900+ parameters) stays
+    on disk and is named so the agent can ask for a specific entry.
+    """
+    import json
+
+    root = pathlib.Path(repo_root or pathlib.Path(__file__).resolve().parents[2])
+    path = root / _NOTES_DIR / "vital.json"
+    try:
+        notes = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001 — notes are an aid, not a requirement
+        return ""
+    rules = notes.get("value_format_rules") or {}
+    lines = [f"- {k}: {v}" for k, v in rules.items() if isinstance(v, str)]
+    if not lines:
+        return ""
+    return ("\n\nMeasured rules for the hosted plugin's parameters — these are "
+            "recorded because the plugin accepts a value, reports success, and "
+            "stores something else. Follow them and read back what "
+            "set_plugin_param echoes:\n" + "\n".join(lines)
+            + f"\n\nThe full per-parameter catalogue lives in {_NOTES_DIR}/ "
+              "(vital.json, vital_params.json); ask the user to look one up if "
+              "you need an entry that is not covered above.")
 
 
 def _text_of(message) -> Iterable[str]:
@@ -131,6 +186,31 @@ class ClaudeCodeSession:
     def available(self) -> bool:
         return self._query is not None or available()
 
+    def _options(self):
+        """The SDK wants its own options object, not a mapping.
+
+        ``cwd`` matters: the MCP server is spawned relative to it, and the
+        DAW's tools are the only ones this session should have — Claude Code's
+        own file and shell tools have no business editing the project from
+        inside the app.
+        """
+        opts = {
+            "system_prompt": BASE_SYSTEM + plugin_notes_brief(self.repo_root),
+            "mcp_servers": {"fantasia": mcp_config(self.repo_root)},
+            "allowed_tools": ["mcp__fantasia"],
+            "disallowed_tools": ["Bash", "Write", "Edit", "NotebookEdit"],
+            "permission_mode": "acceptEdits",
+            "cwd": str(self.repo_root or pathlib.Path(__file__).resolve().parents[2]),
+        }
+        if self.model:
+            opts["model"] = self.model
+        try:
+            from claude_agent_sdk import ClaudeAgentOptions  # noqa: PLC0415
+
+            return ClaudeAgentOptions(**opts)
+        except Exception:  # noqa: BLE001 — a fake query in tests takes the mapping
+            return opts
+
     def run(self, user_message: str,
             on_text: Callable[[str], None],
             execute_tool: Optional[Callable[[str, dict], object]] = None,
@@ -148,26 +228,24 @@ class ClaudeCodeSession:
 
             query = sdk_query
 
-        options = {
-            "system_prompt": SYSTEM,
-            "mcp_servers": {"fantasia": mcp_config(self.repo_root)},
-            "allowed_tools": ["mcp__fantasia"],
-            "permission_mode": "acceptEdits",
-        }
-        if self.model:
-            options["model"] = self.model
+        options = self._options()
 
         self.messages.append({"role": "user", "content": user_message})
         collected: list = []
         seen_tools: set = set()
-        for message in _iterate(query, user_message, options):
-            for chunk in _text_of(message):
-                collected.append(chunk)
-                on_text(chunk)
-            name = _tool_name_of(message)
-            if name and name not in seen_tools and on_note is not None:
-                seen_tools.add(name)
-                on_note(f"calling {name.replace('mcp__fantasia__', '')}…")
+        try:
+            stream = _iterate(query, user_message, options)
+            messages = list(stream) if False else stream
+            for message in messages:
+                for chunk in _text_of(message):
+                    collected.append(chunk)
+                    on_text(chunk)
+                name = _tool_name_of(message)
+                if name and name not in seen_tools and on_note is not None:
+                    seen_tools.add(name)
+                    on_note(f"calling {name.replace('mcp__fantasia__', '')}…")
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(explain(exc)) from exc
         final = "".join(collected)
         self.messages.append({"role": "assistant", "content": final})
         return final

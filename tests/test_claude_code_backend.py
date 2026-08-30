@@ -137,3 +137,43 @@ def test_the_run_signature_matches_the_api_key_backend():
     a = set(inspect.signature(AgentSession.run).parameters)
     b = set(inspect.signature(cc.ClaudeCodeSession.run).parameters)
     assert a <= b, f"Claude Code backend is missing {a - b}"
+
+
+# ---- the plugin notes reach the agent ------------------------------------
+def test_the_measured_parameter_rules_are_in_the_system_prompt():
+    """This session is restricted to the DAW's tools, so it cannot read the
+    notes itself. Without them it repeats the mistakes they were written to
+    prevent — a plugin accepts a value, reports success, stores something else."""
+    brief = cc.plugin_notes_brief()
+    assert brief, "no rules folded in"
+    for rule in ("envelope_times", "percent_params", "filter_cutoff_ceiling",
+                 "choice_and_switch"):
+        assert rule in brief, f"{rule} missing from the prompt"
+    assert "32 * raw^4" in brief          # the one that made every note a click
+    assert "sqrt" in brief                # levels and detune read back squared
+
+
+def test_the_prompt_names_where_the_full_catalogue_lives():
+    brief = cc.plugin_notes_brief()
+    assert "plugin_notes" in brief
+    assert "vital_params.json" in brief
+
+
+def test_the_brief_stays_small_enough_to_prepend_every_turn():
+    """It is sent with every request, so it cannot be the 170KB catalogue."""
+    assert len(cc.plugin_notes_brief()) < 6000
+
+
+def test_missing_notes_degrade_to_no_brief_rather_than_failing(tmp_path):
+    assert cc.plugin_notes_brief(repo_root=tmp_path) == ""
+
+
+def test_the_session_cannot_edit_files_or_run_shell():
+    """A session spawned from inside the DAW should reach the DAW's tools and
+    nothing else."""
+    opts = cc.ClaudeCodeSession()._options()
+    allowed = getattr(opts, "allowed_tools", None) or opts.get("allowed_tools")
+    denied = getattr(opts, "disallowed_tools", None) or opts.get("disallowed_tools")
+    assert allowed == ["mcp__fantasia"]
+    for t in ("Bash", "Write", "Edit"):
+        assert t in denied
