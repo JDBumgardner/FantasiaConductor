@@ -257,3 +257,49 @@ def test_midi_render_spans_empty_clip():
     from fantasia_core.engine.midi_render import midi_render_spans
 
     assert midi_render_spans([], 80000, tail=200) == []
+
+
+def test_soundfont_samples_load_on_demand():
+    """A GM font covers 128 instruments and a project uses a handful. Loading
+    the whole bank up front is what makes a 150MB+ font impractical on a small
+    machine; the reads land during clip rendering, never in the audio callback,
+    which only ever reads already-rendered audio."""
+    import pytest
+
+    fluidsynth = pytest.importorskip("fluidsynth")
+    from fantasia_core.engine.midi_render import MidiRenderer, default_soundfont
+
+    sf = default_soundfont()
+    if not sf:
+        pytest.skip("no soundfont installed")
+    r = MidiRenderer(sf, 44100)
+    if not r.available():
+        pytest.skip("fluidsynth unavailable")
+    assert r._ensure()
+    assert r._fs.get_setting("synth.dynamic-sample-loading") == 1
+    r.close()
+
+
+def test_rendering_still_works_with_on_demand_samples():
+    """The saving is worthless if the audio changes."""
+    import numpy as np
+    import pytest
+    from types import SimpleNamespace as NS
+
+    pytest.importorskip("fluidsynth")
+    from fantasia_core.engine.midi_render import MidiRenderer, default_soundfont
+
+    sf = default_soundfont()
+    if not sf:
+        pytest.skip("no soundfont installed")
+    r = MidiRenderer(sf, 44100)
+    if not r.available():
+        pytest.skip("fluidsynth unavailable")
+
+    class _Clip:
+        id, name, content_type, duration = "c", "p", "midi", 1.5
+        notes = [NS(pitch=60, start=0.0, duration=0.5, velocity=100)]
+
+    a = np.asarray(r.render(_Clip(), 0, False))
+    assert len(a) and float(np.abs(a).max()) > 1e-4, "on-demand loading gave silence"
+    r.close()

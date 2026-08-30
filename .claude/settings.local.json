@@ -29,5 +29,8 @@
       "Bash(ps -eo pid,etime,command)",
       "Bash(curl -s -m 3 http://127.0.0.1:8765/tools -o /dev/null -w \"HTTP %{http_code} in %{time_total}s\\\\n\")"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "fantasia"
+  ]
 }

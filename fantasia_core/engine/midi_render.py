@@ -204,6 +204,16 @@ class MidiRenderer:
         import fluidsynth
 
         self._fs = fluidsynth.Synth(samplerate=float(self.sr))
+        # Load sample data when a note first needs it rather than the whole
+        # bank up front. A GM font covers 128 instruments and a project uses a
+        # handful, so most of it is never touched: on the 30MB font this is
+        # 54MB of load-time resident memory against 23MB, and it is what makes
+        # a 150MB+ font usable on a small machine. The reads land during clip
+        # rendering, never in the audio callback, which only reads cached audio.
+        try:
+            self._fs.setting("synth.dynamic-sample-loading", 1)
+        except Exception:  # noqa: BLE001 — older fluidsynth: load everything
+            pass
         self._sfid = self._fs.sfload(self.soundfont)
         return True
 
