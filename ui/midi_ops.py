@@ -250,6 +250,11 @@ SCALES: dict[str, List[int]] = {
     "Phrygian Dominant": [0, 1, 4, 5, 7, 8, 10],
     "Lydian Dominant": [0, 2, 4, 6, 7, 9, 10],
     "Persian": [0, 1, 4, 5, 6, 8, 11],
+    # Freygish is the klezmer scale proper — the same intervals as Phrygian
+    # Dominant, listed under the name it is actually asked for. Misheberakh
+    # (Ukrainian Dorian, a raised 4th) is the other one the repertoire uses.
+    "Klezmer (Freygish)": [0, 1, 4, 5, 7, 8, 10],
+    "Klezmer (Misheberakh)": [0, 2, 3, 6, 7, 9, 10],
     "Hirajoshi": [0, 2, 3, 7, 8],
     "In Sen": [0, 1, 5, 7, 10],
     "Altered": [0, 1, 3, 4, 6, 8, 10],
@@ -316,6 +321,25 @@ def step_in_scale(pitch: int, steps: int, pcs, lo: int = 0, hi: int = 127) -> in
         if (p % 12) in pcs:
             remaining -= 1
     return p
+
+
+def nearest_in_scale(pitch: int, pcs, lo: int = 0, hi: int = 127) -> int:
+    """The closest pitch in the scale, preferring upward on a tie.
+
+    Used when a pitch comes from a mouse position rather than from an existing
+    note: without it, choosing a scale colours the rows but a drawn note can
+    still land outside it, which makes the setting look decorative.
+    """
+    if not pcs:
+        return int(max(lo, min(hi, pitch)))
+    pitch = int(max(lo, min(hi, pitch)))
+    if (pitch % 12) in pcs:
+        return pitch
+    for delta in range(1, 13):
+        for cand in (pitch + delta, pitch - delta):
+            if lo <= cand <= hi and (cand % 12) in pcs:
+                return cand
+    return pitch
 
 
 def transpose_in_scale(notes: Iterable[Note], steps: int, pcs, lo: int = 0, hi: int = 127) -> None:

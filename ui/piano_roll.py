@@ -295,6 +295,20 @@ class PianoRollView(QGraphicsView):
             row = PITCH_HI - p
         return PR_RULER_H + row * self.row_h()
 
+    def snap_pitch(self, pitch: int) -> int:
+        """Pull a mouse-derived pitch into the selected scale.
+
+        Folded lanes already contain only in-scale pitches, so this is for the
+        unfolded roll, where the scale was previously advisory: the rows were
+        tinted but nothing stopped a note landing between them.
+        """
+        pcs = self._scale_pcs()
+        if pcs is None:
+            return int(pitch)
+        lo, hi = (min(self._lane_pitch or [PITCH_LO]), max(self._lane_pitch or [PITCH_HI])) \
+            if self._laned() else (PITCH_LO, PITCH_HI)
+        return midi_ops.nearest_in_scale(int(pitch), pcs, lo, hi)
+
     def y_to_pitch(self, y: float) -> int:
         row = int((y - PR_RULER_H) / self.row_h())
         if self._laned():
@@ -709,7 +723,7 @@ class PianoRollView(QGraphicsView):
         if not self._ensure_clip():
             return None
         start = max(0.0, self.snap_time(self.x_to_time(scene_pos.x())))
-        pitch = self.y_to_pitch(scene_pos.y())
+        pitch = self.snap_pitch(self.y_to_pitch(scene_pos.y()))
         item = NoteItem(Note(pitch, start, length or self._default_len(), 100), self)
         self._scene.addItem(item)
         self._items.append(item)
@@ -792,6 +806,15 @@ class PianoRollView(QGraphicsView):
         dp = -int(round(dy / self.row_h()))
         lo, hi = (min(self._lane_pitch or [0]), max(self._lane_pitch or [127])) if (
             self._laned()) else (PITCH_LO, PITCH_HI)
+        # With a scale chosen, land the dragged selection in it. The shift is
+        # worked out once from the lead note and applied to everything, so a
+        # chord keeps its shape instead of each note collapsing to its own
+        # nearest degree. A purely horizontal drag is left alone — moving a note
+        # sideways should not silently retune it.
+        pcs = self._scale_pcs()
+        if pcs is not None and dp and self._drag_snapshot:
+            lead_pitch = self._drag_snapshot[0][2]
+            dp = midi_ops.nearest_in_scale(lead_pitch + dp, pcs, lo, hi) - lead_pitch
         # Keep the whole selection in range / on the timeline.
         min_start = min(s for _i, s, _p, _d, _v in self._drag_snapshot)
         if min_start + dt < 0:
