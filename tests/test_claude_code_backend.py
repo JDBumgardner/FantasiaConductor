@@ -227,3 +227,51 @@ def test_credit_balance_error_is_explained_as_the_key_taking_over():
         "Claude Code returned an error result: Credit balance is too low")).lower()
     assert "api key" in msg and "subscription" in msg
     assert "anthropic_" in msg, "should name the kind of variable to look for"
+
+
+# ---- the conversation continues between panel messages -------------------
+def test_the_session_is_resumed_on_later_turns():
+    """One-shot queries made every message a fresh session, so the agent did
+    not know which track it had just been working on."""
+    seen = []
+
+    class _Msg:
+        def __init__(self, sid=None):
+            self.content = [type("B", (), {"text": "ok"})()]
+            if sid:
+                self.session_id = sid
+
+    def fake_query(prompt, options):
+        seen.append(options.get("resume") if isinstance(options, dict)
+                    else getattr(options, "resume", None))
+        return iter([_Msg("sess-123")])
+
+    s = cc.ClaudeCodeSession(query=fake_query)
+    s.run("first", on_text=lambda _t: None)
+    assert seen[-1] is None, "the first turn should not resume anything"
+    assert s.session_id == "sess-123"
+    s.run("second", on_text=lambda _t: None)
+    assert seen[-1] == "sess-123", "the second turn did not resume the first"
+
+
+def test_reset_starts_a_new_conversation():
+    class _Msg:
+        content = [type("B", (), {"text": "ok"})()]
+        session_id = "sess-abc"
+
+    s = cc.ClaudeCodeSession(query=lambda prompt, options: iter([_Msg()]))
+    s.run("hi", on_text=lambda _t: None)
+    assert s.session_id and s.messages
+    s.reset()
+    assert s.session_id is None and s.messages == []
+
+
+def test_a_session_id_on_a_result_style_message_is_picked_up():
+    """Claude Code reports it on its result message, not on every reply."""
+    class _Result:
+        content = []
+        data = {"session_id": "sess-xyz"}
+
+    s = cc.ClaudeCodeSession(query=lambda prompt, options: iter([_Result()]))
+    s.run("hi", on_text=lambda _t: None)
+    assert s.session_id == "sess-xyz"

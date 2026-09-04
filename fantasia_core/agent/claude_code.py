@@ -226,9 +226,26 @@ class ClaudeCodeSession:
         self.model = model
         self._query = query          # injectable, so this is testable without the CLI
         self.messages: list = []
+        self.session_id: Optional[str] = None
 
     def available(self) -> bool:
         return self._query is not None or available()
+
+    def reset(self) -> None:
+        """Start a fresh conversation on the next message."""
+        self.session_id = None
+        self.messages.clear()
+
+    def _session_id_of(self, message):
+        """The id Claude Code assigns a conversation, so the next turn can
+        resume it. Reported on its result message rather than per reply."""
+        sid = getattr(message, "session_id", None)
+        if sid:
+            return str(sid)
+        data = getattr(message, "data", None)
+        if isinstance(data, dict) and data.get("session_id"):
+            return str(data["session_id"])
+        return None
 
     def _options(self):
         """The SDK wants its own options object, not a mapping.
@@ -246,6 +263,11 @@ class ClaudeCodeSession:
             "permission_mode": "acceptEdits",
             "cwd": str(self.repo_root or pathlib.Path(__file__).resolve().parents[2]),
         }
+        # Carry the conversation between panel messages. Without it every turn
+        # is a new session, so the agent does not know which track it was just
+        # working on — which reads as the interface losing its place.
+        if self.session_id:
+            opts["resume"] = self.session_id
         if self.model:
             opts["model"] = self.model
         try:
@@ -289,6 +311,9 @@ class ClaudeCodeSession:
                   if name and name not in seen_tools and on_note is not None:
                       seen_tools.add(name)
                       on_note(f"calling {name.replace('mcp__fantasia__', '')}…")
+                  sid = self._session_id_of(message)
+                  if sid:
+                      self.session_id = sid
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(explain(exc)) from exc
         final = "".join(collected)
