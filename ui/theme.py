@@ -37,8 +37,9 @@ BG_PANEL = "#14162a"     # panels, headers, docks
 BG_ELEVATED = "#1b1e38"  # inputs, menus, elevated controls
 BG_HOVER = "#262a4d"
 BG_SELECTED = "#2a2f57"
-# Track-header selection: brighter than the panel so the row reads as armed.
-HEADER_SELECTED = "#24366a"
+# Track-header selection: high-luminance indigo so the armed row is obvious
+# even to deuteranopia (not a red/green pair).
+HEADER_SELECTED = "#1c4a8c"
 BORDER = "#2a2e52"
 BORDER_SOFT = "#20233f"
 

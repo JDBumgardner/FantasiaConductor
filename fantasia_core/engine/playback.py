@@ -88,18 +88,21 @@ def loop_render_plan(
     """Split one callback into ``(src_frame, n)`` pieces so a loop wrap is seamless.
 
     Returns ``(pieces, new_cursor)``. When looping is off, a single piece.
+    Playback always begins at ``cursor`` (the locator). The brace only wraps
+    once the playhead is inside ``[loop_start, loop_end)``.
     """
     if frames <= 0:
         return [], cursor
     if not loop or loop_end <= loop_start + 1:
         return [(cursor, frames)], cursor + frames
     lo, hi = int(loop_start), int(loop_end)
+    cur = int(cursor)
+    # After the brace: the locator wins. Loop only engages once the playhead
+    # is inside [lo, hi) — starting past the end must not snap back in.
+    if cur >= hi:
+        return [(cur, int(frames))], cur + int(frames)
     pieces: list[tuple[int, int]] = []
     remaining = int(frames)
-    cur = int(cursor)
-    if cur >= hi:
-        length = hi - lo
-        cur = lo + ((cur - lo) % length) if length > 0 else lo
     guard = 0
     while remaining > 0 and guard < 16:
         guard += 1

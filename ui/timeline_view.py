@@ -532,6 +532,16 @@ class TimelineView(QGraphicsView):
         else:
             self._invalidate_playhead(old, t)
 
+    def reveal_locator(self, *, left_ratio: float = 0.12) -> None:
+        """If the locator is off-screen, pan so it sits toward the left edge."""
+        x = max(0.0, float(self.start_position)) * self.pps
+        view_x = self.mapFromScene(x, 0).x()
+        width = self.viewport().width()
+        if 0 <= view_x <= width:
+            return
+        margin = max(16, int(width * left_ratio))
+        self.horizontalScrollBar().setValue(max(0, int(x - margin)))
+
     # ---- rebuild ---------------------------------------------------------
     def rebuild(self) -> None:
         self._scene.clear()
@@ -571,18 +581,26 @@ class TimelineView(QGraphicsView):
         self._update_scene_rect()
 
     # ---- zoom ------------------------------------------------------------
-    def set_pps(self, pps: float) -> None:
-        self.pps = max(PPS_MIN, min(PPS_MAX, pps))
+    def set_pps(self, pps: float, *, around_locator: bool = False) -> None:
+        new = max(PPS_MIN, min(PPS_MAX, float(pps)))
+        loc_view_x = None
+        if around_locator:
+            loc_view_x = self.mapFromScene(self.start_position * self.pps, 0).x()
+        self.pps = new
         for item in self._clip_items.values():
             item.refresh_geometry()
         self._update_scene_rect()
+        if loc_view_x is not None:
+            # Keep the locator on the same viewport X — it is the zoom origin.
+            loc_scene_x = self.start_position * self.pps
+            self.horizontalScrollBar().setValue(max(0, int(round(loc_scene_x - loc_view_x))))
         self.viewport().update()
 
     def zoom_in(self) -> None:
-        self.set_pps(self.pps * 1.25)
+        self.set_pps(self.pps * 1.25, around_locator=True)
 
     def zoom_out(self) -> None:
-        self.set_pps(self.pps / 1.25)
+        self.set_pps(self.pps / 1.25, around_locator=True)
 
     def wheelEvent(self, event) -> None:  # noqa: N802
         if event.modifiers() & Qt.ControlModifier:
@@ -725,7 +743,8 @@ class TimelineView(QGraphicsView):
                 self.track_step_requested.emit(-1 if event.key() == Qt.Key_Up else 1)
                 event.accept()
                 return
-            if event.key() in (Qt.Key_Left, Qt.Key_Right) and not self.selected_clip_ids():
+            if event.key() in (Qt.Key_Left, Qt.Key_Right):
+                # Always the locator — never let QGraphicsView pan the viewport.
                 self.nudge_playhead(-1 if event.key() == Qt.Key_Left else 1)
                 event.accept()
                 return
@@ -740,6 +759,7 @@ class TimelineView(QGraphicsView):
             else:
                 step = 1.0
         self.locate(max(0.0, self.start_position + steps * step))
+        self.reveal_locator()
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
         item = self.itemAt(event.pos())
@@ -781,11 +801,9 @@ class TimelineView(QGraphicsView):
                 event.accept()
                 return
             already = clip_item.isSelected()
-            if clip_item.clip.is_midi and not already:
-                # Newly selected MIDI clip: locate at the clip start.
-                # An already-selected clip still locates to the click (below).
-                self.locate(float(clip_item.clip.start))
-            else:
+            # Selecting a MIDI clip must not move the locator. Once it is
+            # already selected, a click on it (or elsewhere) sets the locator.
+            if already or not clip_item.clip.is_midi:
                 self.locate(max(0.0, scene_pos.x() / self.pps))
         if event.button() == Qt.LeftButton and not isinstance(clip_item, ClipItem):
             # Empty-lane press: wait to see if this is a drag (interval select)

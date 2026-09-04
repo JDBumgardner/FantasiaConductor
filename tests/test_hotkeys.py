@@ -21,6 +21,7 @@ def test_contextual_covers_mute_solo_and_piano_roll(qapp):  # noqa: ARG001
     assert "Mute selected track(s)" in names
     assert "Solo selected track(s)" in names
     assert "Draw mode" in names
+    assert "Nudge locator along the grid" in names
     assert "Remove selected node (auto-reconnect)" in names
 
 

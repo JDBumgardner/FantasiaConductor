@@ -20,7 +20,7 @@ from typing import Optional
 
 import numpy as np
 
-from PySide6.QtCore import (QEventLoop, QSettings, Qt, QThread, QTimer,
+from PySide6.QtCore import (QEventLoop, QSettings, QSize, Qt, QThread, QTimer,
                             Signal)
 from PySide6.QtGui import QAction, QActionGroup, QCursor, QKeySequence
 from PySide6.QtWidgets import (
@@ -124,6 +124,26 @@ _DEMO_TRACKS = [
     ("Lead", "lead.wav", theme.PURPLE),
 ]
 
+# Default header column. Wide enough for name + plugin + faders; the
+# timeline stretch factor absorbs extra window width on Fedora and macOS.
+HEADER_SPLIT_W = 360
+
+
+def default_window_size(screen=None) -> QSize:  # noqa: ANN001
+    """~80% of the usable desktop, clamped to the available rect.
+
+    ``availableGeometry`` is in device-independent pixels and excludes the
+    GNOME bar / macOS menu bar and Dock, so the same fraction fits a Fedora
+    monitor and a MacBook without covering chrome.
+    """
+    scr = screen or QApplication.primaryScreen()
+    if scr is None:
+        return QSize(1440, 900)
+    avail = scr.availableGeometry()
+    width = min(avail.width(), max(1280, int(avail.width() * 0.80)))
+    height = min(avail.height(), max(800, int(avail.height() * 0.80)))
+    return QSize(width, height)
+
 _STYLESHEET = f"""
 * {{ font-family: {theme.FONT_CSS}; }}
 QMainWindow, QWidget#central {{ background: {theme.BG_DEEP}; }}
@@ -136,9 +156,9 @@ QMenuBar::item {{ background: transparent; padding: 5px 10px; }}
 QMenuBar::item:selected {{ background: {theme.BG_HOVER}; color: {theme.FG_BRIGHT}; }}
 
 QWidget#trackHeader {{ background: {theme.BG_PANEL}; border-bottom: 1px solid {theme.LANE_DIVIDER_CSS};
-    border-left: 3px solid transparent; }}
+    border-left: 4px solid transparent; }}
 QWidget#trackHeader[selected="true"] {{ background: {theme.HEADER_SELECTED};
-    border-left: 3px solid {theme.HEADER_SELECTED_EDGE}; }}
+    border-left: 4px solid {theme.HEADER_SELECTED_EDGE}; }}
 QLineEdit {{ background: transparent; color: {theme.FG_BRIGHT}; font-weight: 600; }}
 QLabel {{ color: {theme.FG}; }}
 QPushButton {{ background: {theme.BG_ELEVATED}; color: {theme.FG}; border: 1px solid {theme.BORDER};
@@ -1784,7 +1804,15 @@ class MainWindow(QMainWindow):
         super().__init__()
         _load_secrets()  # pick up a saved ANTHROPIC_API_KEY before the agent inits
         self.setWindowTitle("Fantasia Conductor")
-        self.resize(1280, 760)
+        size = default_window_size(self.screen())
+        self.resize(size)
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            self.move(
+                avail.x() + max(0, (avail.width() - size.width()) // 2),
+                avail.y() + max(0, (avail.height() - size.height()) // 2),
+            )
         self.setStyleSheet(_STYLESHEET)
 
         self.project = Project(name="Untitled")
@@ -1919,8 +1947,10 @@ class MainWindow(QMainWindow):
         arrangement.setStretchFactor(1, 1)
         arrangement.setChildrenCollapsible(False)
         arrangement.setHandleWidth(7)        # grabbable, matches the editor handle
-        arrangement.setSizes([240, 900])     # header starts at its old fixed width
+        arrangement.setSizes([HEADER_SPLIT_W, 900])
         arrangement.setMinimumHeight(100)
+        self._arrangement = arrangement
+        self._applied_header_split = False
 
         # Bottom editor sits in a vertical splitter so the piano roll can grow.
         self.editor = EditorDock(self)
@@ -1964,6 +1994,15 @@ class MainWindow(QMainWindow):
         # (still movable between areas so the Agent/Search tabs work).
         for dock in (self.agent_panel, self.search_panel):
             dock.setFeatures(QDockWidget.DockWidgetMovable)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        # setSizes before the first layout is unreliable (Fedora and macOS
+        # both recompute splitter ratios once the window has a real width).
+        if not self._applied_header_split:
+            self._applied_header_split = True
+            rest = max(400, self._arrangement.width() - HEADER_SPLIT_W)
+            self._arrangement.setSizes([HEADER_SPLIT_W, rest])
 
     def _build_actions(self) -> None:
         menubar = self.menuBar()
@@ -2404,6 +2443,7 @@ class MainWindow(QMainWindow):
         self.timeline.start_position = start
         self.timeline.set_playhead(start)
         self.engine.set_playhead_seconds(start)
+        self.timeline.reveal_locator()
         ready = self._await_window(start)
         if self.engine.play():
             self.timeline.playback_active = True
@@ -2610,6 +2650,10 @@ class MainWindow(QMainWindow):
                     return
                 if event.key() in (Qt.Key_Up, Qt.Key_Down):
                     self._step_track(-1 if event.key() == Qt.Key_Up else 1)
+                    event.accept()
+                    return
+                if event.key() in (Qt.Key_Left, Qt.Key_Right) and not self._piano_has_focus():
+                    self.timeline.nudge_playhead(-1 if event.key() == Qt.Key_Left else 1)
                     event.accept()
                     return
         super().keyPressEvent(event)
