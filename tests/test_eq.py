@@ -310,6 +310,34 @@ def test_dag_processes_in_topological_order_not_list_order():
     assert np.isfinite(out).all()
 
 
+def test_mix_node_blends_two_inputs_by_wet():
+    import numpy as np
+    from types import SimpleNamespace as NS
+
+    from fantasia_core.document.fx_insert import OUT, SOURCE, as_wire
+    from fantasia_core.engine.fx import FxHost
+
+    dry = np.ones((256, 2), dtype=np.float32) * 0.8
+    # SOURCE is the incoming audio; a second bus is faked by a bypassed gain
+    # that copies its input. We inject two distinct buffers by using two
+    # gain nodes at 0 dB on constant signals... simpler: unit-test _blend_inputs.
+    host = FxHost()
+    bufs = {"a": np.ones((256, 2), dtype=np.float32),
+            "b": np.zeros((256, 2), dtype=np.float32)}
+    out = host._blend_inputs(dry, bufs, ["a", "b"], wet=0.25, dry_src="a", wet_src="b")
+    assert np.allclose(out, 0.75)
+    out = host._blend_inputs(dry, bufs, ["a", "b"], wet=1.0, dry_src="a", wet_src="b")
+    assert np.allclose(out, 0.0)
+
+    pytest.importorskip("pedalboard")
+    specs = [_insert("mix", "mx", wet=0.0, dry_src=SOURCE, wet_src=SOURCE)]
+    wires = [as_wire(w) for w in ({"src": SOURCE, "dst": "mx"}, {"src": "mx", "dst": OUT})]
+    audio = (np.random.rand(512, 2).astype(np.float32) - 0.5) * 0.3
+    rendered = FxHost().process(NS(id="tmix", fx=specs, fx_wires=wires), audio, 44100)
+    assert np.isfinite(rendered).all()
+    assert np.abs(rendered).max() > 1e-4
+
+
 def test_dag_still_correct_when_the_list_order_already_matches():
     import numpy as np
     from types import SimpleNamespace as NS

@@ -32,6 +32,7 @@ from fantasia_core.commands.track_cmds import (
     SetTrackFxWiresCommand,
     SetTrackSynthCommand,
     SetTrackSynthParamCommand,
+    SpliceFxCommand,
 )
 
 __all__ = [
@@ -50,6 +51,7 @@ __all__ = [
     "SetTrackFxWiresCommand",
     "SetTrackSynthCommand",
     "SetTrackSynthParamCommand",
+    "SpliceFxCommand",
     "AddClipCommand",
     "DuplicateClipsCommand",
     "JoinMidiClipsCommand",

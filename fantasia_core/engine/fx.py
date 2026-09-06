@@ -102,6 +102,8 @@ def _make(spec: dict):
         if kind == "gain":
             return pb.Gain(gain_db=p.get("gain", 0.0))
 
+        if kind == "mix":
+            return None
         if kind == "vst":
             path = p.get("path") or p.get("name")
             if not path:
@@ -310,6 +312,15 @@ class FxHost:
             incoming = [w.src for w in graph if w.dst == nid]
             mixed = self._mix_inputs(audio, bufs, incoming)
             d = as_dict(spec)
+            if d.get("type") == "mix" and not d.get("bypassed"):
+                params = d.get("params") or {}
+                bufs[nid] = self._blend_inputs(
+                    audio, bufs, incoming,
+                    wet=float(params.get("wet", 0.5)),
+                    dry_src=str(params.get("dry_src") or ""),
+                    wet_src=str(params.get("wet_src") or ""),
+                )
+                continue
             plug = plugins.get(nid)
             if d.get("bypassed") or plug is None:
                 bufs[nid] = mixed
@@ -336,3 +347,21 @@ class FxHost:
             else:
                 acc += block
         return acc if acc is not None else np.zeros_like(audio)
+
+    def _blend_inputs(self, audio: np.ndarray, bufs: dict, incoming: list,
+                      wet: float, dry_src: str = "", wet_src: str = "") -> np.ndarray:
+        """Two-bus dry/wet join: ``(1-wet)*dry + wet*wet_bus``."""
+        dry_key = dry_src if dry_src in bufs else (incoming[0] if incoming else "")
+        rest = [s for s in incoming if s != dry_key]
+        wet_key = wet_src if wet_src in bufs else (rest[0] if rest else "")
+        dry = bufs.get(dry_key)
+        wet_bus = bufs.get(wet_key)
+        if dry is None and wet_bus is None:
+            return np.zeros_like(audio)
+        if dry is None:
+            return np.array(wet_bus, dtype=np.float32, copy=True)
+        if wet_bus is None:
+            return np.array(dry, dtype=np.float32, copy=True)
+        amount = max(0.0, min(1.0, float(wet)))
+        return (np.asarray(dry, dtype=np.float32) * (1.0 - amount)
+                + np.asarray(wet_bus, dtype=np.float32) * amount)

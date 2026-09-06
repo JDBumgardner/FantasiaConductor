@@ -57,6 +57,7 @@ from fantasia_core.commands import (
     AddClipCommand,
     AddFxCommand,
     AddTrackCommand,
+    BypassFxCommand,
     CommandBus,
     ConnectFxCommand,
     DuplicateClipsCommand,
@@ -74,6 +75,7 @@ from fantasia_core.commands import (
     SetTrackFxCommand,
     SetTrackSynthCommand,
     SetTrackSynthParamCommand,
+    SpliceFxCommand,
     SplitClipCommand,
 )
 from fantasia_core.agent import AgentSession, AgentTools
@@ -85,7 +87,7 @@ from fantasia_core.document import (
     default_midi_pattern,
 )
 from fantasia_core.document.fx_insert import copy_insert
-from fantasia_core.document.fx_params import apply_param
+from fantasia_core.document.fx_params import apply_param, specs_for
 from fantasia_core.document.serialize import load_project, save_project
 from fantasia_core.engine import (
     AudioPool,
@@ -108,6 +110,7 @@ from ui.agent_panel import AgentPanel
 from ui.search_panel import SearchPanel
 from ui.gm_instruments import DRUM_KITS, gm_name
 from ui.editor_dock import EditorDock
+from ui.fx_graph import node_size
 from ui.hotkeys import HotkeysDialog
 from ui.metrics import RULER_H, TRACK_H
 from ui.timeline_view import TimelineView
@@ -2122,7 +2125,7 @@ class MainWindow(QMainWindow):
         self.act_join_midi.setShortcutContext(Qt.ApplicationShortcut)
         self.act_split.setShortcutContext(Qt.ApplicationShortcut)
         self.act_toggle_editor.setToolTip(
-            "Cycle the bottom panel: Piano Roll → Signal Chain → Graph → Off (Shift+E)")
+            "Cycle the bottom panel: Piano Roll → Plugin Graph → Chain → Off (Shift+E)")
         view_menu.addAction(self.act_toggle_editor)
         self.act_focus_agent = QAction("Focus &Agent", self, shortcut="Ctrl+Shift+A")
         self.act_focus_search = QAction("Focus Sound &Search", self, shortcut="Ctrl+F")
@@ -2257,8 +2260,12 @@ class MainWindow(QMainWindow):
         self.editor.graph.remove_requested.connect(self._on_chain_remove)
         self.editor.graph.connect_requested.connect(self._on_fx_connect)
         self.editor.graph.disconnect_requested.connect(self._on_fx_disconnect)
+        self.editor.graph.splice_requested.connect(self._on_fx_splice)
         self.editor.graph.device_activated.connect(self._on_device_activated)
         self.editor.graph.param_changed.connect(self._on_graph_param)
+        self.editor.graph.position_changed.connect(self._on_fx_position)
+        self.editor.device.param_changed.connect(self._on_graph_param)
+        self.editor.device.bypass_changed.connect(self._on_device_bypass)
         self.timeline.clip_geometry_edited.connect(self._on_clip_geometry)
         self.timeline.import_into_clip_requested.connect(self._on_import_into_clip)
         self.timeline.clip_action_requested.connect(self._on_clip_action)
@@ -3124,6 +3131,18 @@ class MainWindow(QMainWindow):
         self.timeline.rebuild()
 
     def _on_delete(self) -> None:
+        """Delete key. Routes to whichever editor actually owns the selection."""
+        focus = QApplication.focusWidget()
+        if isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QAbstractSpinBox)):
+            return  # the user is typing a value, not deleting anything
+        # A window-level Delete otherwise always removes the selected clip,
+        # even when the Plugin Graph has a cable or node selected.
+        if self.editor.is_graph_open() and self.editor.graph.view.has_selection():
+            self.editor.graph.view.delete_selection()
+            return
+        self._delete_selected_clips_or_track()
+
+    def _delete_selected_clips_or_track(self) -> None:
         clip_ids = self.timeline.selected_clip_ids()
         if clip_ids:
             for clip_id in clip_ids:
@@ -3592,7 +3611,8 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Select a clip to cut")
             return
         self._on_copy_clip()
-        self._on_delete()
+        # Not _on_delete(): cut must still work while a knob has focus.
+        self._delete_selected_clips_or_track()
 
     def _on_paste_clip(self) -> None:
         if self._try_text_edit("paste"):
@@ -4409,6 +4429,50 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage(f"{name} closed", 3000)
 
+    def _open_fx_plugin_editor(self, insert) -> None:  # noqa: ANN001
+        """Open a hosted VST/AU effect's own window (insert, not track instrument)."""
+        params = getattr(insert, "params", None) or {}
+        path = params.get("path") or params.get("name") or ""
+        if not path:
+            self.statusBar().showMessage("This plugin insert has no file path", 5000)
+            return
+        from fantasia_core import plugins as plg
+
+        owner = f"fx:{getattr(insert, 'id', '')}"
+        try:
+            plugin = plg.load(path, owner=owner)
+            blob = params.get("state") or ""
+            if blob:
+                plg.restore_preset(plugin, base64.b64decode(blob))
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Could not load plugin: {exc}", 8000)
+            return
+        name = params.get("name") or path
+        self.statusBar().showMessage(
+            f"{name} is open — the rest of the app waits until you close it")
+        QApplication.processEvents()
+        try:
+            plugin.show_editor()
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"{name}: {exc}", 8000)
+            plg.unload(path, owner=owner)
+            return
+        try:
+            raw = plugin.preset_data if hasattr(plugin, "preset_data") else b""
+            state = base64.b64encode(raw).decode("ascii") if raw else ""
+        except Exception:  # noqa: BLE001
+            state = ""
+        plg.unload(path, owner=owner)
+        if state and self.selected_track_id:
+            track = self.project.track_by_id(self.selected_track_id)
+            if track is not None:
+                fx = [copy_insert(e) for e in track.fx]
+                live = next((e for e in fx if getattr(e, "id", None) == insert.id), None)
+                if live is not None:
+                    live.params = {**dict(live.params or {}), "state": state}
+                    self.bus.dispatch(SetTrackFxCommand(track.id, fx, label="Plugin patch"))
+        self.statusBar().showMessage(f"{name} closed", 4000)
+
     def _agent_playback_health(self, args: dict):
         """UI thread: read what the audio callback flagged."""
         eng = getattr(self, "engine", None)
@@ -4946,7 +5010,8 @@ class MainWindow(QMainWindow):
             if not any(insert_type(e) == "eq" for e in track.fx):
                 self.bus.dispatch(AddFxCommand(
                     track_id, "eq", {"bands": default_bands()}))
-                self.statusBar().showMessage(f"Added 8-band EQ to {track.name}")
+                self.statusBar().showMessage(
+                    f"Added 8-band EQ to {track.name} — drag it into the Graph to hear it")
             self.editor.show_eq(list(track.fx), self.project.sample_rate,
                                 "EQ — Master" if getattr(track, "is_master", False)
                                 else f"EQ — {track.name}")
@@ -4956,14 +5021,16 @@ class MainWindow(QMainWindow):
             if dlg.exec() != QDialog.Accepted:
                 return
             self.bus.dispatch(AddFxCommand(track_id, fx_type, dlg.params()))
-            self.statusBar().showMessage(f"Added {title.lower()} to {track.name}")
+            self.statusBar().showMessage(
+                f"Added {title.lower()} — wire it in the Graph tab to hear it")
             if fx_type.startswith("eq_"):   # show what the curve now looks like
                 self.editor.show_eq(list(track.fx), self.project.sample_rate,
                                     f"EQ — {track.name}")
         elif action in self._FX_PRESETS:
             spec = self._FX_PRESETS[action]
             self.bus.dispatch(AddFxCommand(track_id, spec["type"], spec.get("params") or {}))
-            self.statusBar().showMessage(f"Added {spec['type']} to {track.name}")
+            self.statusBar().showMessage(
+                f"Added {spec['type']} — wire it in the Graph tab to hear it")
         else:
             return
         self._rebuild_all()  # refresh the FX badge on the header
@@ -5148,16 +5215,75 @@ class MainWindow(QMainWindow):
         self.bus.dispatch(RemoveFxCommand(self.selected_track_id, insert_id))
         self._refresh_signal_views()
 
-    def _on_fx_connect(self, src: str, dst: str) -> None:
+    def _on_fx_connect(self, src: str, dst: str, port: str = "") -> None:
         if not self.selected_track_id:
+            self.statusBar().showMessage("Select a track before wiring plugins", 5000)
             return
-        self.bus.dispatch(ConnectFxCommand(self.selected_track_id, src, dst, True))
+        cmd = self.bus.dispatch(ConnectFxCommand(
+            self.selected_track_id, src, dst, True, port=port))
         self._refresh_signal_views()
+        if not getattr(cmd, "applied", True):
+            reason = getattr(cmd, "reason", "") or "that cable is not allowed here"
+            self.statusBar().showMessage(f"Couldn't connect — {reason}", 7000)
+            return
+        track = self.project.track_by_id(self.selected_track_id)
+        if track is None:
+            return
+        from fantasia_core.document.fx_insert import insert_type as _itype
+        if any(_itype(e) == "mix" for e in track.fx):
+            self.statusBar().showMessage(
+                "Parallel join: a Dry/Wet Mix blends the two chains. "
+                "Double-click the mix node to set the blend.", 6000)
+        else:
+            self.statusBar().showMessage("Connected — drag another output to fork a parallel path", 4000)
 
     def _on_fx_disconnect(self, src: str, dst: str) -> None:
         if not self.selected_track_id:
             return
         self.bus.dispatch(ConnectFxCommand(self.selected_track_id, src, dst, False))
+        self._refresh_signal_views()
+        self.statusBar().showMessage("Cable removed", 4000)
+
+    def _on_fx_position(self, insert_id: str, x: float, y: float) -> None:
+        if not self.selected_track_id or not insert_id:
+            return
+        track = self.project.track_by_id(self.selected_track_id)
+        if track is None:
+            return
+        from fantasia_core.document.fx_insert import OUT, SOURCE
+        if insert_id in (SOURCE, OUT):
+            pos = dict(getattr(track, "fx_graph_pos", None) or {})
+            pos[insert_id] = [float(x), float(y)]
+            self.bus.dispatch(SetTrackAttrCommand(
+                track.id, "fx_graph_pos", pos, mergeable=True))
+            return
+        fx = [copy_insert(e) for e in track.fx]
+        ins = next((e for e in fx if getattr(e, "id", None) == insert_id), None)
+        if ins is None:
+            return
+        ins.x = float(x)
+        ins.y = float(y)
+        self.bus.dispatch(SetTrackFxCommand(
+            track.id, fx, label="Move FX node", mergeable=True))
+
+    def _on_fx_splice(self, node_id: str, edge_src: str, edge_dst: str) -> None:
+        if not self.selected_track_id or not node_id:
+            self.statusBar().showMessage("Couldn't insert that plugin on the cable", 5000)
+            return
+        cmd = self.bus.dispatch(SpliceFxCommand(
+            self.selected_track_id, node_id, edge_src, edge_dst))
+        self._refresh_signal_views()
+        if not getattr(cmd, "applied", True):
+            reason = getattr(cmd, "reason", "") or "that cable can't take this device"
+            self.statusBar().showMessage(f"Couldn't insert on the cable — {reason}", 7000)
+            return
+        self.statusBar().showMessage(
+            "Inserted on the cable — signal now runs through that plugin", 5000)
+
+    def _on_device_bypass(self, insert_id: str, bypassed: bool) -> None:
+        if not self.selected_track_id or not insert_id:
+            return
+        self.bus.dispatch(BypassFxCommand(self.selected_track_id, insert_id, bypassed))
         self._refresh_signal_views()
 
     def _on_device_activated(self, insert_id: str, kind: str) -> None:
@@ -5165,18 +5291,38 @@ class MainWindow(QMainWindow):
                  if self.selected_track_id else None)
         if track is None:
             return
-        if kind in ("instrument",) and getattr(track, "is_synth", False):
-            self.editor.show_synth(track, reveal=True)
+        if kind == "out":
             return
-        if kind == "eq" or insert_id:
-            from fantasia_core.document.fx_insert import insert_type as _itype
-            spec = next((e for e in track.fx if getattr(e, "id", None) == insert_id), None)
-            if spec is not None and _itype(spec) == "eq":
-                self.editor.show_eq(list(track.fx), self.project.sample_rate,
-                                    f"EQ — {track.name}")
+        if kind in ("instrument",) or not insert_id:
+            if getattr(track, "plugin", ""):
+                self._open_plugin_editor(track)
+                return
+            if getattr(track, "is_synth", False) and not getattr(track, "is_master", False):
+                self.editor.show_synth(track, reveal=True)
+            return
+        from fantasia_core.document.fx_insert import insert_type as _itype
+        spec = next((e for e in track.fx if getattr(e, "id", None) == insert_id), None)
+        if spec is None:
+            return
+        kind = _itype(spec)
+        if kind == "eq":
+            self.editor.show_eq(list(track.fx), self.project.sample_rate,
+                                f"EQ — {track.name}")
+            return
+        if kind == "vst":
+            self._open_fx_plugin_editor(spec)
+            return
+        self.editor.show_device(spec, track.name)
 
     def _popup_fx_menu(self) -> None:
         if not self.selected_track_id:
+            self.statusBar().showMessage(
+                "Select a track first, then add an effect in Plugin Graph", 6000)
+            return
+        track = self.project.track_by_id(self.selected_track_id)
+        if track is None:
+            self.statusBar().showMessage(
+                "Couldn't add FX — that track is no longer in the project", 6000)
             return
         from fantasia_core.document.fx_insert import STOCK_FX
 
@@ -5187,8 +5333,9 @@ class MainWindow(QMainWindow):
         try:
             from fantasia_core import plugins
             hosted = plugins.scan()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             hosted = []
+            self.statusBar().showMessage(f"Hosted plugin scan failed: {exc}", 6000)
         if hosted:
             sub = menu.addMenu("Hosted plugins")
             for info in hosted:
@@ -5199,19 +5346,52 @@ class MainWindow(QMainWindow):
             return
         data = chosen.data()
         if not data:
+            self.statusBar().showMessage("No effect selected", 4000)
             return
         if data[0] == "stock":
             kind = data[1]
-            params = {}
-            if kind == "eq":
-                params = {"bands": default_bands()}
-            self.bus.dispatch(AddFxCommand(self.selected_track_id, kind, params))
+            params = {"bands": default_bands()} if data[1] == "eq" else {}
+            label = next((n for k, n in STOCK_FX if k == kind), kind)
         elif data[0] == "vst":
             _, path, name = data
-            self.bus.dispatch(AddFxCommand(
-                self.selected_track_id, "vst", {"path": path, "name": name}))
+            if not path:
+                self.statusBar().showMessage(
+                    f"Couldn't add {name or 'plugin'} — missing plugin path", 7000)
+                return
+            kind, params, label = "vst", {"path": path, "name": name}, (name or "Plugin")
+        else:
+            self.statusBar().showMessage("Couldn't add that effect", 5000)
+            return
+
+        # Show the graph *before* choosing a spawn point: the point has to be
+        # inside the viewport we are about to draw into.
+        if not self.editor.is_graph_open():
+            self.editor.show_graph(track)
+            QApplication.processEvents()
+        width, height = node_size(len(specs_for(kind, params)), kind)
+        spawn = self.editor.graph.view.spawn_scene_pos(width, height)
+        try:
+            cmd = self.bus.dispatch(AddFxCommand(
+                self.selected_track_id, kind, params, x=spawn.x(), y=spawn.y()))
+        except Exception as exc:  # noqa: BLE001 — a bad plugin must not kill the UI
+            self.statusBar().showMessage(f"Couldn't add {label}: {exc}", 8000)
+            return
+        if not getattr(cmd, "insert_id", ""):
+            self.statusBar().showMessage(
+                f"Couldn't add {label} — the track may have been removed", 7000)
+            return
         self._refresh_signal_views()
         self._refresh_eq_curve()
+        self.editor.show_graph(self.project.track_by_id(self.selected_track_id))
+        view = self.editor.graph.view
+        if not view.has_node(cmd.insert_id):
+            self.statusBar().showMessage(
+                f"{label} was added but did not appear in Plugin Graph — press Fit", 8000)
+            return
+        view.reveal_node(cmd.insert_id)
+        self.statusBar().showMessage(
+            f"{label} added in view — not wired yet, so it is silent. "
+            f"Drag its output circle onto an input, or drop it on a cable.", 8000)
 
     def _on_eq_tab(self) -> None:
         self._refresh_eq_curve()

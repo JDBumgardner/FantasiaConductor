@@ -43,6 +43,9 @@ def _b(key: str, label: str, default: bool = True) -> ParamSpec:
 
 
 FX_PARAM_SPECS: dict[str, tuple[ParamSpec, ...]] = {
+    "mix": (
+        _f("wet", "Wet", 0.5, 0.0, 1.0),
+    ),
     "reverb": (
         _f("room_size", "Room", 0.6, 0.0, 1.0),
         _f("wet", "Wet", 0.35, 0.0, 1.0),
