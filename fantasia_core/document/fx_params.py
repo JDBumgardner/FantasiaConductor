@@ -27,11 +27,13 @@ class ParamSpec:
     decimals: int = 2
     suffix: str = ""
     choices: tuple = field(default_factory=tuple)
+    invert: bool = False  # drag up / fill the arc toward *minimum* (more effect)
 
 
 def _f(key: str, label: str, default: float, lo: float, hi: float,
-       decimals: int = 2, suffix: str = "") -> ParamSpec:
-    return ParamSpec(key, label, "float", default, lo, hi, decimals, suffix)
+       decimals: int = 2, suffix: str = "", invert: bool = False) -> ParamSpec:
+    return ParamSpec(key, label, "float", default, lo, hi, decimals, suffix,
+                     invert=invert)
 
 
 def _c(key: str, label: str, default: str, choices: Sequence[str]) -> ParamSpec:
@@ -47,25 +49,33 @@ FX_PARAM_SPECS: dict[str, tuple[ParamSpec, ...]] = {
         _f("wet", "Wet", 0.5, 0.0, 1.0),
     ),
     "reverb": (
-        _f("room_size", "Room", 0.6, 0.0, 1.0),
-        _f("wet", "Wet", 0.35, 0.0, 1.0),
-        _f("dry", "Dry", 0.7, 0.0, 1.0),
+        _f("room_size", "Room", 0.5, 0.0, 1.0),
+        _f("damping", "Damp", 0.5, 0.0, 1.0),
+        _f("width", "Width", 1.0, 0.0, 1.0),
+        _f("wet", "Wet", 0.30, 0.0, 1.0),
+        _f("dry", "Dry", 0.70, 0.0, 1.0),
     ),
     "delay": (
         _f("time", "Time", 0.25, 0.01, 2.0, 3, " s"),
         _f("feedback", "Feedback", 0.3, 0.0, 0.95),
         _f("mix", "Mix", 0.3, 0.0, 1.0),
     ),
+    "chorus": (
+        _f("rate", "Rate", 1.0, 0.1, 8.0, 2, " Hz"),
+        _f("depth", "Depth", 0.25, 0.0, 1.0),
+        _f("centre_delay", "Delay", 7.0, 1.0, 30.0, 1, " ms"),
+        _f("feedback", "Feedback", 0.0, 0.0, 0.95),
+        _f("mix", "Mix", 0.5, 0.0, 1.0),
+    ),
     "compressor": (
-        _f("threshold", "Thresh", -16.0, -60.0, 0.0, 1, " dB"),
+        _f("threshold", "Thresh", -16.0, -60.0, 0.0, 1, " dB", invert=True),
         _f("ratio", "Ratio", 4.0, 1.0, 20.0, 1),
         _f("attack", "Attack", 10.0, 0.1, 200.0, 1, " ms"),
         _f("release", "Release", 100.0, 10.0, 1000.0, 0, " ms"),
+        _f("makeup", "Makeup", 0.0, -12.0, 24.0, 1, " dB"),
     ),
     "limiter": (
-        _f("threshold", "Thresh", -1.0, -24.0, 0.0, 1, " dB"),
-        _f("ratio", "Ratio", 20.0, 4.0, 40.0, 1),
-        _f("attack", "Attack", 1.0, 0.1, 20.0, 1, " ms"),
+        _f("threshold", "Ceiling", -1.0, -24.0, 0.0, 1, " dB"),
         _f("release", "Release", 100.0, 10.0, 1000.0, 0, " ms"),
     ),
     "gate": (
@@ -80,6 +90,7 @@ FX_PARAM_SPECS: dict[str, tuple[ParamSpec, ...]] = {
     ),
     "distortion": (
         _f("drive", "Drive", 12.0, 0.0, 40.0, 1, " dB"),
+        _f("output", "Output", -4.0, -24.0, 6.0, 1, " dB"),
     ),
     "lowpass": (
         _f("cutoff", "Cutoff", 1200.0, 20.0, 20000.0, 0, " Hz"),
@@ -137,7 +148,7 @@ def eq_param_specs(n_bands: int = 8) -> tuple[ParamSpec, ...]:
 
 
 def specs_for(kind: str, params: Optional[dict] = None) -> tuple[ParamSpec, ...]:
-    """Parameter rows for a stock FX type (empty for chorus / vst / unknown)."""
+    """Parameter rows for a stock FX type (empty for vst / unknown)."""
     if kind == "eq":
         bands = (params or {}).get("bands") or []
         n = max(8, len(bands)) if bands else 8

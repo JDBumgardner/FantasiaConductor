@@ -184,10 +184,12 @@ class AgentTools:
                 "eq_peak {freq, gain dB, q} bell; eq_low_shelf / eq_high_shelf {freq, gain, q}. "
                 "A high-pass around 100-150 Hz on non-bass tracks removes rumble.\n"
                 "Colour: saturator {drive dB, output dB} adds harmonics/warmth; distortion {drive}.\n"
-                "Dynamics: compressor {threshold dB, ratio, attack ms, release ms} evens out level "
-                "(4:1 at -16 dB is a good start); limiter {threshold, release} catches peaks; "
+                "Dynamics: compressor {threshold dB, ratio, attack ms, release ms, makeup dB} "
+                "evens out level (4:1 at -16 dB is a good start; lower threshold = more squash); "
+                "limiter {threshold/ceiling, release} catches peaks; "
                 "gate {threshold, ratio} cuts silence/bleed.\n"
-                "Space: reverb {wet, room_size}; delay {time s, feedback, mix}. "
+                "Space: reverb {wet, dry, room_size, damping, width}; delay {time s, feedback, mix}; "
+                "chorus {rate, depth, mix}. "
                 "Join: mix {wet 0-1} blends two incoming buses (dry vs wet) instead of summing."),
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"},

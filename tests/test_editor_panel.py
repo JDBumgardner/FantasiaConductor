@@ -153,12 +153,11 @@ def test_signal_chain_and_graph_follow_the_track(panel):
 
 
 def test_graph_nodes_list_stock_params(panel):
-    from PySide6.QtWidgets import QDoubleSpinBox
-
     from fantasia_core.document import Project
     from fantasia_core.document.fx_insert import SOURCE
     from fantasia_core.engine.eq import default_bands
     from fantasia_core.engine.synth import DEFAULT_PATCH
+    from ui.param_knob import ParamKnob
 
     dock, _ = panel
     p = Project()
@@ -171,15 +170,18 @@ def test_graph_nodes_list_stock_params(panel):
     src = dock.graph.view._nodes[SOURCE]
     assert src._panel is not None
     assert "cutoff" in src._panel._controls
+    assert isinstance(src._panel._controls["cutoff"], ParamKnob)
     rev = dock.graph.view._nodes[t.fx[0].id]
     assert rev._panel is not None
     wet = rev._panel._controls["wet"]
-    assert isinstance(wet, QDoubleSpinBox)
+    assert isinstance(wet, ParamKnob)
     assert abs(wet.value() - 0.4) < 1e-6
+    assert "0.40" in rev._panel._value_labels["wet"].text()
     eq = dock.graph.view._nodes[t.fx[1].id]
     assert eq._panel is not None
     assert "b0.freq" in eq._panel._controls
     assert "b7.gain" in eq._panel._controls
+    assert isinstance(eq._panel._controls["b0.freq"], ParamKnob)
 
 
 def test_device_panel_shows_mix_wet_knob(panel):
@@ -205,7 +207,7 @@ def test_unwired_graph_node_is_marked(panel):
     dock, _ = panel
     bus = CommandBus(Project())
     t = bus.dispatch(AddTrackCommand("Lead")).created_track
-    cmd = bus.dispatch(AddFxCommand(t.id, "reverb"))
+    cmd = bus.dispatch(AddFxCommand(t.id, "reverb", connect=False))
     dock.show_graph(t)
     assert SOURCE in dock.graph.view._nodes
     node = dock.graph.view._nodes[cmd.insert_id]
@@ -246,7 +248,7 @@ def test_dropping_a_node_on_a_cable_emits_splice(panel):
     dock, _ = panel
     bus = CommandBus(Project())
     t = bus.dispatch(AddTrackCommand("Pads")).created_track
-    rev = bus.dispatch(AddFxCommand(t.id, "reverb", x=40.0, y=300.0))
+    rev = bus.dispatch(AddFxCommand(t.id, "reverb", x=40.0, y=300.0, connect=False))
     dock.show_graph(t)
     view = dock.graph.view
     node = view._nodes[rev.insert_id]
@@ -455,9 +457,9 @@ def test_eq_node_uses_columns_and_stays_reasonably_short(panel):
     dock.show_graph(t)
     eq = dock.graph.view._nodes[t.fx[0].id]
     assert eq._panel.findChildren(QScrollArea) == []
-    # 32 params over 3 columns: wide, tall-ish, but every control is reachable.
+    # 32 knobs over 4 columns: wide and taller, but every control is reachable.
     assert eq.rect().width() > 400
-    assert eq.rect().height() < 300
+    assert eq.rect().height() < 560
     assert len(eq._panel._controls) == 32
 
 
@@ -471,7 +473,7 @@ def test_unwired_node_is_parked_below_the_tallest_wired_node(panel):
     bus = CommandBus(Project())
     t = bus.dispatch(AddTrackCommand("Lead")).created_track
     eq = bus.dispatch(AddFxCommand(t.id, "eq", {"bands": default_bands()}, connect=True))
-    free = bus.dispatch(AddFxCommand(t.id, "reverb"))
+    free = bus.dispatch(AddFxCommand(t.id, "reverb", connect=False))
     dock.show_graph(t)
     view = dock.graph.view
     tall = view._nodes[eq.insert_id]
@@ -553,6 +555,30 @@ def test_new_graph_node_spawns_in_the_viewport(panel):
     assert vis.intersects(view._nodes["in"].sceneBoundingRect())
 
 
+def test_graph_nodes_have_io_meters(panel):
+    from fantasia_core.document import Project
+    from fantasia_core.document.fx_insert import OUT, SOURCE
+
+    dock, _ = panel
+    p = Project()
+    t = p.add_track("Lead")
+    t.fx = [p.new_insert("reverb")]
+    dock.show_graph(t)
+    view = dock.graph.view
+    src = view._nodes[SOURCE]
+    fx = view._nodes[t.fx[0].id]
+    dest = view._nodes[OUT]
+    assert src.out_meter is not None and src.in_meters == []
+    assert dest.in_meters and dest.out_meter is None
+    assert fx.in_meters and fx.out_meter is not None
+    view.set_meters({
+        f"fx:{t.id}:{t.fx[0].id}:in": 0.4,
+        f"fx:{t.id}:{t.fx[0].id}:out": 0.2,
+    }, True, t.id)
+    assert fx.in_meters[0]._amp == pytest.approx(0.4)
+    assert fx.out_meter._amp == pytest.approx(0.2)
+
+
 def test_synth_panel_has_three_oscillators(panel):
     from fantasia_core.commands import AddTrackCommand, CommandBus
     from fantasia_core.document import Project
@@ -566,3 +592,66 @@ def test_synth_panel_has_three_oscillators(panel):
     assert dock.synth.osc3 is not None
     assert "cutoff" in dock.synth._sliders
     assert dock.synth._name.text() == "Lead"
+
+
+def test_added_fx_lands_wired_just_before_out(panel):
+    from fantasia_core.commands import AddFxCommand, AddTrackCommand, CommandBus
+    from fantasia_core.document import Project
+    from fantasia_core.document.fx_insert import OUT, SOURCE
+
+    dock, _ = panel
+    bus = CommandBus(Project())
+    t = bus.dispatch(AddTrackCommand("Pads")).created_track
+    first = bus.dispatch(AddFxCommand(t.id, "reverb"))
+    second = bus.dispatch(AddFxCommand(t.id, "delay"))
+    dock.show_graph(t)
+    view = dock.graph.view
+    assert view._nodes[first.insert_id].wired is True
+    assert view._nodes[second.insert_id].wired is True
+    keys = {(w.src, w.dst) for w in view._wires}
+    assert (SOURCE, first.insert_id) in keys
+    assert (first.insert_id, second.insert_id) in keys
+    assert (second.insert_id, OUT) in keys
+    assert (first.insert_id, OUT) not in keys
+
+
+def test_bypass_chip_and_zero_key_toggle_selected_fx(panel):
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtCore import QEvent
+
+    from fantasia_core.commands import AddFxCommand, AddTrackCommand, CommandBus
+    from fantasia_core.document import Project
+    from fantasia_core.document.fx_insert import SOURCE, OUT
+
+    dock, _ = panel
+    bus = CommandBus(Project())
+    t = bus.dispatch(AddTrackCommand("Pads")).created_track
+    fx = bus.dispatch(AddFxCommand(t.id, "reverb"))
+    dock.show_graph(t)
+    view = dock.graph.view
+    node = view._nodes[fx.insert_id]
+    assert node._chip is not None
+    assert node.opacity() == pytest.approx(1.0)
+    view._nodes[SOURCE].setSelected(False)
+    view._nodes[OUT].setSelected(False)
+    node.setSelected(True)
+
+    seen: list[tuple[str, bool]] = []
+    view.bypass_requested.connect(lambda nid, on: seen.append((nid, on)))
+    assert view.toggle_selected_bypass() is True
+    assert seen == [(fx.insert_id, True)]
+
+    node.set_bypassed(True)
+    assert node.opacity() == pytest.approx(0.48)
+    seen.clear()
+    view.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_0, Qt.NoModifier))
+    QApplication.processEvents()
+    assert seen == [(fx.insert_id, False)]
+
+
+def test_graph_hint_mentions_bypass_and_new_fx_placement(panel):
+    dock, _ = panel
+    hint = dock.graph.findChildren(type(dock.graph._title))
+    texts = " ".join(w.text() for w in hint)
+    assert "just before Out" in texts
+    assert "bypass" in texts.lower()

@@ -169,6 +169,31 @@ def _band(x, lo, hi, sr=44100):
     return float(np.sum(S[(f >= lo) & (f < hi)]))
 
 
+def test_compressor_lower_threshold_compresses_more():
+    """Threshold is dBFS: more negative = more compression (standard, not inverted)."""
+    pytest.importorskip("pedalboard")
+    sr = 44100
+    t = np.arange(sr) / sr
+    x = np.stack([0.8 * np.sin(2 * np.pi * 440 * t)] * 2, axis=1).astype(np.float32)
+    mild = _fx_run({"type": "compressor",
+                    "params": {"threshold": -6, "ratio": 8, "attack": 1, "release": 40}}, x)
+    hard = _fx_run({"type": "compressor",
+                    "params": {"threshold": -24, "ratio": 8, "attack": 1, "release": 40}}, x)
+    assert np.max(np.abs(hard)) < np.max(np.abs(mild))
+
+
+def test_chorus_modulates_without_blowing_up():
+    pytest.importorskip("pedalboard")
+    sr = 44100
+    t = np.arange(sr) / sr
+    x = np.stack([0.4 * np.sin(2 * np.pi * 330 * t)] * 2, axis=1).astype(np.float32)
+    y = _fx_run({"type": "chorus",
+                 "params": {"rate": 2.0, "depth": 0.6, "mix": 0.7}}, x)
+    assert y.shape == x.shape
+    assert 0.05 < np.max(np.abs(y)) < 1.2
+    assert not np.allclose(x, y, atol=1e-3)
+
+
 def test_stock_eq_insert_matches_legacy_peak():
     pytest.importorskip("pedalboard")
     sr = 44100

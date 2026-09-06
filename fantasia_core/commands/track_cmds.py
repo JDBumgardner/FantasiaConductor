@@ -78,6 +78,43 @@ class RemoveTrackCommand(Command):
             project.insert_track(self._index, self._track)
 
 
+class MoveTrackCommand(Command):
+    """Move a track to a new index in the arrangement list.
+
+    ``index`` is the desired final position after the move (0 = top).
+    The master bus is not in ``project.tracks`` and cannot be reordered.
+    """
+
+    def __init__(self, track_id: str, index: int) -> None:
+        self.track_id = track_id
+        self.index = int(index)
+        self._from = _UNSET
+        self.label = "Reorder track"
+
+    def do(self, project) -> None:  # noqa: ANN001
+        from_idx = project.track_index(self.track_id)
+        if from_idx is None:
+            return
+        dest = max(0, min(self.index, len(project.tracks) - 1))
+        if dest == from_idx:
+            return
+        if self._from is _UNSET:
+            self._from = from_idx
+        track = project.tracks.pop(from_idx)
+        dest = max(0, min(self.index, len(project.tracks)))
+        project.tracks.insert(dest, track)
+
+    def undo(self, project) -> None:  # noqa: ANN001
+        if self._from is _UNSET:
+            return
+        cur = project.track_index(self.track_id)
+        if cur is None:
+            return
+        track = project.tracks.pop(cur)
+        dest = max(0, min(int(self._from), len(project.tracks)))
+        project.tracks.insert(dest, track)
+
+
 class SetTrackAttrCommand(Command):
     """Set a scalar track attribute (mute/solo/gain_db/pan/name).
 
@@ -206,14 +243,16 @@ def _copy_fx(fx_list) -> list:
 class AddFxCommand(Command):
     """Append one insert with a stable id. Redo reinserts the same identity.
 
-    ``connect=False`` (the UI default) leaves the new node unwired: implicit
-    serial edges are materialised first so an empty ``fx_wires`` list cannot
-    silently pull the insert into the chain. ``connect=True`` splices it
-    before Out — what the agent wants when it says "add a reverb".
+    ``connect=True`` (the default) lands the insert just before Out. An
+    implicit serial chain stays implicit — the new node is simply last in
+    ``track.fx``. An already-explicit graph is spliced: every feed into Out
+    is reattached to the new device, then the device feeds Out. Parallel
+    chains therefore stay intact and pass through the new effect.
+    ``connect=False`` leaves the node floating for manual wiring.
     """
 
     def __init__(self, track_id: str, kind: str, params: Optional[dict] = None,
-                 bypassed: bool = False, connect: bool = False,
+                 bypassed: bool = False, connect: bool = True,
                  x: float = 0.0, y: float = 0.0) -> None:
         self.track_id = track_id
         self.kind = str(kind)

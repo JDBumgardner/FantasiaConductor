@@ -63,6 +63,7 @@ from fantasia_core.commands import (
     DuplicateClipsCommand,
     JoinMidiClipsCommand,
     MakeMidiClipCommand,
+    MoveTrackCommand,
     RemoveClipCommand,
     RemoveFxCommand,
     RemoveTrackCommand,
@@ -87,7 +88,7 @@ from fantasia_core.document import (
     default_midi_pattern,
 )
 from fantasia_core.document.fx_insert import copy_insert
-from fantasia_core.document.fx_params import apply_param, specs_for
+from fantasia_core.document.fx_params import apply_param
 from fantasia_core.document.serialize import load_project, save_project
 from fantasia_core.engine import (
     AudioPool,
@@ -110,7 +111,6 @@ from ui.agent_panel import AgentPanel
 from ui.search_panel import SearchPanel
 from ui.gm_instruments import DRUM_KITS, gm_name
 from ui.editor_dock import EditorDock
-from ui.fx_graph import node_size
 from ui.hotkeys import HotkeysDialog
 from ui.metrics import RULER_H, TRACK_H
 from ui.timeline_view import TimelineView
@@ -2226,6 +2226,7 @@ class MainWindow(QMainWindow):
             lambda tid, v: self._dispatch_attr(tid, "pan", v)
         )
         self.header_panel.fx_action.connect(self._on_fx_action)
+        self.header_panel.track_reordered.connect(self._on_track_reordered)
 
         self.timeline.clip_selected.connect(self._on_clip_selected)
         self.timeline.track_selected.connect(self._on_track_selected)
@@ -2261,6 +2262,7 @@ class MainWindow(QMainWindow):
         self.editor.graph.connect_requested.connect(self._on_fx_connect)
         self.editor.graph.disconnect_requested.connect(self._on_fx_disconnect)
         self.editor.graph.splice_requested.connect(self._on_fx_splice)
+        self.editor.graph.bypass_requested.connect(self._on_device_bypass)
         self.editor.graph.device_activated.connect(self._on_device_activated)
         self.editor.graph.param_changed.connect(self._on_graph_param)
         self.editor.graph.position_changed.connect(self._on_fx_position)
@@ -2477,6 +2479,8 @@ class MainWindow(QMainWindow):
         self.header_panel.reset_meters()
         if self.master_header is not None:
             self.master_header.reset_meter()
+        if self.selected_track_id:
+            self.editor.graph.view.set_meters({}, False, self.selected_track_id)
 
     def _on_go_to_start(self) -> None:
         if self._focus_is_text():
@@ -2534,6 +2538,8 @@ class MainWindow(QMainWindow):
         self.header_panel.set_meters(peaks, playing)
         if self.master_header is not None:
             self.master_header.set_meter(float(peaks.get(MASTER_ID, 0.0)), playing)
+        if self.editor.is_graph_open() and self.selected_track_id:
+            self.editor.graph.view.set_meters(peaks, playing, self.selected_track_id)
         # The analyzer runs at a third of the playhead's rate. A spectrum does
         # not need 33fps, and each frame costs a few milliseconds of Qt
         # rasterising two antialiased fills over the whole plot.
@@ -2652,7 +2658,11 @@ class MainWindow(QMainWindow):
                     event.accept()
                     return
                 if event.key() == Qt.Key_0:
-                    self._toggle_selected_tracks("mute")
+                    if (self.editor.is_graph_open()
+                            and self.editor.graph.view.selected_insert_ids()):
+                        self.editor.graph.view.toggle_selected_bypass()
+                    else:
+                        self._toggle_selected_tracks("mute")
                     event.accept()
                     return
                 if event.key() in (Qt.Key_Up, Qt.Key_Down):
@@ -5113,6 +5123,16 @@ class MainWindow(QMainWindow):
         if not self._focus_is_text():
             self.timeline.setFocus(Qt.OtherFocusReason)
 
+    def _on_track_reordered(self, track_id: str, dest: int) -> None:
+        if not track_id or track_id == MASTER_ID:
+            return
+        current = self.project.track_index(track_id)
+        if current is None or current == dest:
+            return
+        self.bus.dispatch(MoveTrackCommand(track_id, dest))
+        self._rebuild_all()
+        self._apply_selection_highlight()
+
     def _on_clip_selected(self, clip_id: str) -> None:
         if not clip_id:
             return
@@ -5125,6 +5145,10 @@ class MainWindow(QMainWindow):
                 additive=additive,
                 keep_piano=follow_piano and clip is not None and clip.is_midi,
             )
+            if (clip is not None and clip.is_midi and not additive
+                    and clip_id != getattr(self, "_located_clip_id", None)):
+                self._located_clip_id = clip_id
+                self.timeline.locate(float(clip.start), snap=False)
         if follow_piano and clip is not None and clip.is_midi:
             self._open_piano_roll(clip_id, reveal=False)
 
@@ -5368,11 +5392,9 @@ class MainWindow(QMainWindow):
         if not self.editor.is_graph_open():
             self.editor.show_graph(track)
             QApplication.processEvents()
-        width, height = node_size(len(specs_for(kind, params)), kind)
-        spawn = self.editor.graph.view.spawn_scene_pos(width, height)
         try:
             cmd = self.bus.dispatch(AddFxCommand(
-                self.selected_track_id, kind, params, x=spawn.x(), y=spawn.y()))
+                self.selected_track_id, kind, params, connect=True))
         except Exception as exc:  # noqa: BLE001 — a bad plugin must not kill the UI
             self.statusBar().showMessage(f"Couldn't add {label}: {exc}", 8000)
             return
@@ -5390,8 +5412,7 @@ class MainWindow(QMainWindow):
             return
         view.reveal_node(cmd.insert_id)
         self.statusBar().showMessage(
-            f"{label} added in view — not wired yet, so it is silent. "
-            f"Drag its output circle onto an input, or drop it on a cable.", 8000)
+            f"{label} added just before Out. Press 0 or click B to bypass.", 6000)
 
     def _on_eq_tab(self) -> None:
         self._refresh_eq_curve()

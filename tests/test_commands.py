@@ -46,6 +46,24 @@ def test_add_track_defaults_to_stock_synth():
     assert t.synth["cutoff"] == DEFAULT_PATCH["cutoff"]
 
 
+def test_move_track_reorders_and_undoes():
+    from fantasia_core.commands import MoveTrackCommand
+
+    bus = _bus()
+    a = bus.dispatch(AddTrackCommand("A")).created_track
+    b = bus.dispatch(AddTrackCommand("B")).created_track
+    c = bus.dispatch(AddTrackCommand("C")).created_track
+    assert [t.name for t in bus.project.tracks] == ["A", "B", "C"]
+    bus.dispatch(MoveTrackCommand(c.id, 0))
+    assert [t.name for t in bus.project.tracks] == ["C", "A", "B"]
+    bus.dispatch(MoveTrackCommand(a.id, 2))
+    assert [t.name for t in bus.project.tracks] == ["C", "B", "A"]
+    bus.undo()
+    assert [t.name for t in bus.project.tracks] == ["C", "A", "B"]
+    bus.undo()
+    assert [t.id for t in bus.project.tracks] == [a.id, b.id, c.id]
+
+
 def test_remove_track_restores_contents():
     bus = _bus()
     t = bus.dispatch(AddTrackCommand("Bass")).created_track
@@ -407,7 +425,7 @@ def test_add_bypass_move_remove_fx():
     assert t.fx[0].id == a.insert_id
 
 
-def test_add_fx_does_not_auto_connect():
+def test_add_fx_connects_just_before_out():
     from fantasia_core.commands import AddFxCommand
     from fantasia_core.document.fx_insert import OUT, SOURCE, effective_wires, is_wired
 
@@ -416,11 +434,34 @@ def test_add_fx_does_not_auto_connect():
     a = bus.dispatch(AddFxCommand(t.id, "reverb"))
     assert a.insert_id
     wires = effective_wires(t.fx, t.fx_wires)
-    assert not is_wired(a.insert_id, wires)
-    assert {(w.src, w.dst) for w in wires} == {(SOURCE, OUT)}
-    bus.dispatch(AddFxCommand(t.id, "delay", connect=True))
-    # connect=True with already-materialised wires splices before Out
-    assert any(w.dst == OUT and w.src != SOURCE for w in t.fx_wires)
+    assert is_wired(a.insert_id, wires)
+    assert {(w.src, w.dst) for w in wires} == {(SOURCE, a.insert_id), (a.insert_id, OUT)}
+    floating = bus.dispatch(AddFxCommand(t.id, "delay", connect=False))
+    assert not is_wired(floating.insert_id, effective_wires(t.fx, t.fx_wires))
+
+
+def test_add_fx_collects_parallel_feeds_into_out():
+    """Two chains into Out become two chains into the new device, then Out."""
+    from fantasia_core.commands import AddFxCommand, SetTrackFxWiresCommand
+    from fantasia_core.document.fx_insert import OUT, SOURCE, effective_wires
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    rev = bus.dispatch(AddFxCommand(t.id, "reverb", connect=False))
+    dly = bus.dispatch(AddFxCommand(t.id, "delay", connect=False))
+    bus.dispatch(SetTrackFxWiresCommand(t.id, [
+        {"src": SOURCE, "dst": rev.insert_id},
+        {"src": SOURCE, "dst": dly.insert_id},
+        {"src": rev.insert_id, "dst": OUT},
+        {"src": dly.insert_id, "dst": OUT},
+    ]))
+    comp = bus.dispatch(AddFxCommand(t.id, "compressor"))
+    keys = {(w.src, w.dst) for w in effective_wires(t.fx, t.fx_wires)}
+    assert (rev.insert_id, comp.insert_id) in keys
+    assert (dly.insert_id, comp.insert_id) in keys
+    assert (comp.insert_id, OUT) in keys
+    assert (rev.insert_id, OUT) not in keys
+    assert (dly.insert_id, OUT) not in keys
 
 
 def test_add_fx_can_pin_node_position():
@@ -440,7 +481,7 @@ def test_splice_fx_inserts_node_on_a_cable():
 
     bus = _bus()
     t = bus.dispatch(AddTrackCommand()).created_track
-    rev = bus.dispatch(AddFxCommand(t.id, "reverb"))
+    rev = bus.dispatch(AddFxCommand(t.id, "reverb", connect=False))
     cmd = bus.dispatch(SpliceFxCommand(t.id, rev.insert_id, SOURCE, OUT))
     assert cmd.applied is True
     keys = {(w.src, w.dst) for w in effective_wires(t.fx, t.fx_wires)}
@@ -520,7 +561,7 @@ def test_connect_second_wire_inserts_dry_wet_mix():
 
     bus = _bus()
     t = bus.dispatch(AddTrackCommand()).created_track
-    rev = bus.dispatch(AddFxCommand(t.id, "reverb"))
+    rev = bus.dispatch(AddFxCommand(t.id, "reverb", connect=False))
     # Add materialises Source→Out. Wiring the reverb into Out is therefore
     # a second incoming edge, which becomes a Dry/Wet Mix (dry = Source).
     bus.dispatch(ConnectFxCommand(t.id, SOURCE, rev.insert_id, True))

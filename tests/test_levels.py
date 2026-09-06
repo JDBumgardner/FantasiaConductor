@@ -14,6 +14,26 @@ def test_amp_to_db_floor_and_unity():
     assert amp_to_db(0.5) == pytest.approx(-6.02, abs=0.05)
 
 
+def test_fx_process_taps_insert_io_peaks():
+    from fantasia_core.document import Project
+    from fantasia_core.engine.fx import FxHost
+    from fantasia_core.engine.levels import fx_meter_key
+
+    p = Project()
+    t = p.add_track("A")
+    ins = p.new_insert("gain", {"gain": -6.0})
+    t.fx = [ins]
+    sr = 8000
+    x = np.full((sr, 2), 0.5, dtype=np.float32)
+    tap = LevelTap()
+    FxHost().process(t, x, sr, level_tap=tap)
+    peaks = tap.consume()
+    assert peaks[fx_meter_key(t.id, "in", "out")] == pytest.approx(0.5, abs=0.02)
+    assert peaks[fx_meter_key(t.id, ins.id, "in")] == pytest.approx(0.5, abs=0.02)
+    assert peaks[fx_meter_key(t.id, ins.id, "out")] < 0.35
+    assert peaks[fx_meter_key(t.id, "out", "in")] < 0.35
+
+
 def test_level_tap_holds_then_clears():
     tap = LevelTap()
     block = np.array([[0.25, -0.5], [0.1, 0.0]], dtype=np.float32)

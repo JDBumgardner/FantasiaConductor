@@ -191,8 +191,8 @@ def render_block(
         )
         if spectrum_tap is not None and spectrum_track_id == track.id:
             spectrum_tap.write(tb)
-        if getattr(track, "fx", None) and fx_host is not None:
-            tb = fx_host.process(track, tb, sr)
+        if fx_host is not None:
+            tb = fx_host.process(track, tb, sr, level_tap=level_tap)
         tgain = db_to_lin(track.gain_db)
         lpan, rpan = _pan_gains(track.pan)
         out[:, 0] += tb[:, 0] * tgain * lpan
@@ -209,8 +209,8 @@ def render_block(
             if getattr(master, "mute", False):
                 out[:] = 0.0
                 return out
-            if getattr(master, "fx", None) and fx_host is not None:
-                out = fx_host.process(master, out, sr)
+            if fx_host is not None:
+                out = fx_host.process(master, out, sr, level_tap=level_tap)
             mgain = db_to_lin(getattr(master, "gain_db", 0.0))
             if mgain != 1.0 or getattr(master, "pan", 0.0):
                 lpan, rpan = _pan_gains(getattr(master, "pan", 0.0))

@@ -23,6 +23,10 @@ def test_contextual_covers_mute_solo_and_piano_roll(qapp):  # noqa: ARG001
     assert "Draw mode" in names
     assert "Nudge locator along the grid" in names
     assert "Remove selected node or cable" in names
+    assert "Bypass / enable selected FX" in names
+    assert "Reset a knob to its default" in names
+    assert "Reorder tracks" in names
+    assert "Locator to a MIDI clip's start" in names
 
 
 def test_dialog_lists_menu_and_contextual_keys(qapp):
