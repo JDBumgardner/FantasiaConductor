@@ -176,23 +176,31 @@ class AgentTools:
             {"name": "add_fx", "description": (
                 "Append an effect to a track's insert graph (including the Master channel, track_id 'master'). "
                 "Returns insert_id — use that with list_fx / bypass_fx / move_fx / remove_fx. "
+                "By default the new insert is spliced before Out so it sounds immediately; "
+                "pass connect=false to leave it floating for manual wiring in the node graph.\n"
                 "Prefer the stock 8-band EQ (type 'eq') plus get_eq/set_eq_band for tone-shaping; "
                 "legacy single filters (eq_peak, highpass, …) still work.\n"
                 "EQ: eq {bands} is the stock parametric; or highpass/lowpass {cutoff Hz}; "
                 "eq_peak {freq, gain dB, q} bell; eq_low_shelf / eq_high_shelf {freq, gain, q}. "
                 "A high-pass around 100-150 Hz on non-bass tracks removes rumble.\n"
                 "Colour: saturator {drive dB, output dB} adds harmonics/warmth; distortion {drive}.\n"
-                "Dynamics: compressor {threshold dB, ratio, attack ms, release ms} evens out level "
-                "(4:1 at -16 dB is a good start); limiter {threshold, release} catches peaks; "
+                "Dynamics: compressor {threshold dB, ratio, attack ms, release ms, makeup dB} "
+                "evens out level (4:1 at -16 dB is a good start; lower threshold = more squash); "
+                "limiter {threshold/ceiling, release} catches peaks; "
                 "gate {threshold, ratio} cuts silence/bleed.\n"
-                "Space: reverb {wet, room_size}; delay {time s, feedback, mix}."),
+                "Space: reverb {wet, dry, room_size, damping, width}; delay {time s, feedback, mix}; "
+                "chorus {rate, depth, mix}. "
+                "Join: mix {wet 0-1} blends two incoming buses (dry vs wet) instead of summing."),
              "input_schema": {"type": "object", "properties": {
                  "track_id": {"type": "string"},
                  "type": {"type": "string", "enum": [
-                     "eq", "highpass", "lowpass", "eq_peak", "eq_low_shelf", "eq_high_shelf",
+                     "eq", "mix", "highpass", "lowpass", "eq_peak", "eq_low_shelf", "eq_high_shelf",
                      "saturator", "distortion", "compressor", "limiter", "gate",
-                     "reverb", "delay", "gain"]},
-                 "params": {"type": "object"}}, "required": ["track_id", "type"]}},
+                     "reverb", "delay", "gain", "chorus"]},
+                 "params": {"type": "object"},
+                 "connect": {"type": "boolean",
+                             "description": "true (default) splices before Out; false leaves it unwired"}},
+                 "required": ["track_id", "type"]}},
             {"name": "list_fx", "description": (
                 "List inserts on a track (including Master). Each row is "
                 "{id, type, bypassed, params}. Address inserts by id, not by position."),
@@ -505,7 +513,10 @@ class AgentTools:
             params = a.get("params") or {}
             if a["type"] == "eq" and "bands" not in params:
                 params = {**params, "bands": default_bands()}
-            cmd = self.bus.dispatch(AddFxCommand(a["track_id"], a["type"], params))
+            cmd = self.bus.dispatch(AddFxCommand(
+                a["track_id"], a["type"], params,
+                connect=bool(a.get("connect", True)),
+            ))
             return {"ok": True, "insert_id": cmd.insert_id, "fx_count": len(t.fx)}
         if name == "list_fx":
             t = p.track_by_id(a["track_id"])

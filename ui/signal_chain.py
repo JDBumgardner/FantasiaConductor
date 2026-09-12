@@ -19,9 +19,11 @@ from PySide6.QtWidgets import (
 
 from fantasia_core.document.fx_insert import (
     device_label,
+    effective_wires,
     insert_bypassed,
     insert_id,
     insert_type,
+    is_wired,
     linear_order,
 )
 from fantasia_core.document.model import MASTER_ID, Track
@@ -118,7 +120,7 @@ class SignalChainView(QWidget):
         self._title.setStyleSheet(f"color: {theme.FG}; font-weight: 700;")
         brow.addWidget(self._title)
         brow.addStretch(1)
-        hint = QLabel("Click a device to edit · ✕ removes it · + adds FX")
+        hint = QLabel("Click a device to edit · + adds FX (unwired until you connect it in Graph) · ✕ removes")
         hint.setStyleSheet(f"color: {theme.FG_DIM}; font-size: 10px;")
         brow.addWidget(hint)
         outer.addWidget(bar)
@@ -171,13 +173,19 @@ class SignalChainView(QWidget):
         self._row.addWidget(inst)
         self._row.addWidget(_Arrow())
 
+        wires = effective_wires(track.fx, getattr(track, "fx_wires", None))
         order = linear_order(track.fx, getattr(track, "fx_wires", None))
         by_id = {insert_id(e): e for e in track.fx if insert_id(e)}
         for nid in order:
             spec = by_id.get(nid)
             if spec is None:
                 continue
-            sub = "bypassed" if insert_bypassed(spec) else insert_type(spec)
+            if insert_bypassed(spec):
+                sub = "bypassed"
+            elif not is_wired(nid, wires):
+                sub = "not wired — open Graph to connect"
+            else:
+                sub = insert_type(spec)
             card = _Card(device_label(spec), sub, removable=True, insert_id=nid)
             if card.btn_x is not None:
                 card.btn_x.clicked.connect(lambda _=False, i=nid: self.remove_requested.emit(i))

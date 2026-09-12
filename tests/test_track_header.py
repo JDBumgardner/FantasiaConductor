@@ -163,6 +163,25 @@ def test_header_panel_selects_multiple_tracks(qapp):
     assert not panel._headers[b.id]._selected
 
 
+def test_header_panel_drop_index_skips_the_dragged_row(qapp):  # noqa: ARG001
+    p = Project()
+    a = p.add_track("A")
+    b = p.add_track("B")
+    c = p.add_track("C")
+    panel = TrackHeaderPanel()
+    panel.rebuild(p)
+    panel.resize(360, 320)
+    panel.show()
+    QApplication.processEvents()
+    headers = panel.ordered_headers()
+    assert [h.track_id for h in headers] == [a.id, b.id, c.id]
+    # Below C, dragging A → A lands at the bottom (index 2).
+    gy = headers[2].mapToGlobal(headers[2].rect().bottomRight()).y()
+    assert panel.drop_index_at(gy, a.id) == 2
+    gy = headers[0].mapToGlobal(headers[0].rect().topLeft()).y()
+    assert panel.drop_index_at(gy, c.id) == 0
+
+
 def test_header_panel_defaults_wide_enough_for_faders(qapp):  # noqa: ARG001
     panel = TrackHeaderPanel()
     assert panel.width() >= 360

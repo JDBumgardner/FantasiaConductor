@@ -46,6 +46,24 @@ def test_add_track_defaults_to_stock_synth():
     assert t.synth["cutoff"] == DEFAULT_PATCH["cutoff"]
 
 
+def test_move_track_reorders_and_undoes():
+    from fantasia_core.commands import MoveTrackCommand
+
+    bus = _bus()
+    a = bus.dispatch(AddTrackCommand("A")).created_track
+    b = bus.dispatch(AddTrackCommand("B")).created_track
+    c = bus.dispatch(AddTrackCommand("C")).created_track
+    assert [t.name for t in bus.project.tracks] == ["A", "B", "C"]
+    bus.dispatch(MoveTrackCommand(c.id, 0))
+    assert [t.name for t in bus.project.tracks] == ["C", "A", "B"]
+    bus.dispatch(MoveTrackCommand(a.id, 2))
+    assert [t.name for t in bus.project.tracks] == ["C", "B", "A"]
+    bus.undo()
+    assert [t.name for t in bus.project.tracks] == ["C", "A", "B"]
+    bus.undo()
+    assert [t.id for t in bus.project.tracks] == [a.id, b.id, c.id]
+
+
 def test_remove_track_restores_contents():
     bus = _bus()
     t = bus.dispatch(AddTrackCommand("Bass")).created_track
@@ -405,6 +423,160 @@ def test_add_bypass_move_remove_fx():
     assert t.fx == []
     bus.redo()
     assert t.fx[0].id == a.insert_id
+
+
+def test_add_fx_connects_just_before_out():
+    from fantasia_core.commands import AddFxCommand
+    from fantasia_core.document.fx_insert import OUT, SOURCE, effective_wires, is_wired
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    a = bus.dispatch(AddFxCommand(t.id, "reverb"))
+    assert a.insert_id
+    wires = effective_wires(t.fx, t.fx_wires)
+    assert is_wired(a.insert_id, wires)
+    assert {(w.src, w.dst) for w in wires} == {(SOURCE, a.insert_id), (a.insert_id, OUT)}
+    floating = bus.dispatch(AddFxCommand(t.id, "delay", connect=False))
+    assert not is_wired(floating.insert_id, effective_wires(t.fx, t.fx_wires))
+
+
+def test_add_fx_collects_parallel_feeds_into_out():
+    """Two chains into Out become two chains into the new device, then Out."""
+    from fantasia_core.commands import AddFxCommand, SetTrackFxWiresCommand
+    from fantasia_core.document.fx_insert import OUT, SOURCE, effective_wires
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    rev = bus.dispatch(AddFxCommand(t.id, "reverb", connect=False))
+    dly = bus.dispatch(AddFxCommand(t.id, "delay", connect=False))
+    bus.dispatch(SetTrackFxWiresCommand(t.id, [
+        {"src": SOURCE, "dst": rev.insert_id},
+        {"src": SOURCE, "dst": dly.insert_id},
+        {"src": rev.insert_id, "dst": OUT},
+        {"src": dly.insert_id, "dst": OUT},
+    ]))
+    comp = bus.dispatch(AddFxCommand(t.id, "compressor"))
+    keys = {(w.src, w.dst) for w in effective_wires(t.fx, t.fx_wires)}
+    assert (rev.insert_id, comp.insert_id) in keys
+    assert (dly.insert_id, comp.insert_id) in keys
+    assert (comp.insert_id, OUT) in keys
+    assert (rev.insert_id, OUT) not in keys
+    assert (dly.insert_id, OUT) not in keys
+
+
+def test_add_fx_can_pin_node_position():
+    from fantasia_core.commands import AddFxCommand
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    cmd = bus.dispatch(AddFxCommand(t.id, "reverb", x=80.0, y=140.0))
+    ins = next(e for e in t.fx if e.id == cmd.insert_id)
+    assert ins.x == 80.0
+    assert ins.y == 140.0
+
+
+def test_splice_fx_inserts_node_on_a_cable():
+    from fantasia_core.commands import AddFxCommand, SpliceFxCommand
+    from fantasia_core.document.fx_insert import OUT, SOURCE, effective_wires
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    rev = bus.dispatch(AddFxCommand(t.id, "reverb", connect=False))
+    cmd = bus.dispatch(SpliceFxCommand(t.id, rev.insert_id, SOURCE, OUT))
+    assert cmd.applied is True
+    keys = {(w.src, w.dst) for w in effective_wires(t.fx, t.fx_wires)}
+    assert (SOURCE, rev.insert_id) in keys
+    assert (rev.insert_id, OUT) in keys
+    assert (SOURCE, OUT) not in keys
+    bus.undo()
+    keys = {(w.src, w.dst) for w in effective_wires(t.fx, t.fx_wires)}
+    assert (SOURCE, OUT) in keys
+
+
+def test_splice_moves_an_already_wired_node_instead_of_forking():
+    """Re-dropping a wired device relocates it; it must not run twice."""
+    from fantasia_core.commands import AddFxCommand, SpliceFxCommand
+    from fantasia_core.document.fx_insert import OUT, SOURCE, effective_wires
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    rev = bus.dispatch(AddFxCommand(t.id, "reverb", connect=True))
+    dly = bus.dispatch(AddFxCommand(t.id, "delay", connect=True))
+    # in -> rev -> dly -> out. Move the reverb onto the dly -> out cable.
+    cmd = bus.dispatch(SpliceFxCommand(t.id, rev.insert_id, dly.insert_id, OUT))
+    assert cmd.applied is True
+    keys = {(w.src, w.dst) for w in effective_wires(t.fx, t.fx_wires)}
+    assert (dly.insert_id, rev.insert_id) in keys
+    assert (rev.insert_id, OUT) in keys
+    # The old slot was bridged shut rather than left as a second path.
+    assert (SOURCE, rev.insert_id) not in keys
+    assert (SOURCE, dly.insert_id) in keys
+    assert sum(1 for w in effective_wires(t.fx, t.fx_wires)
+               if w.src == rev.insert_id) == 1
+
+
+def test_splice_reports_failure_instead_of_silently_doing_nothing():
+    from fantasia_core.commands import AddFxCommand, SpliceFxCommand
+    from fantasia_core.document.fx_insert import OUT, SOURCE
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    rev = bus.dispatch(AddFxCommand(t.id, "reverb", connect=True))
+    cmd = bus.dispatch(SpliceFxCommand(t.id, rev.insert_id, SOURCE, rev.insert_id))
+    assert cmd.applied is False
+    assert cmd.reason
+
+
+def test_connect_refuses_a_feedback_loop_with_a_reason():
+    from fantasia_core.commands import AddFxCommand, ConnectFxCommand
+    from fantasia_core.document.fx_insert import insert_type
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    a = bus.dispatch(AddFxCommand(t.id, "reverb", connect=True))
+    b = bus.dispatch(AddFxCommand(t.id, "delay", connect=True))
+    # in -> a -> b -> out; wiring b back into a is a cycle.
+    cmd = bus.dispatch(ConnectFxCommand(t.id, b.insert_id, a.insert_id, True))
+    assert cmd.applied is False
+    assert "loop" in cmd.reason
+    # And it must not have left a half-built Dry/Wet Mix behind.
+    assert not any(insert_type(e) == "mix" for e in t.fx)
+
+
+def test_connect_reports_success_for_a_legal_cable():
+    from fantasia_core.commands import AddFxCommand, ConnectFxCommand
+    from fantasia_core.document.fx_insert import SOURCE
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    rev = bus.dispatch(AddFxCommand(t.id, "reverb"))
+    cmd = bus.dispatch(ConnectFxCommand(t.id, SOURCE, rev.insert_id, True))
+    assert cmd.applied is True
+    assert cmd.reason == ""
+
+
+def test_connect_second_wire_inserts_dry_wet_mix():
+    from fantasia_core.commands import AddFxCommand, ConnectFxCommand
+    from fantasia_core.document.fx_insert import OUT, SOURCE, insert_type
+
+    bus = _bus()
+    t = bus.dispatch(AddTrackCommand()).created_track
+    rev = bus.dispatch(AddFxCommand(t.id, "reverb", connect=False))
+    # Add materialises Source→Out. Wiring the reverb into Out is therefore
+    # a second incoming edge, which becomes a Dry/Wet Mix (dry = Source).
+    bus.dispatch(ConnectFxCommand(t.id, SOURCE, rev.insert_id, True))
+    bus.dispatch(ConnectFxCommand(t.id, rev.insert_id, OUT, True))
+    mixes = [e for e in t.fx if insert_type(e) == "mix"]
+    assert len(mixes) == 1
+    mix = mixes[0]
+    keys = {(w.src, w.dst) for w in t.fx_wires}
+    assert (SOURCE, mix.id) in keys
+    assert (rev.insert_id, mix.id) in keys
+    assert (mix.id, OUT) in keys
+    assert mix.params.get("dry_src") == SOURCE
+    assert mix.params.get("wet_src") == rev.insert_id
+    bus.undo()
+    assert not any(insert_type(e) == "mix" for e in t.fx)
 
 
 def test_remove_fx_reconnects_explicit_wires():

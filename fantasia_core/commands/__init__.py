@@ -24,6 +24,7 @@ from fantasia_core.commands.track_cmds import (
     BypassFxCommand,
     ConnectFxCommand,
     MoveFxCommand,
+    MoveTrackCommand,
     RemoveFxCommand,
     RemoveTrackCommand,
     SetTempoCommand,
@@ -32,6 +33,7 @@ from fantasia_core.commands.track_cmds import (
     SetTrackFxWiresCommand,
     SetTrackSynthCommand,
     SetTrackSynthParamCommand,
+    SpliceFxCommand,
 )
 
 __all__ = [
@@ -42,6 +44,7 @@ __all__ = [
     "BypassFxCommand",
     "ConnectFxCommand",
     "MoveFxCommand",
+    "MoveTrackCommand",
     "RemoveFxCommand",
     "RemoveTrackCommand",
     "SetTempoCommand",
@@ -50,6 +53,7 @@ __all__ = [
     "SetTrackFxWiresCommand",
     "SetTrackSynthCommand",
     "SetTrackSynthParamCommand",
+    "SpliceFxCommand",
     "AddClipCommand",
     "DuplicateClipsCommand",
     "JoinMidiClipsCommand",

@@ -169,6 +169,31 @@ def _band(x, lo, hi, sr=44100):
     return float(np.sum(S[(f >= lo) & (f < hi)]))
 
 
+def test_compressor_lower_threshold_compresses_more():
+    """Threshold is dBFS: more negative = more compression (standard, not inverted)."""
+    pytest.importorskip("pedalboard")
+    sr = 44100
+    t = np.arange(sr) / sr
+    x = np.stack([0.8 * np.sin(2 * np.pi * 440 * t)] * 2, axis=1).astype(np.float32)
+    mild = _fx_run({"type": "compressor",
+                    "params": {"threshold": -6, "ratio": 8, "attack": 1, "release": 40}}, x)
+    hard = _fx_run({"type": "compressor",
+                    "params": {"threshold": -24, "ratio": 8, "attack": 1, "release": 40}}, x)
+    assert np.max(np.abs(hard)) < np.max(np.abs(mild))
+
+
+def test_chorus_modulates_without_blowing_up():
+    pytest.importorskip("pedalboard")
+    sr = 44100
+    t = np.arange(sr) / sr
+    x = np.stack([0.4 * np.sin(2 * np.pi * 330 * t)] * 2, axis=1).astype(np.float32)
+    y = _fx_run({"type": "chorus",
+                 "params": {"rate": 2.0, "depth": 0.6, "mix": 0.7}}, x)
+    assert y.shape == x.shape
+    assert 0.05 < np.max(np.abs(y)) < 1.2
+    assert not np.allclose(x, y, atol=1e-3)
+
+
 def test_stock_eq_insert_matches_legacy_peak():
     pytest.importorskip("pedalboard")
     sr = 44100
@@ -308,6 +333,34 @@ def test_dag_processes_in_topological_order_not_list_order():
     out = FxHost().process(track, audio, 44100)
     assert np.abs(out).max() > 1e-4, "graph produced silence"
     assert np.isfinite(out).all()
+
+
+def test_mix_node_blends_two_inputs_by_wet():
+    import numpy as np
+    from types import SimpleNamespace as NS
+
+    from fantasia_core.document.fx_insert import OUT, SOURCE, as_wire
+    from fantasia_core.engine.fx import FxHost
+
+    dry = np.ones((256, 2), dtype=np.float32) * 0.8
+    # SOURCE is the incoming audio; a second bus is faked by a bypassed gain
+    # that copies its input. We inject two distinct buffers by using two
+    # gain nodes at 0 dB on constant signals... simpler: unit-test _blend_inputs.
+    host = FxHost()
+    bufs = {"a": np.ones((256, 2), dtype=np.float32),
+            "b": np.zeros((256, 2), dtype=np.float32)}
+    out = host._blend_inputs(dry, bufs, ["a", "b"], wet=0.25, dry_src="a", wet_src="b")
+    assert np.allclose(out, 0.75)
+    out = host._blend_inputs(dry, bufs, ["a", "b"], wet=1.0, dry_src="a", wet_src="b")
+    assert np.allclose(out, 0.0)
+
+    pytest.importorskip("pedalboard")
+    specs = [_insert("mix", "mx", wet=0.0, dry_src=SOURCE, wet_src=SOURCE)]
+    wires = [as_wire(w) for w in ({"src": SOURCE, "dst": "mx"}, {"src": "mx", "dst": OUT})]
+    audio = (np.random.rand(512, 2).astype(np.float32) - 0.5) * 0.3
+    rendered = FxHost().process(NS(id="tmix", fx=specs, fx_wires=wires), audio, 44100)
+    assert np.isfinite(rendered).all()
+    assert np.abs(rendered).max() > 1e-4
 
 
 def test_dag_still_correct_when_the_list_order_already_matches():

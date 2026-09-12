@@ -55,6 +55,11 @@ def track_to_dict(track: Track) -> dict[str, Any]:
         "color": track.color,
         "fx": [as_insert(e).to_dict() for e in track.fx],
         "fx_wires": [as_wire(w).to_dict() for w in (getattr(track, "fx_wires", None) or [])],
+        "fx_graph_pos": {
+            str(k): [float(v[0]), float(v[1])]
+            for k, v in (getattr(track, "fx_graph_pos", None) or {}).items()
+            if isinstance(v, (list, tuple)) and len(v) >= 2
+        },
         "instrument": track.instrument,
         "is_drum": track.is_drum,
         "is_synth": track.is_synth,
@@ -128,6 +133,12 @@ def track_from_dict(data: dict[str, Any]) -> Track:
     )
     track.fx = [as_insert(e) for e in data.get("fx", [])]
     track.fx_wires = copy_wires(data.get("fx_wires") or [])
+    raw_pos = data.get("fx_graph_pos") or {}
+    track.fx_graph_pos = {
+        str(k): [float(v[0]), float(v[1])]
+        for k, v in raw_pos.items()
+        if isinstance(v, (list, tuple)) and len(v) >= 2
+    }
     track.instrument = int(data.get("instrument", 0))
     track.is_drum = bool(data.get("is_drum", False))
     track.is_synth = bool(data.get("is_synth", False))

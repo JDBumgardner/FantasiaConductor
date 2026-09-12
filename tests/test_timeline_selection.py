@@ -67,7 +67,7 @@ def test_shift_click_keeps_multiple_midi_clips_selected(qapp):  # noqa: ARG001
     assert set(view.selected_clip_ids()) == {a.id, b.id}
 
 
-def test_clicking_unselected_midi_clip_does_not_move_locator(qapp):  # noqa: ARG001
+def test_clicking_unselected_midi_clip_locates_to_clip_start(qapp):  # noqa: ARG001
     view = TimelineView()
     p = Project()
     t = p.add_track("A")
@@ -82,7 +82,7 @@ def test_clicking_unselected_midi_clip_does_not_move_locator(qapp):  # noqa: ARG
     item = _clip_items(view)[clip.id]
     _click_clip(view, item)
     assert set(view.selected_clip_ids()) == {clip.id}
-    assert view.start_position == 0.0
+    assert view.start_position == pytest.approx(clip.start)
 
 
 def test_clicking_selected_midi_clip_locates_to_click(qapp):  # noqa: ARG001
