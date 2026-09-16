@@ -1,0 +1,72 @@
+{
+ "prompt": "hollow pipes, like an over sized wind chime",
+ "score": 0.5138900876045227,
+ "dist": 1.775523066520691,
+ "vital_params": {
+  "velocity_track": 0.5,
+  "envelope_2_decay_power": 0.16546207666397095,
+  "filter_1_cutoff": 0.6048923134803772,
+  "filter_1_resonance": 0.0029519503004848957,
+  "modulation_1_amount": 0.6040071025490761,
+  "envelope_2_attack": 0.0897402700966564,
+  "envelope_2_decay": 0.15998994462931912,
+  "envelope_2_sustain": 0.4648049771785736,
+  "envelope_2_release": 0.16548632298274876,
+  "oscillator_1_wave_frame": 0.4263772666454315,
+  "oscillator_1_unison_detune": 0.40947794914245605,
+  "oscillator_1_blend": 0.8080943822860718,
+  "oscillator_1_level": 0.818486213684082,
+  "oscillator_1_unison_voices": 0.0,
+  "envelope_1_attack": 0.13898400438438796,
+  "envelope_1_decay": 0.3539064523704165,
+  "envelope_1_sustain": 0.91147780418396,
+  "envelope_1_release": 0.48744770953404887
+ },
+ "describe": {
+  "synth": {
+   "cutoff_raw": 0.605,
+   "resonance": 0.003,
+   "fenv_amount": 0.208,
+   "fattack": 0.002,
+   "fdecay": 0.021,
+   "fsustain": 0.465,
+   "frelease": 0.024,
+   "frame": 13.644,
+   "detune_semis": 0.335,
+   "blend": 0.808,
+   "level": 0.67,
+   "attack": 0.012,
+   "decay": 0.502,
+   "sustain": 0.911,
+   "release": 1.807
+  },
+  "eq": [
+   [
+    187,
+    4.5
+   ],
+   [
+    343,
+    4.2
+   ],
+   [
+    540,
+    8.0
+   ],
+   [
+    1195,
+    -5.7
+   ],
+   [
+    2541,
+    -5.2
+   ],
+   [
+    9535,
+    -6.2
+   ]
+  ],
+  "drive_db": 4.8,
+  "reverb_mix": 0.58
+ }
+}

@@ -1,0 +1,72 @@
+{
+ "prompt": "reaching toward heaven",
+ "score": 0.5118410587310791,
+ "dist": 1.7848001718521118,
+ "vital_params": {
+  "velocity_track": 0.5,
+  "envelope_2_decay_power": 0.4445602297782898,
+  "filter_1_cutoff": 0.5687280297279358,
+  "filter_1_resonance": 0.8226335048675537,
+  "modulation_1_amount": 0.6915411949157715,
+  "envelope_2_attack": 0.08779292115650976,
+  "envelope_2_decay": 0.3274976338711374,
+  "envelope_2_sustain": 0.29140427708625793,
+  "envelope_2_release": 0.32180621795172265,
+  "oscillator_1_wave_frame": 0.4371795356273651,
+  "oscillator_1_unison_detune": 0.4176107943058014,
+  "oscillator_1_blend": 0.8154169917106628,
+  "oscillator_1_level": 0.8591245412826538,
+  "oscillator_1_unison_voices": 0.0,
+  "envelope_1_attack": 0.13720742859223867,
+  "envelope_1_decay": 0.3467064552778826,
+  "envelope_1_sustain": 0.7370355725288391,
+  "envelope_1_release": 0.41557729558926215
+ },
+ "describe": {
+  "synth": {
+   "cutoff_raw": 0.569,
+   "resonance": 0.823,
+   "fenv_amount": 0.383,
+   "fattack": 0.002,
+   "fdecay": 0.368,
+   "fsustain": 0.291,
+   "frelease": 0.343,
+   "frame": 13.99,
+   "detune_semis": 0.349,
+   "blend": 0.815,
+   "level": 0.738,
+   "attack": 0.011,
+   "decay": 0.462,
+   "sustain": 0.737,
+   "release": 0.954
+  },
+  "eq": [
+   [
+    55,
+    3.6
+   ],
+   [
+    365,
+    6.3
+   ],
+   [
+    747,
+    -6.2
+   ],
+   [
+    2024,
+    -6.3
+   ],
+   [
+    3437,
+    -6.4
+   ],
+   [
+    10545,
+    -6.0
+   ]
+  ],
+  "drive_db": 0.6,
+  "reverb_mix": 0.44
+ }
+}

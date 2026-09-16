@@ -1,0 +1,72 @@
+{
+ "prompt": "underwater",
+ "score": 0.20009486377239227,
+ "dist": 1.6729190349578857,
+ "vital_params": {
+  "velocity_track": 0.5,
+  "envelope_2_decay_power": 0.5095725655555725,
+  "filter_1_cutoff": 0.5232530236244202,
+  "filter_1_resonance": 0.755395770072937,
+  "modulation_1_amount": 0.6447567343711853,
+  "envelope_2_attack": 0.15993536160473287,
+  "envelope_2_decay": 0.3179417576334668,
+  "envelope_2_sustain": 0.5994225144386292,
+  "envelope_2_release": 0.20952833130130397,
+  "oscillator_1_wave_frame": 0.4371795356273651,
+  "oscillator_1_unison_detune": 0.4176107943058014,
+  "oscillator_1_blend": 0.8154169917106628,
+  "oscillator_1_level": 0.8591245412826538,
+  "oscillator_1_unison_voices": 0.0,
+  "envelope_1_attack": 0.11070358438124088,
+  "envelope_1_decay": 0.17592498596351444,
+  "envelope_1_sustain": 0.6942378878593445,
+  "envelope_1_release": 0.3795572281897284
+ },
+ "describe": {
+  "synth": {
+   "cutoff_raw": 0.523,
+   "resonance": 0.755,
+   "fenv_amount": 0.29,
+   "fattack": 0.021,
+   "fdecay": 0.327,
+   "fsustain": 0.599,
+   "frelease": 0.062,
+   "frame": 13.99,
+   "detune_semis": 0.349,
+   "blend": 0.815,
+   "level": 0.738,
+   "attack": 0.005,
+   "decay": 0.031,
+   "sustain": 0.694,
+   "release": 0.664
+  },
+  "eq": [
+   [
+    114,
+    -6.2
+   ],
+   [
+    180,
+    6.4
+   ],
+   [
+    1375,
+    -6.3
+   ],
+   [
+    2872,
+    -6.4
+   ],
+   [
+    5444,
+    -6.5
+   ],
+   [
+    9673,
+    -6.3
+   ]
+  ],
+  "drive_db": 1.0,
+  "reverb_mix": 0.5
+ }
+}

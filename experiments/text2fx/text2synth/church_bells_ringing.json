@@ -1,0 +1,70 @@
+{
+ "prompt": "this sound is church bells ringing",
+ "score": 0.5354753732681274,
+ "vital_params": {
+  "velocity_track": 0.5,
+  "filter_1_cutoff": 0.49156928062438965,
+  "filter_1_resonance": 0.6623823046684265,
+  "modulation_1_amount": 0.6163465157151222,
+  "envelope_2_attack": 0.13400004558278636,
+  "envelope_2_decay": 0.4952782102836671,
+  "envelope_2_sustain": 0.1167188212275505,
+  "envelope_2_release": 0.5613710661287813,
+  "oscillator_1_wave_frame": 0.006249284837394953,
+  "oscillator_1_unison_detune": 0.43274107575416565,
+  "oscillator_1_blend": 0.7212231159210205,
+  "oscillator_1_level": 0.49284887313842773,
+  "oscillator_1_unison_voices": 0.0,
+  "envelope_1_attack": 0.07480543255686854,
+  "envelope_1_decay": 0.5381623402708581,
+  "envelope_1_sustain": 0.9991497993469238,
+  "envelope_1_release": 0.5481982462276027
+ },
+ "describe": {
+  "synth": {
+   "cutoff_raw": 0.492,
+   "resonance": 0.662,
+   "fenv_amount": 0.233,
+   "fattack": 0.01,
+   "fdecay": 1.926,
+   "fsustain": 0.117,
+   "frelease": 3.178,
+   "frame": 0.2,
+   "detune_semis": 0.375,
+   "blend": 0.721,
+   "level": 0.243,
+   "attack": 0.001,
+   "decay": 2.684,
+   "sustain": 0.999,
+   "release": 2.89
+  },
+  "eq": [
+   [
+    127,
+    -6.1
+   ],
+   [
+    233,
+    -6.1
+   ],
+   [
+    813,
+    3.5
+   ],
+   [
+    1603,
+    5.8
+   ],
+   [
+    2618,
+    6.2
+   ],
+   [
+    4201,
+    -6.4
+   ]
+  ],
+  "drive_db": 1.5,
+  "reverb_mix": 0.42
+ }
+}

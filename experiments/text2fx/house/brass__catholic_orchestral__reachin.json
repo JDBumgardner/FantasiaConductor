@@ -1,0 +1,72 @@
+{
+ "prompt": "catholic orchestral, reaching to heaven in chorus",
+ "score": 0.28620922565460205,
+ "dist": 1.0022224187850952,
+ "vital_params": {
+  "velocity_track": 0.5,
+  "envelope_2_decay_power": 0.36986520886421204,
+  "filter_1_cutoff": 0.6041501760482788,
+  "filter_1_resonance": 0.5243574976921082,
+  "modulation_1_amount": 0.6594415009021759,
+  "envelope_2_attack": 0.08291659606252924,
+  "envelope_2_decay": 0.2701683258097268,
+  "envelope_2_sustain": 0.4526219367980957,
+  "envelope_2_release": 0.3609816379729918,
+  "oscillator_1_wave_frame": 0.4617215096950531,
+  "oscillator_1_unison_detune": 0.4273795187473297,
+  "oscillator_1_blend": 0.8168054223060608,
+  "oscillator_1_level": 0.8700312376022339,
+  "oscillator_1_unison_voices": 0.0,
+  "envelope_1_attack": 0.1922262979564039,
+  "envelope_1_decay": 0.3720731350235204,
+  "envelope_1_sustain": 0.7415419220924377,
+  "envelope_1_release": 0.36215400846178536
+ },
+ "describe": {
+  "synth": {
+   "cutoff_raw": 0.604,
+   "resonance": 0.524,
+   "fenv_amount": 0.319,
+   "fattack": 0.002,
+   "fdecay": 0.17,
+   "fsustain": 0.453,
+   "frelease": 0.543,
+   "frame": 14.775,
+   "detune_semis": 0.365,
+   "blend": 0.817,
+   "level": 0.757,
+   "attack": 0.044,
+   "decay": 0.613,
+   "sustain": 0.742,
+   "release": 0.55
+  },
+  "eq": [
+   [
+    142,
+    -6.1
+   ],
+   [
+    364,
+    -5.1
+   ],
+   [
+    699,
+    4.2
+   ],
+   [
+    1813,
+    1.8
+   ],
+   [
+    3357,
+    -6.3
+   ],
+   [
+    11659,
+    -6.5
+   ]
+  ],
+  "drive_db": 0.5,
+  "reverb_mix": 0.29
+ }
+}
