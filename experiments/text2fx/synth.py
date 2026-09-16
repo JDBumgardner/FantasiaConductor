@@ -18,7 +18,7 @@ into Vital's own 0-1 raw space, so `vital_params()` is a direct read-out.
 from __future__ import annotations
 import math, os, sys
 import numpy as np, torch, torch.nn as nn
-TAIL_S = 1.0          # release tail kept after note-off (exp reaches 1e-6 of peak by 2x the release)
+TAIL_MAX = 2.0        # longest release tail rendered after note-off (memory bound; longer releases fade out here)
 
 
 # ---- tables -------------------------------------------------------------------
@@ -209,10 +209,13 @@ class WavetableSynth(nn.Module):
         Short frames (ONSET_NF) resolve it and are accurate there because the cutoff is high.
         Crossfade short -> long over the first ONSET_S of the signal (each chunk is one note)."""
         long = self._tv_lowpass(x, fc, G, Q, self.NF, self.NF // 4, blend)
-        short = self._tv_lowpass(x, fc, G, Q, self.ONSET_NF, self.ONSET_NF // 4, blend)
-        t = torch.arange(x.shape[-1], device=x.device) / self.sr
-        w_long = torch.sigmoid((t - self.ONSET_S) / 0.01)[None, :]
-        return w_long * long + (1 - w_long) * short
+        # the short-frame pass only matters through the crossfade; run it on that head alone (halves the filter cost)
+        n_on = min(x.shape[-1], int((self.ONSET_S + 0.06) * self.sr))
+        short = self._tv_lowpass(x[:, :n_on], fc[:, :n_on], G, Q, self.ONSET_NF, self.ONSET_NF // 4, blend)
+        t = torch.arange(n_on, device=x.device) / self.sr
+        w_long = torch.sigmoid((t - self.ONSET_S) / 0.01)[None, :]          # 0.9975 at n_on; beyond it: long only
+        head = w_long * long[:, :n_on] + (1 - w_long) * short
+        return torch.cat([head, long[:, n_on:]], -1)
 
     def _tv_lowpass(self, x, fc, G, Q, n, h, blend=None):
         """One frame size. x: (B, T); fc: (B, T) Hz. Per STFT frame (Hann, 75% overlap) the
@@ -321,13 +324,23 @@ class WavetableSynth(nn.Module):
         frames = [ph["frame"] + (self.voice_offset[v] * spread if spread is not None else 0.0) for v in range(self.voices)]
         frames = [torch.clamp(f, 0, self.F - 1) for f in frames]
         tables = [self.frame_tables(self.harmonics(f), cuts) for f in frames]                  # [voice][cut]
+        # tail after note-off: Vital's release segment reaches zero at exactly `release` seconds, so render
+        # that long (plus a margin) and no longer — a fixed 1 s tail both truncated long releases mid-curve
+        # (a click) and wasted most of the render on silence for short ones. The length is a shape, so it is
+        # detached; releases past TAIL_MAX get a 20 ms raised-cosine fade at the end instead of a cut.
+        want = float(ph["release"].detach()) + 0.05
+        tail = min(math.ceil(want / 0.25) * 0.25, TAIL_MAX)                # quantised so the MPS allocator can reuse blocks
+        fade = None
+        if want > TAIL_MAX:
+            nf = int(0.02 * self.sr); fade = 0.5 * (1 + torch.cos(math.pi * torch.arange(nf, device=dev) / nf))
         for (dur, cut), group in groups.items():
-            T = int((dur + TAIL_S) * self.sr)
+            T = int((dur + tail) * self.sr)
             t = torch.arange(T, device=dev, dtype=torch.float32) / self.sr
             for i in range(0, len(group), chunk):
                 g = group[i:i + chunk]
                 f0 = torch.tensor([x[0] for x in g], device=dev); vel = torch.tensor([float(x[2]) for x in g], device=dev)
                 sig = self._chunk(t, f0, dur, vel, [tb[cut] for tb in tables], *args, filt=filt, extra=extra)
+                if fade is not None: sig = torch.cat([sig[:, :-len(fade)], sig[:, -len(fade):] * fade], -1)
                 for row, (_, start, _) in zip(sig, g):
                     n0 = int(start * self.sr); n1 = min(L, n0 + T)
                     if n1 > n0: out[n0:n1] = out[n0:n1] + row[: n1 - n0]

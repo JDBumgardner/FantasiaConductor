@@ -10,21 +10,59 @@ graph (and the Vital twin if the track is a Vital track). Pages: *The Vital Twin
 The first two widen what a prompt can reach; the second two make it a tool.
 
 ### Effects the chain is missing (GRAFX has most; some are ours to write)
-- [ ] **Compressor** — dynamics is the envelope dimension prompts act on most
-      (*punchy, glued, smooth*). GRAFX `Compressor` on torchcomp (installed).
-      Compress-then-normalise raises quiet parts: expect a new cheat, watch it.
-- [ ] **Delay** — GRAFX `MultitapDelay`; tempo-sync taps to the clip BPM.
-- [ ] **Chorus / flanger / phaser** — write an LFO-modulated delay line; the
-      same node doubles as the synth's LFO.
+Registry + serial chain builder: `experiments/text2fx/fxgraph.py` (node type →
+make / init / prior / describe; per-node activation checkpointing so eight
+FFT-conv nodes fit under the 8 GB MPS cap). `text2synth` / `house_session` take
+the chain from `T2_CHAIN=eq,comp,dist,delay,reverb` (default). Every node and
+both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
+- [x] **Compressor** — ours (`fxgraph.Compressor`): GRAFX's applies its
+      ln-energy gain straight to the waveform (ratio 2 is already a limiter,
+      >2 inverts) and shifts the threshold −26 dB, so we kept only its FFT
+      smoother and wrote a dB-domain law (verified to 0.1 dB on sine bursts).
+      torchcomp attack/release ballistics run on the CPU (8 ms; 1.3 s on MPS).
+      On the three cello prompts (fixed chain) it settled at ratio 1.7–8.2,
+      threshold −17…−25 dB, release 60–370 ms; no loudness cheat seen. The
+      ratio prior (≤ 8) is the rail it leans on for "airy".
+- [x] **Delay** — GRAFX `MultitapDelay`, 8 surrogate taps, uncoloured, dry/wet;
+      its `radii_reg` goes into the loss. Used at mix 0.26–0.52 on all three
+      cello prompts once the dry/wet bug (below) was fixed. [ ] tempo-sync taps.
+- [x] **Chorus / flanger** — ours: LFO-modulated fractional delay (1–30 ms,
+      0.05–10 Hz, linear interp). [ ] feedback path (needs the recursion below);
+      [ ] reuse as the synth LFO.
+- [x] **Saturation flavours** — GRAFX `PiecewiseTanhDistortion` (asymmetric
+      hardness/threshold) as `pwtanh`. GRAFX `ChebyshevDistortion` has a broken
+      backward (in-place op) — skipped. [ ] measure Vital's distortion types.
+- [x] **Transient shaper** — ours: 1 ms vs 20–200 ms RMS followers, ±1 dB/dB
+      attack and sustain gains (kalimba peak/RMS 2.26 → 3.81 at attack +1).
+      Behaviour under prompts still to measure on the fixed chain (the one
+      eight-node run, attack +0.9 on "burbling", predates the fixes).
+- [x] **Gate** — ours: soft expander on a smoothed RMS level (GRAFX's
+      `NoiseGate` shares the compressor's gain-law problem).
 - [ ] **Stereo** — the twin is mono; a mono judge cannot hear *wide*. Needs a
       stereo chain and a stereo-aware loss (GRAFX has mid/side tools).
-- [ ] **Saturation flavours** — Chebyshev / piecewise tanh (GRAFX); measure the
-      Vital distortion types presets use.
-- [ ] **Transient shaper** — nothing exists; small to write (fast/slow env pair).
-- [ ] **Gate** — GRAFX `NoiseGate`; low priority.
-- [ ] **Graph compiler** — app FX DAG → differentiable graph, one twin per app
-      node TYPE (stock EQ, inserts…), frozen pass-through where none exists.
-      This is what makes the feature work on the user's actual graphs.
+- [~] **Graph compiler** — the registry is the seed; still to do: app FX DAG →
+      node list, one twin per app node TYPE, frozen pass-through where none
+      exists, and DAG (non-serial) rendering through `render_grafx`.
+- **Four upstream bugs found on the way (three GRAFX, one torchcomp), all fixed
+  in `fxgraph.py`, the first three affecting every result before 2026-09-15:**
+  1. `DryWet` documents mix = sigmoid(z) but uses z raw: "reverb mix 0.5" in the
+     earlier runs and the writeup meant z = 0 = *no reverb*; the −1 init meant
+     −1·wet + 2·dry. [ ] re-run the writeup's experiments and correct the page.
+  2. `convolve` calls `irfft` without `n=`: an odd x+h−1 (ours) comes back one
+     sample short and the whole output is time-stretched by that sample, so
+     dry+wet combed at the top of the band in EQ, compressor, delay and reverb.
+     Patched (exact length, power-of-two padding: 3–10× faster too).
+  3. The reverb draws its noise bank from the *unseeded* numpy RNG and re-draws a
+     random offset every forward: the reverb heard was never the one optimised.
+     Now seeded and `"fixed"`.
+  4. (torchcomp) `CompressorFunction.setup_context` saves its own output with
+     `save_for_forward` → a grad_fn→y→grad_fn cycle the GC cannot see: every
+     forward whose graph is never backpropagated (an evaluation in grad mode,
+     an aborted line search) leaked the whole upstream graph, ~230 MB. This was
+     the "MPS OOM after the L-BFGS polish". `fxgraph._Ballistics` drops it.
+  Lesson: a bypass test (every node at "amount 0" must return the input) and a
+  forward-only leak test belong next to the gradient test for every node
+  (`python fxgraph.py`).
 
 ### Why the clone isn't a perfect Vital (measured residuals)
 - [ ] **Recursive time-varying filter** via torchlpc (installed): fixes the
@@ -62,20 +100,49 @@ closed-loop recovery.
 - [ ] **Listening protocol** — ten pairs, forced choice, written down.
 - [ ] **Reranking judge** — CLAP for gradients; an audio-LM or Audealize's
       word→EQ data (magnitude prior for adjectives) to pick finalists.
-- [ ] **Speed** — batch restarts, cache text embeddings, 5 s excerpts.
+- [~] **Speed** — done: the synth renders each note's tail only as long as its
+      release (quantised to 0.25 s, capped at 2 s with a fade; the old fixed 1 s
+      tail also chopped long releases mid-curve) and runs the short-frame onset
+      filter on the first 160 ms only: synth fwd+bwd 151 → 100 ms, full house
+      step 348 → 291 ms on MPS. Left: batch restarts, cache text embeddings,
+      5 s excerpts; the compressor's CPU ballistics round trip forces a sync.
 
-### The optimiser (today: Adam + reparameterisation + best-of-N restarts)
+### The optimiser
+Today (`optim.py`, default in `text2synth` and `house_session`, `T2_OPT=adam`
+for the old path): **successive halving** over 8 inits (30 steps × 8 → 60 × 4 →
+220 × 1, cosine decay in the last stage), an **L-BFGS polish** with the synth's
+phases frozen, and a **frontier** (every finalist with score, time-shift-robust
+score and distance to the instrument) plus a **50 %-amount render**. Measured
+against 3 × 300 Adam at equal budget on the cello hook (fixed chain):
+
+| prompt | Adam 3 × 300 (restarts) | halving 8 → 4 → 2 → 1 |
+|---|---|---|
+| under water, burbling | 0.358 (0.36 / 0.15 / 0.24) | **0.458** (robust 0.439) |
+| airy, whistling through the trees | 0.185 (0.12 / 0.18 / 0.17) | 0.188 |
+| catholic orchestral, in chorus | **0.468** (0.47 / 0.44 / 0.42) | 0.439 |
+
+Breadth wins where restarts disagree (a rugged landscape), depth wins where they
+agree; the final rounds now give the winner 310 steps so the downside is small.
+The polish is worth 0–0.02 and 15 s per finalist. The loss is nearly
+deterministic (CLAP has no augmentation; per-note random phases move the score
+by a std of 0.006 over six draws), so the restart spread is multimodality, not noise. "At 50 %
+amount" scores show the corners are real: under water 0.458 → 0.295 at half
+amount, airy 0.188 → −0.004.
 1. [ ] **Amortised inference** — train mel→parameters on twin-rendered random
        patches (free, exact labels); use as the descent start. Minutes → seconds.
        Refs: Masuda & Saito DDSP sound matching, InverSynth, DDSP autoencoders.
-2. [ ] **Batch the restarts** — 8 fit in one pass at 0.7 GB/chain.
-3. [ ] **Average 2–4 phase draws per step** — smooths the stochastic loss.
+2. [ ] **Batch the restarts** — the synth's saved activations are ~400 MB per
+       candidate at 20 notes; two fit, eight do not, on 8 GB.
+3. [~] **Average phase draws** — measured: std 0.006 per draw; not worth it for 1 voice.
 4. [ ] **Coarse-to-fine** — 3 s excerpts first; envelope/coarse terms first,
        fine STFT terms later (frame ridges live in the fine terms).
 5. [ ] **Outer loop for discrete axes** — stepped frame, voices, filter model,
        table choice: grid / CMA-ES around the gradient inner loop.
-6. [ ] **L-BFGS finish** with phases fixed.
-7. [ ] **Return the score-vs-distance frontier**, not a single point.
+6. [x] **L-BFGS finish** with phases fixed (small, kept). As the *main* optimiser it
+       loses to Adam from the same init (0.085 vs 0.367, 0.289 vs 0.334): the
+       line search stalls on the piecewise-linear parts (table lookups, relus).
+7. [x] **Return the frontier**, with a robust score and the half-amount render.
+8. [ ] **Adaptive halving** — keep 2 finalists only when the survivors disagree.
 
 ### The judge
 - [ ] **Parameter-space realness prior** from real Vital presets (75 installed,

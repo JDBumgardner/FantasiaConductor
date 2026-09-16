@@ -4,8 +4,8 @@ PROMPTS = sys.argv[1:]                       # read BEFORE importing house_sessi
 sys.path.insert(0, "."); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import house_session as H
 PROMPTS = PROMPTS or ["catholic orchestral, reaching to heaven in chorus", "hollow pipes, like an over sized wind chime"]
-for name in ("cello", "brass"):
+for name in os.environ.get("T2_INST", "cello,brass").split(","):
     raw = json.load(open(os.path.join(H.OUT, f"{name}_patch.json")))["raw"]
     p = {k: torch.tensor(float(v)) for k, v in raw.items()}
-    for pr in PROMPTS: H.prompt_on(name, p, pr)
+    for pr in PROMPTS: H.prompt_on(name, p, pr, restarts=8 if H.OPT == "sh" else 3)
 print("ALL DONE")

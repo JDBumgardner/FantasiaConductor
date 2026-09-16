@@ -13,9 +13,11 @@ sys.argv = [sys.argv[0], "1"]
 import common as C, closed_loop_filter as CL, text2synth as T2
 from fantasia_core.engine.midi_render import MidiRenderer
 from synth import WavetableSynth, bounds_from_notes, raw_from_physical
-from grafx.render import render_grafx
 
 SR = 48000; L = 10 * SR; DEV = C.DEVICE; OUT = os.path.join(C.HERE, "house")
+OPT = os.environ.get("T2_OPT", "sh")                            # "sh": successive halving over 8 inits (default); "adam": 3 x 300 restarts
+ROUNDS = tuple(tuple(int(x) for x in r.split(":")) for r in os.environ.get("T2_ROUNDS", "30:4,60:2,220:1").split(","))
+TAG = ("" if T2.CHAIN_TYPES == ["eq", "dist", "reverb"] else "_" + "-".join(T2.CHAIN_TYPES)) + ("" if OPT == "sh" else "_" + OPT)
 N = lambda p, s, d, v: types.SimpleNamespace(pitch=p, start=s, duration=d, velocity=v)
 
 def house_hook(bpm=124, loops=2):
@@ -53,34 +55,62 @@ def make_instrument(name, program):
 
 def prompt_on(name, p_inst, prompt, lam_loc=0.05, steps=300, restarts=3):
     slug = "".join(ch if ch.isalnum() else "_" for ch in prompt)[:28].strip("_")
-    T = C.text_emb("this sound is " + prompt); procs, rd = T2.build_fx(); best = None
+    T = C.text_emb("this sound is " + prompt); best = None
     s_ = WavetableSynth(CL.TABLE, SR, voices=1, bounds=B, interpolation=CL.TBL.get("interpolation", 1)).to(DEV)
-    with torch.no_grad(): anchor = s_.render({k: v.to(DEV) for k, v in p_inst.items()}, NOTES, L)[0, 0]
-    for r in range(restarts):
+    with torch.no_grad(): anchor = s_.render({k: v.to(DEV) for k, v in p_inst.items()}, NOTES, L)[0, 0]; anchor_n = T2.loudness_norm(anchor)
+    def forward(ps, pf):
+        y = s_.render(ps, NOTES, L); out, gs = T2.render_fx(y, pf); return y, out, gs, T2.loudness_norm(out)
+    def loss_of(ps, pf):
+        y, out, gs, w = forward(ps, pf)
+        return (-(C.embed(w) @ T.T).squeeze() + T2.LAM_PRI * T2.fx_prior(pf) + T2.LAM_GS * gs + lam_loc * C.mrstft(T2.loudness_norm(y[0, 0]), anchor_n))
+    def evaluate(ps, pf):
+        y, out, gs, w = forward(ps, pf); score = float((C.embed(w) @ T.T).squeeze())
+        robust = float(sum((C.embed(torch.roll(w, int(sh * SR))) @ T.T).squeeze() for sh in (0.0, 0.37, 0.71, 1.9)) / 4)
+        return dict(score=score, robust=robust, dist=float(C.mrstft(T2.loudness_norm(y[0, 0]), anchor_n))), y[0, 0].detach(), out.detach()
+    def make_candidate(r, noise):
         g = torch.Generator().manual_seed(r)
-        ps = {k: (v.clone().to(DEV) + (0.15 * torch.randn((), generator=g).to(DEV) if r else 0)).requires_grad_(k != "level") for k, v in p_inst.items()}
-        pf = T2.init_fx(r)
-        opt = torch.optim.Adam([v for v in ps.values() if v.requires_grad] + [v for d in pf.values() for v in d.values()], lr=0.02); t0 = time.time()
-        for i in range(steps):
-            opt.zero_grad()
-            y = s_.render(ps, NOTES, L); out, inter, _ = render_grafx(procs, y, pf, rd, input_signal_grad=True)
-            gs = sum(v["gain_reg"].sum() for v in inter if isinstance(v, dict) and "gain_reg" in v)
-            w = T2.loudness_norm(out[0, 0])
-            loss = (-(C.embed(w) @ T.T).squeeze() + T2.LAM_PRI * T2.fx_prior(pf) + T2.LAM_GS * gs
-                    + lam_loc * C.mrstft(T2.loudness_norm(y[0, 0]), T2.loudness_norm(anchor)))     # stay the instrument
-            loss.backward(); opt.step()
-        with torch.no_grad():
-            y = s_.render(ps, NOTES, L); out, _, _ = render_grafx(procs, y, pf, rd); w = T2.loudness_norm(out[0, 0])
-            score = float((C.embed(w) @ T.T).squeeze()); dist = float(C.mrstft(T2.loudness_norm(y[0, 0]), T2.loudness_norm(anchor)))
-        print(f"    restart {r}: score={score:+.4f} dist-to-instrument={dist:.2f} ({(time.time()-t0)/steps*1000:.0f} ms/step)", flush=True)
-        if best is None or score > best[0]: best = (score, dist, {k: v.detach() for k, v in ps.items()}, {t: {k: v.detach() for k, v in d.items()} for t, d in pf.items()}, y[0, 0].detach(), out[0, 0].detach())
-    score, dist, ps, pf, dry, wet = best; d = T2.describe(s_, ps, pf); vp = s_.vital_params(ps)
-    sf.write(os.path.join(OUT, f"{name}__{slug}_dry.wav"), (dry / (dry.abs().max() + 1e-9) * 0.5).cpu().numpy(), SR)
-    sf.write(os.path.join(OUT, f"{name}__{slug}_fx.wav"), (wet / (wet.abs().max() + 1e-9) * 0.5).cpu().numpy(), SR)
-    json.dump({"prompt": prompt, "score": score, "dist": dist, "vital_params": vp, "describe": d}, open(os.path.join(OUT, f"{name}__{slug}.json"), "w"), indent=1)
+        ps = {k: (v.clone().to(DEV) + (noise * torch.randn((), generator=g).to(DEV) if noise else 0)).requires_grad_(k != "level") for k, v in p_inst.items()}
+        return ps, T2.init_fx(r)
+    t0 = time.time()
+    if OPT == "sh":                                                     # successive halving + cosine + L-BFGS polish
+        from optim import Candidate, successive_halving
+        cands = [Candidate(*make_candidate(r, [0, 0.15, 0.15, 0.3, 0.3, 0.5, 0.5, 0.8][r % 8]), label=f"c{r}") for r in range(restarts)]
+        import contextlib
+        @contextlib.contextmanager
+        def fixed_phases():
+            s_.random_phase = False
+            try: yield
+            finally: s_.random_phase = True
+        frontier, total = successive_halving(cands, lambda c: loss_of(c.ps, c.pf), lambda c: evaluate(c.ps, c.pf)[0], rounds=ROUNDS, lr=0.02, polish_ctx=fixed_phases)
+        ev, c = frontier[0]; ps, pf = c.ps, c.pf
+        with torch.no_grad(): ev, dry, wet = evaluate(ps, pf)
+        score, dist = ev["score"], ev["dist"]; ps = {k: v.detach() for k, v in ps.items()}; pf = {t: {k: v.detach() for k, v in d.items()} for t, d in pf.items()}
+        extra = dict(robust=ev["robust"], frontier=[dict(label=c.label, **e) for e, c in frontier], steps=total, opt="sh")
+        print(f"    frontier: " + "  ".join(f"{c.label} {e['score']:+.3f} (robust {e['robust']:+.3f}, dist {e['dist']:.2f})" for e, c in frontier) + f"   {total} steps in {time.time()-t0:.0f}s", flush=True)
+    else:
+        for r in range(restarts):
+            ps, pf = make_candidate(r, 0.15 if r else 0)
+            opt = torch.optim.Adam([v for v in ps.values() if v.requires_grad] + [v for d in pf.values() for v in d.values()], lr=0.02); t1 = time.time()
+            for i in range(steps):
+                opt.zero_grad(); loss = loss_of(ps, pf); loss.backward(); opt.step()
+            with torch.no_grad(): ev, dry_r, wet_r = evaluate(ps, pf)
+            print(f"    restart {r}: score={ev['score']:+.4f} robust={ev['robust']:+.4f} dist-to-instrument={ev['dist']:.2f} ({(time.time()-t1)/steps*1000:.0f} ms/step)", flush=True)
+            if best is None or ev["score"] > best[0]: best = (ev["score"], ev["dist"], {k: v.detach() for k, v in ps.items()}, {t: {k: v.detach() for k, v in d.items()} for t, d in pf.items()}, dry_r, wet_r, ev["robust"])
+        score, dist, ps, pf, dry, wet, robust = best; extra = dict(robust=robust, steps=steps * restarts, opt="adam")
+    d = T2.describe(s_, ps, pf); vp = s_.vital_params(ps)
+    # amount knob: half-way from the instrument to the result (synth in raw space, every FX node half-way from bypass)
+    with torch.no_grad():
+        ps_half = {k: (p_inst[k].to(DEV) + 0.5 * (v - p_inst[k].to(DEV))) for k, v in ps.items()}
+        ev_half, _, wet_half = evaluate(ps_half, T2.CHAIN.scale(pf, 0.5))
+    extra["amount50"] = ev_half
+    sf.write(os.path.join(OUT, f"{name}__{slug}{TAG}_fx_amt50.wav"), (wet_half / (wet_half.abs().max() + 1e-9) * 0.5).cpu().numpy(), SR)
+    sf.write(os.path.join(OUT, f"{name}__{slug}{TAG}_dry.wav"), (dry / (dry.abs().max() + 1e-9) * 0.5).cpu().numpy(), SR)
+    sf.write(os.path.join(OUT, f"{name}__{slug}{TAG}_fx.wav"), (wet / (wet.abs().max() + 1e-9) * 0.5).cpu().numpy(), SR)
+    json.dump({"prompt": prompt, "score": score, "dist": dist, "chain": T2.CHAIN_TYPES, "vital_params": vp, "describe": d, "raw": {k: float(v) for k, v in ps.items()},
+               "fx_raw": {t: {k: v.cpu().tolist() for k, v in dd.items()} for t, dd in pf.items()}, **extra}, open(os.path.join(OUT, f"{name}__{slug}{TAG}.json"), "w"), indent=1)
     sy = d["synth"]
-    print(f"  [{name} + '{prompt}'] score {score:+.3f} dist {dist:.2f} | cutoff {sy['cutoff_raw']:.2f} res {sy['resonance']:.2f} envamt {sy['fenv_amount']:.2f} "
-          f"amp A{sy['attack']*1000:.0f}ms D{sy['decay']:.2f} S{sy['sustain']:.2f} R{sy['release']:.2f} filt D{sy['fdecay']:.2f} S{sy['fsustain']:.2f} | eq {d['eq']} drive {d['drive_db']} reverb {d['reverb_mix']}", flush=True)
+    print(f"  [{name} + '{prompt}'] score {score:+.3f} (robust {extra['robust']:+.3f}, at 50% amount {ev_half['score']:+.3f}) dist {dist:.2f} | cutoff {sy['cutoff_raw']:.2f} res {sy['resonance']:.2f} envamt {sy['fenv_amount']:.2f} "
+          f"amp A{sy['attack']*1000:.0f}ms D{sy['decay']:.2f} S{sy['sustain']:.2f} R{sy['release']:.2f} filt D{sy['fdecay']:.2f} S{sy['fsustain']:.2f} | {', '.join(f'{k}={v}' for k, v in d.items() if k != 'synth')}", flush=True)
 
 if __name__ == "__main__":
     PROMPTS = ["airy, soft and light, whistling through the trees", "under water, in the deep depths, burbling"]
