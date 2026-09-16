@@ -20,6 +20,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 from fantasia_core.engine.eq import band_as_fx, struct_sig
+from fantasia_core.engine.levels import block_peak, fx_meter_key
 
 try:
     import pedalboard as pb
@@ -36,9 +37,11 @@ def _make(spec: dict):
     try:
         if kind == "reverb":
             return pb.Reverb(
-                room_size=p.get("room_size", 0.6),
-                wet_level=p.get("wet", 0.35),
-                dry_level=p.get("dry", 0.7),
+                room_size=p.get("room_size", 0.5),
+                damping=p.get("damping", 0.5),
+                wet_level=p.get("wet", 0.30),
+                dry_level=p.get("dry", 0.70),
+                width=p.get("width", 1.0),
             )
         if kind == "delay":
             return pb.Delay(
@@ -51,9 +54,20 @@ def _make(spec: dict):
         if kind == "highpass":
             return pb.HighpassFilter(cutoff_frequency_hz=p.get("cutoff", 250.0))
         if kind == "chorus":
-            return pb.Chorus()
+            return pb.Chorus(
+                rate_hz=p.get("rate", 1.0),
+                depth=p.get("depth", 0.25),
+                centre_delay_ms=p.get("centre_delay", 7.0),
+                feedback=p.get("feedback", 0.0),
+                mix=p.get("mix", 0.5),
+            )
         if kind == "distortion":
-            return pb.Distortion(drive_db=p.get("drive", 12.0))
+            drive = float(p.get("drive", 12.0))
+            out = float(p.get("output", -drive * 0.35))
+            return pb.Pedalboard([
+                pb.Distortion(drive_db=drive),
+                pb.Gain(gain_db=out),
+            ])
 
         # ---- EQ bands -----------------------------------------------------
         # A "bell": boost/cut a band centred on freq. Q sets its width
@@ -71,10 +85,13 @@ def _make(spec: dict):
 
         # ---- dynamics -----------------------------------------------------
         if kind == "compressor":
-            return pb.Compressor(
-                threshold_db=p.get("threshold", -16.0), ratio=p.get("ratio", 4.0),
-                attack_ms=p.get("attack", 10.0), release_ms=p.get("release", 100.0),
-            )
+            return pb.Pedalboard([
+                pb.Compressor(
+                    threshold_db=p.get("threshold", -16.0), ratio=p.get("ratio", 4.0),
+                    attack_ms=p.get("attack", 10.0), release_ms=p.get("release", 100.0),
+                ),
+                pb.Gain(gain_db=p.get("makeup", 0.0)),
+            ])
         if kind == "limiter":
             # NOT pedalboard's Limiter: that one applies makeup gain up to the
             # threshold (a maximizer), so it can push a quiet track to full
@@ -102,6 +119,8 @@ def _make(spec: dict):
         if kind == "gain":
             return pb.Gain(gain_db=p.get("gain", 0.0))
 
+        if kind == "mix":
+            return None
         if kind == "vst":
             path = p.get("path") or p.get("name")
             if not path:
@@ -148,20 +167,38 @@ def _sync_one(plugin, spec: dict) -> None:
     elif kind == "gain":
         _set_num(plugin, ("gain_db", "gain"), p.get("gain", 0.0))
     elif kind == "reverb":
-        _set_num(plugin, ("wet_level",), p.get("wet", 0.35))
-        _set_num(plugin, ("dry_level",), p.get("dry", 0.7))
-        _set_num(plugin, ("room_size",), p.get("room_size", 0.6))
+        _set_num(plugin, ("wet_level",), p.get("wet", 0.30))
+        _set_num(plugin, ("dry_level",), p.get("dry", 0.70))
+        _set_num(plugin, ("room_size",), p.get("room_size", 0.5))
+        _set_num(plugin, ("damping",), p.get("damping", 0.5))
+        _set_num(plugin, ("width",), p.get("width", 1.0))
     elif kind == "delay":
         _set_num(plugin, ("delay_seconds",), p.get("time", 0.25))
         _set_num(plugin, ("feedback",), p.get("feedback", 0.3))
         _set_num(plugin, ("mix",), p.get("mix", 0.3))
+    elif kind == "chorus":
+        _set_num(plugin, ("rate_hz",), p.get("rate", 1.0))
+        _set_num(plugin, ("depth",), p.get("depth", 0.25))
+        _set_num(plugin, ("centre_delay_ms",), p.get("centre_delay", 7.0))
+        _set_num(plugin, ("feedback",), p.get("feedback", 0.0))
+        _set_num(plugin, ("mix",), p.get("mix", 0.5))
     elif kind == "distortion":
-        _set_num(plugin, ("drive_db",), p.get("drive", 12.0))
+        drive = float(p.get("drive", 12.0))
+        children = list(plugin) if plugin is not None and hasattr(plugin, "__iter__") else []
+        if children:
+            _set_num(children[0], ("drive_db",), drive)
+            _set_num(children[1], ("gain_db", "gain"), p.get("output", -drive * 0.35))
+        else:
+            _set_num(plugin, ("drive_db",), drive)
     elif kind == "compressor":
-        _set_num(plugin, ("threshold_db",), p.get("threshold", -16.0))
-        _set_num(plugin, ("ratio",), p.get("ratio", 4.0))
-        _set_num(plugin, ("attack_ms",), p.get("attack", 10.0))
-        _set_num(plugin, ("release_ms",), p.get("release", 100.0))
+        children = list(plugin) if plugin is not None and hasattr(plugin, "__iter__") else []
+        target = children[0] if children else plugin
+        _set_num(target, ("threshold_db",), p.get("threshold", -16.0))
+        _set_num(target, ("ratio",), p.get("ratio", 4.0))
+        _set_num(target, ("attack_ms",), p.get("attack", 10.0))
+        _set_num(target, ("release_ms",), p.get("release", 100.0))
+        if len(children) > 1:
+            _set_num(children[1], ("gain_db", "gain"), p.get("makeup", 0.0))
     elif kind == "limiter":
         _set_num(plugin, ("threshold_db",), p.get("threshold", -1.0))
         _set_num(plugin, ("ratio",), p.get("ratio", 20.0))
@@ -221,16 +258,20 @@ class FxHost:
         self._dag_plugins: Dict[str, dict] = {}  # track_id -> {insert_id: plugin}
         self._dag_bufs: Dict[str, dict] = {}
 
-    def process(self, track, audio: np.ndarray, sr: int) -> np.ndarray:  # noqa: ANN001
+    def process(self, track, audio: np.ndarray, sr: int,  # noqa: ANN001
+                level_tap=None) -> np.ndarray:
         specs = getattr(track, "fx", None) or []
+        tid = getattr(track, "id", "")
         if not specs or pb is None:
+            self._tap(level_tap, tid, "in", "out", audio)
+            self._tap(level_tap, tid, "out", "in", audio)
             return audio
-        from fantasia_core.document.fx_insert import effective_wires, is_serial
+        from fantasia_core.document.fx_insert import is_serial
 
         wires = getattr(track, "fx_wires", None) or []
         sig = struct_sig(specs, wires)
         if not is_serial(specs, wires):
-            return self._process_dag(track, audio, sr, specs, wires, sig)
+            return self._process_dag(track, audio, sr, specs, wires, sig, level_tap)
 
         entry = self._cache.get(track.id)
         if entry is None or entry[0] != sig:
@@ -243,9 +284,35 @@ class FxHost:
             except Exception:  # noqa: BLE001 — fall back to a rebuild
                 board = build_board(specs)
                 self._cache[track.id] = (sig, board)
-        if board is None:
-            return audio
-        return self._run(board, audio, sr)
+        return self._run_serial(tid, board, audio, sr, specs, level_tap)
+
+    def _tap(self, tap, track_id, nid, side, block) -> None:  # noqa: ANN001
+        if tap is None:
+            return
+        tap.write_peak(fx_meter_key(track_id, nid, side), block_peak(block))
+
+    def _run_serial(self, track_id, board, audio, sr, specs, level_tap) -> np.ndarray:  # noqa: ANN001
+        """Walk each insert so I/O peaks are free extras on existing buffers."""
+        from fantasia_core.document.fx_insert import (
+            OUT, SOURCE, as_dict, insert_bypassed, insert_id,
+        )
+
+        buf = audio
+        self._tap(level_tap, track_id, SOURCE, "out", buf)
+        children = list(board) if board is not None else []
+        idx = 0
+        for spec in specs:
+            nid = insert_id(spec) or as_dict(spec).get("type") or ""
+            self._tap(level_tap, track_id, nid, "in", buf)
+            if insert_bypassed(spec) or as_dict(spec).get("type") == "mix":
+                self._tap(level_tap, track_id, nid, "out", buf)
+                continue
+            if idx < len(children):
+                buf = self._run(children[idx], buf, sr)
+                idx += 1
+            self._tap(level_tap, track_id, nid, "out", buf)
+        self._tap(level_tap, track_id, OUT, "in", buf)
+        return buf
 
     def _run(self, board, audio: np.ndarray, sr: int) -> np.ndarray:  # noqa: ANN001
         try:
@@ -260,10 +327,11 @@ class FxHost:
             out = out[:n]
         return out
 
-    def _process_dag(self, track, audio, sr, specs, wires, sig) -> np.ndarray:  # noqa: ANN001
+    def _process_dag(self, track, audio, sr, specs, wires, sig,  # noqa: ANN001
+                     level_tap=None) -> np.ndarray:
         """Branch/merge graph: mix on join, copy on split. Off the serial board."""
         from fantasia_core.document.fx_insert import (
-            OUT, SOURCE, as_dict, as_insert, effective_wires, insert_id,
+            OUT, SOURCE, as_dict, effective_wires, insert_id,
             topo_order,
         )
 
@@ -290,7 +358,7 @@ class FxHost:
                         _sync_one(plugins[nid], d)
             except Exception:  # noqa: BLE001
                 self._cache.pop(track.id, None)
-                return self._process_dag(track, audio, sr, specs, wires, sig)
+                return self._process_dag(track, audio, sr, specs, wires, sig, level_tap)
 
         graph = effective_wires(specs, wires)
         order = topo_order(specs, wires)
@@ -303,25 +371,42 @@ class FxHost:
         for spec in specs:
             by_id.setdefault(insert_id(spec) or as_dict(spec).get("type"), spec)
         bufs: dict = {SOURCE: audio}
+        tid = getattr(track, "id", "")
+        self._tap(level_tap, tid, SOURCE, "out", audio)
         for nid in order:
             spec = by_id.get(nid)
             if spec is None:
                 continue
             incoming = [w.src for w in graph if w.dst == nid]
             mixed = self._mix_inputs(audio, bufs, incoming)
+            self._tap(level_tap, tid, nid, "in", mixed)
             d = as_dict(spec)
+            if d.get("type") == "mix" and not d.get("bypassed"):
+                params = d.get("params") or {}
+                bufs[nid] = self._blend_inputs(
+                    audio, bufs, incoming,
+                    wet=float(params.get("wet", 0.5)),
+                    dry_src=str(params.get("dry_src") or ""),
+                    wet_src=str(params.get("wet_src") or ""),
+                )
+                self._tap(level_tap, tid, nid, "out", bufs[nid])
+                continue
             plug = plugins.get(nid)
             if d.get("bypassed") or plug is None:
                 bufs[nid] = mixed
-                continue
-            try:
-                bufs[nid] = self._run(plug, mixed, sr)
-            except Exception:  # noqa: BLE001
-                bufs[nid] = mixed
+            else:
+                try:
+                    bufs[nid] = self._run(plug, mixed, sr)
+                except Exception:  # noqa: BLE001
+                    bufs[nid] = mixed
+            self._tap(level_tap, tid, nid, "out", bufs[nid])
         outgoing = [w.src for w in graph if w.dst == OUT]
         if not outgoing:
+            self._tap(level_tap, tid, OUT, "in", audio)
             return audio
-        return self._mix_inputs(audio, bufs, outgoing)
+        mixed_out = self._mix_inputs(audio, bufs, outgoing)
+        self._tap(level_tap, tid, OUT, "in", mixed_out)
+        return mixed_out
 
     def _mix_inputs(self, audio: np.ndarray, bufs: dict, srcs: list) -> np.ndarray:
         if not srcs:
@@ -336,3 +421,21 @@ class FxHost:
             else:
                 acc += block
         return acc if acc is not None else np.zeros_like(audio)
+
+    def _blend_inputs(self, audio: np.ndarray, bufs: dict, incoming: list,
+                      wet: float, dry_src: str = "", wet_src: str = "") -> np.ndarray:
+        """Two-bus dry/wet join: ``(1-wet)*dry + wet*wet_bus``."""
+        dry_key = dry_src if dry_src in bufs else (incoming[0] if incoming else "")
+        rest = [s for s in incoming if s != dry_key]
+        wet_key = wet_src if wet_src in bufs else (rest[0] if rest else "")
+        dry = bufs.get(dry_key)
+        wet_bus = bufs.get(wet_key)
+        if dry is None and wet_bus is None:
+            return np.zeros_like(audio)
+        if dry is None:
+            return np.array(wet_bus, dtype=np.float32, copy=True)
+        if wet_bus is None:
+            return np.array(dry, dtype=np.float32, copy=True)
+        amount = max(0.0, min(1.0, float(wet)))
+        return (np.asarray(dry, dtype=np.float32) * (1.0 - amount)
+                + np.asarray(wet_bus, dtype=np.float32) * amount)

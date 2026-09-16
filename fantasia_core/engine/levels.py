@@ -10,7 +10,19 @@ import math
 
 import numpy as np
 
-CAP = 64
+CAP = 256
+
+
+def fx_meter_key(track_id: str, nid: str, side: str) -> str:
+    """Stable LevelTap key for an FX-node input or output peak."""
+    return f"fx:{track_id}:{nid}:{side}"
+
+
+def block_peak(block: np.ndarray) -> float:
+    """Cheap peak of a stereo block already sitting in memory."""
+    if block is None or getattr(block, "size", 0) == 0:
+        return 0.0
+    return max(abs(float(np.max(block))), abs(float(np.min(block))))
 
 
 def amp_to_db(amp: float, floor_db: float = -60.0) -> float:

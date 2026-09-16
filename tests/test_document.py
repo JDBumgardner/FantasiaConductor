@@ -135,6 +135,11 @@ def test_fx_params_apply_nested_eq_band():
     assert params["bands"][0]["gain"] == 3.5
     specs = specs_for("reverb", {})
     assert any(s.key == "wet" for s in specs)
+    chorus = specs_for("chorus", {})
+    assert {s.key for s in chorus} >= {"rate", "depth", "mix"}
+    thresh = next(s for s in specs_for("compressor", {}) if s.key == "threshold")
+    assert thresh.invert is True
+    assert thresh.minimum < thresh.maximum
     wet = next(s for s in specs if s.key == "wet")
     assert read_param({"wet": 0.2}, wet) == 0.2
 

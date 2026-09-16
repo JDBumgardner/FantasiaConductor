@@ -119,6 +119,8 @@ class Track:
     # list means the implicit serial graph in → fx[0] → … → out.
     fx: list = field(default_factory=list)
     fx_wires: list = field(default_factory=list)  # list of :class:`FxWire`
+    # Source / Out node-editor positions: {"in": [x, y], "out": [x, y]}.
+    fx_graph_pos: dict = field(default_factory=dict)
     instrument: int = 0  # GM program / soundfont preset for MIDI clips
     is_drum: bool = False  # render MIDI on the GM percussion bank (drum kit)
     is_synth: bool = False  # render MIDI with the built-in subtractive synth

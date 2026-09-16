@@ -206,6 +206,9 @@ class TrackHeader(QWidget):
     pan_changed = Signal(str, float)  # -1..1
     clicked = Signal(str)  # track_id (selection)
     fx_action = Signal(str, str)  # (track_id, action) from the FX context menu
+    reorder_dragged = Signal(str, int)  # track_id, global Y
+    reorder_dropped = Signal(str, int)  # track_id, global Y
+    reorder_cancelled = Signal()
 
     def __init__(self, track: Track, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -215,8 +218,11 @@ class TrackHeader(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setAutoFillBackground(False)
         self._selected = False
+        self._press_global = None
+        self._reordering = False
         self._build(track)
         self._install_selection_filter()
+        self.setToolTip("Drag the name row to reorder tracks")
 
     def _build(self, track: Track) -> None:
         outer = QVBoxLayout(self)
@@ -238,7 +244,7 @@ class TrackHeader(QWidget):
         self.name_edit.setReadOnly(True)
         self.name_edit.setFocusPolicy(Qt.NoFocus)
         self.name_edit.setCursor(Qt.ArrowCursor)
-        self.name_edit.setToolTip("Double-click or press F2 to rename")
+        self.name_edit.setToolTip("Double-click or press F2 to rename · drag to reorder")
         self.name_edit.setStyleSheet(
             f"color:{theme.FG_BRIGHT}; background:transparent; font-weight:700; font-size:12px;")
         self._renaming = False
@@ -571,9 +577,35 @@ class TrackHeader(QWidget):
         window = self.window()
         return getattr(window, "header_panel", None)
 
+    def _reorder_handles(self):
+        handles = {self, self.name_edit, self.fx_badge}
+        swatch = getattr(self, "_swatch", None)
+        if swatch is not None:
+            handles.add(swatch)
+        return handles
+
+    def _end_reorder(self, drop: bool, global_y: int = 0) -> None:
+        if self._reordering:
+            try:
+                self.releaseMouse()
+            except RuntimeError:
+                pass
+            self.unsetCursor()
+            if drop:
+                self.reorder_dropped.emit(self.track_id, int(global_y))
+            else:
+                self.reorder_cancelled.emit()
+        self._press_global = None
+        self._reordering = False
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._end_reorder(drop=False)
+        super().hideEvent(event)
+
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         et = event.type()
         if obj is self.name_edit and et == QEvent.MouseButtonDblClick:
+            self._end_reorder(drop=False)
             self.clicked.emit(self.track_id)
             self.begin_rename()
             return True
@@ -581,14 +613,35 @@ class TrackHeader(QWidget):
             if event.key() == Qt.Key_Escape:
                 self._end_rename(commit=False)
                 return True
-        if et == QEvent.MouseButtonPress:
+        if et == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
             # Clicking M/S/fader/pan on an already-selected header must not
             # collapse a multi-select. Name / swatch / empty chrome still select.
             if obj in (self, self.name_edit) or obj is getattr(self, "_swatch", None):
                 self.clicked.emit(self.track_id)
             elif not self._selected:
                 self.clicked.emit(self.track_id)
+            if obj in self._reorder_handles() and not self._renaming:
+                self._press_global = event.globalPosition().toPoint()
+                self._reordering = False
+        elif et == QEvent.MouseMove and self._press_global is not None:
+            pos = event.globalPosition().toPoint()
+            if (not self._reordering
+                    and self._selected
+                    and abs(pos.y() - self._press_global.y()) > 8):
+                self._reordering = True
+                self.grabMouse()
+                self.setCursor(Qt.SizeVerCursor)
+            if self._reordering:
+                self.reorder_dragged.emit(self.track_id, pos.y())
+                return True
+        elif et == QEvent.MouseButtonRelease and self._press_global is not None:
+            pos = event.globalPosition().toPoint()
+            dragging = self._reordering
+            self._end_reorder(drop=dragging, global_y=pos.y())
+            if dragging:
+                return True
         elif et == QEvent.ContextMenu:
+            self._end_reorder(drop=False)
             self._show_fx_menu(event.globalPos())
             return True  # consume; show the FX menu instead
         return False  # otherwise don't consume; let the control handle it too
@@ -706,6 +759,7 @@ class TrackHeaderPanel(QScrollArea):
     pan_changed = Signal(str, float)
     fx_action = Signal(str, str)
     track_step_requested = Signal(int)  # -1 previous, +1 next
+    track_reordered = Signal(str, int)  # track_id, dest index
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -740,6 +794,11 @@ class TrackHeaderPanel(QScrollArea):
 
         self.setWidget(self._content)
         self._headers: dict[str, TrackHeader] = {}
+        self._drop_line = QWidget(self._content)
+        self._drop_line.setFixedHeight(2)
+        self._drop_line.setStyleSheet(f"background:{theme.CYAN};")
+        self._drop_line.hide()
+        self._dragging_id = ""
 
     def rebuild(self, project) -> None:
         for header in self._headers.values():
@@ -756,6 +815,9 @@ class TrackHeaderPanel(QScrollArea):
             header.gain_changed.connect(self.gain_changed.emit)
             header.pan_changed.connect(self.pan_changed.emit)
             header.fx_action.connect(self.fx_action.emit)
+            header.reorder_dragged.connect(self._on_reorder_drag)
+            header.reorder_dropped.connect(self._on_reorder_drop)
+            header.reorder_cancelled.connect(self._hide_drop_line)
             # Insert before the trailing stretch.
             self._layout.insertWidget(self._layout.count() - 1, header)
             self._headers[track.id] = header
@@ -765,6 +827,56 @@ class TrackHeaderPanel(QScrollArea):
         # timeline. The stretch keeps headers top-packed until this forces scroll.
         n = len(project.tracks)
         self._content.setMinimumHeight(RULER_H + n * TRACK_H + TRACK_H + 24)
+
+    def ordered_headers(self) -> list[TrackHeader]:
+        rows: list[TrackHeader] = []
+        for i in range(self._layout.count()):
+            widget = self._layout.itemAt(i).widget()
+            if isinstance(widget, TrackHeader):
+                rows.append(widget)
+        return rows
+
+    def drop_index_at(self, global_y: int, dragging_id: str = "") -> int:
+        """Final list index if ``dragging_id`` were dropped at ``global_y``."""
+        origin = self._content.mapToGlobal(QPoint(0, 0))
+        y = int(global_y) - origin.y()
+        dest = 0
+        for header in self.ordered_headers():
+            if header.track_id == dragging_id:
+                continue
+            if y >= header.geometry().center().y():
+                dest += 1
+        return dest
+
+    def _on_reorder_drag(self, track_id: str, global_y: int) -> None:
+        self._dragging_id = track_id
+        dest = self.drop_index_at(global_y, track_id)
+        others = [h for h in self.ordered_headers() if h.track_id != track_id]
+        if dest <= 0:
+            y = RULER_H
+        elif dest >= len(others):
+            last = others[-1] if others else None
+            y = (last.geometry().bottom() if last is not None else RULER_H)
+        else:
+            y = others[dest].geometry().top()
+        self._drop_line.setGeometry(0, max(RULER_H, y) - 1, self._content.width(), 2)
+        self._drop_line.show()
+        self._drop_line.raise_()
+
+    def _on_reorder_drop(self, track_id: str, global_y: int) -> None:
+        dest = self.drop_index_at(global_y, track_id)
+        self._hide_drop_line()
+        current = next(
+            (i for i, h in enumerate(self.ordered_headers()) if h.track_id == track_id),
+            None,
+        )
+        if current is None or dest == current:
+            return
+        self.track_reordered.emit(track_id, dest)
+
+    def _hide_drop_line(self) -> None:
+        self._dragging_id = ""
+        self._drop_line.hide()
 
     def set_selected(self, track_ids) -> None:  # noqa: ANN001
         """``track_ids`` is one id or an iterable of ids."""

@@ -522,10 +522,10 @@ class TimelineView(QGraphicsView):
     def snap(self, seconds: float) -> float:
         return snap_time(seconds, self._grid_seconds())
 
-    def locate(self, seconds: float) -> None:
-        """Set the play-start locator (snapped). Moves the cursor when stopped."""
+    def locate(self, seconds: float, *, snap: bool = True) -> None:
+        """Set the play-start locator. Moves the cursor when stopped."""
         old = self.start_position
-        t = max(0.0, self.snap(seconds))
+        t = max(0.0, self.snap(seconds) if snap else float(seconds))
         self.start_position = t
         if not self.playback_active:
             self.set_playhead(t)
@@ -801,10 +801,13 @@ class TimelineView(QGraphicsView):
                 event.accept()
                 return
             already = clip_item.isSelected()
-            # Selecting a MIDI clip must not move the locator. Once it is
-            # already selected, a click on it (or elsewhere) sets the locator.
+            # A newly selected MIDI clip parks the locator at the clip start.
+            # A second click on an already-selected clip (or any audio clip)
+            # locates to the clicked time.
             if already or not clip_item.clip.is_midi:
                 self.locate(max(0.0, scene_pos.x() / self.pps))
+            else:
+                self.locate(float(clip_item.clip.start), snap=False)
         if event.button() == Qt.LeftButton and not isinstance(clip_item, ClipItem):
             # Empty-lane press: wait to see if this is a drag (interval select)
             # or a click (locate playhead). Do not locate until release.

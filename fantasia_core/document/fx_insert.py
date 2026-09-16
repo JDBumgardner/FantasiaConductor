@@ -230,6 +230,18 @@ def would_cycle(wires: Sequence[FxWire], src: str, dst: str) -> bool:
     return src in reachable(wires, dst)
 
 
+def incoming_srcs(wires: Sequence[FxWire], dst: str) -> list[str]:
+    """Sources that currently feed ``dst``, in wire order."""
+    return [w.src for w in copy_wires(wires) if w.dst == dst]
+
+
+def is_wired(nid: str, wires: Sequence[FxWire]) -> bool:
+    """True when ``nid`` appears on any edge (Source/Out count as wired)."""
+    if nid in (SOURCE, OUT):
+        return True
+    return any(w.src == nid or w.dst == nid for w in wires or [])
+
+
 def connect_wire(wires: Sequence[FxWire], src: str, dst: str) -> Optional[list[FxWire]]:
     """Return a new wire list with src→dst, or None if the link is illegal."""
     if not src or not dst or src == dst:
@@ -266,6 +278,18 @@ def rewire_remove(wires: Sequence[FxWire], node_id: str) -> list[FxWire]:
             kept.append(FxWire(p, s))
             seen.add(key)
     return kept
+
+
+def splice_into_edge(wires: Sequence[FxWire], node_id: str,
+                     edge_src: str, edge_dst: str) -> Optional[list[FxWire]]:
+    """Put ``node_id`` on the edge ``edge_src → edge_dst``. None if illegal."""
+    if not node_id or node_id in (edge_src, edge_dst) or not edge_src or not edge_dst:
+        return None
+    current = disconnect_wire(wires, edge_src, edge_dst)
+    a = connect_wire(current, edge_src, node_id)
+    if a is None:
+        return None
+    return connect_wire(a, node_id, edge_dst)
 
 
 def splice_before_out(wires: Sequence[FxWire], new_id: str) -> list[FxWire]:
@@ -340,6 +364,7 @@ def linear_order(chain: Sequence, wires: Optional[Sequence] = None) -> list[str]
 
 STOCK_FX = (
     ("eq", "Stock EQ"),
+    ("mix", "Dry / Wet Mix"),
     ("reverb", "Reverb"),
     ("delay", "Delay"),
     ("compressor", "Compressor"),

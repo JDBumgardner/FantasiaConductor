@@ -1,4 +1,4 @@
-"""Combined bottom editor — Piano / Chain / Graph / Synth / EQ, in the splitter."""
+"""Combined bottom editor — Piano / Plugin Graph / Chain / Synth / EQ, in the splitter."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui import theme
+from ui.device_panel import DevicePanel
 from ui.eq_curve import EqEditor
 from ui.fx_graph import FxGraphEditor
 from ui.piano_roll import PianoRollPanel
@@ -29,9 +30,10 @@ MODE_SYNTH = 1
 MODE_EQ = 2
 MODE_CHAIN = 3
 MODE_GRAPH = 4
+MODE_DEVICE = 5
 
-# Shift-E cycle (synth/EQ are extra tabs, not in this loop).
-CYCLE = ("piano", "chain", "graph", "off")
+# Shift-E cycle (synth/EQ/device are extra tabs, not in this loop).
+CYCLE = ("piano", "graph", "chain", "off")
 
 
 class EditorDock(QWidget):
@@ -69,24 +71,28 @@ class EditorDock(QWidget):
         row = QHBoxLayout(bar)
         row.setContentsMargins(6, 4, 6, 4)
         row.setSpacing(6)
-        self.btn_piano = QPushButton("🎹 Piano Roll")
-        self.btn_chain = QPushButton("🔗 Chain")
-        self.btn_graph = QPushButton("◇ Graph")
-        self.btn_synth = QPushButton("🎛 Synth")
-        self.btn_eq = QPushButton("📈 EQ")
+        self.btn_piano = QPushButton("Piano Roll")
+        self.btn_graph = QPushButton("Plugin Graph")
+        self.btn_chain = QPushButton("Chain")
+        self.btn_synth = QPushButton("Synth")
+        self.btn_eq = QPushButton("EQ")
+        self.btn_device = QPushButton("Device")
         group = QButtonGroup(self)
         group.setExclusive(True)
-        for b in (self.btn_piano, self.btn_chain, self.btn_graph, self.btn_synth, self.btn_eq):
+        for b in (self.btn_piano, self.btn_graph, self.btn_chain, self.btn_synth,
+                  self.btn_eq, self.btn_device):
             b.setCheckable(True)
             b.setMinimumWidth(96)
             b.setStyleSheet(tab_btn)
             group.addButton(b)
         self.btn_piano.setChecked(True)
         row.addWidget(self.btn_piano)
-        row.addWidget(self.btn_chain)
         row.addWidget(self.btn_graph)
+        row.addWidget(self.btn_chain)
         row.addWidget(self.btn_synth)
         row.addWidget(self.btn_eq)
+        row.addWidget(self.btn_device)
+        self.btn_device.hide()
         row.addStretch(1)
         self.btn_close = QPushButton("✕")
         self.btn_close.setToolTip("Close the editor panel")
@@ -112,11 +118,13 @@ class EditorDock(QWidget):
         self.eq = EqEditor()
         self.chain = SignalChainView()
         self.graph = FxGraphEditor()
+        self.device = DevicePanel()
         self.stack.addWidget(self.piano)         # 0
         self.stack.addWidget(synth_scroll)       # 1
         self.stack.addWidget(self.eq)            # 2
         self.stack.addWidget(self.chain)         # 3
         self.stack.addWidget(self.graph)         # 4
+        self.stack.addWidget(self.device)        # 5
         self.stack.setMinimumHeight(60)
         self.view = self.piano.view
 
@@ -128,6 +136,8 @@ class EditorDock(QWidget):
         self.btn_eq.clicked.connect(lambda: self._set_mode(MODE_EQ))
         self.btn_chain.clicked.connect(lambda: self._set_mode(MODE_CHAIN))
         self.btn_graph.clicked.connect(lambda: self._set_mode(MODE_GRAPH))
+        self.btn_device.clicked.connect(lambda: self._set_mode(MODE_DEVICE))
+        self.device.back_requested.connect(lambda: self._set_mode(MODE_GRAPH))
         self.btn_close.clicked.connect(self.close_panel)
         self.hide()
 
@@ -204,9 +214,13 @@ class EditorDock(QWidget):
         self.btn_eq.setChecked(idx == MODE_EQ)
         self.btn_chain.setChecked(idx == MODE_CHAIN)
         self.btn_graph.setChecked(idx == MODE_GRAPH)
+        self.btn_device.setChecked(idx == MODE_DEVICE)
+        self.btn_device.setVisible(idx == MODE_DEVICE or self.btn_device.isVisible())
         names = {MODE_PIANO: "piano", MODE_SYNTH: "synth", MODE_EQ: "eq",
-                 MODE_CHAIN: "chain", MODE_GRAPH: "graph"}
+                 MODE_CHAIN: "chain", MODE_GRAPH: "graph", MODE_DEVICE: "device"}
         self.mode_changed.emit(names.get(idx, "piano"))
+        if idx == MODE_GRAPH:
+            self.graph.view.setFocus(Qt.OtherFocusReason)
 
     def switch_to_piano_mode(self) -> None:
         self._set_mode(MODE_PIANO)
@@ -238,13 +252,20 @@ class EditorDock(QWidget):
             self.graph.set_track(track)
         self._set_mode(MODE_GRAPH)
         self._reveal()
+        self.graph.view.setFocus(Qt.OtherFocusReason)
+
+    def show_device(self, insert, track_name: str = "") -> None:  # noqa: ANN001
+        self.device.set_insert(insert, track_name)
+        self.btn_device.show()
+        self._set_mode(MODE_DEVICE)
+        self._reveal()
 
     def next_cycle_action(self) -> str:
-        """Name of the next Shift-E state: piano, chain, graph, or off."""
+        """Name of the next Shift-E state: piano, graph, chain, or off."""
         if not self.is_open():
             return "piano"
         name = self.current_cycle_name()
-        if self.stack.currentIndex() in (MODE_SYNTH, MODE_EQ):
-            return "chain"
-        nxt = {"piano": "chain", "chain": "graph", "graph": "off"}
-        return nxt.get(name, "chain")
+        if self.stack.currentIndex() in (MODE_SYNTH, MODE_EQ, MODE_DEVICE):
+            return "graph"
+        nxt = {"piano": "graph", "graph": "chain", "chain": "off"}
+        return nxt.get(name, "graph")
