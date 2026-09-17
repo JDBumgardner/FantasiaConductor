@@ -17,7 +17,7 @@ into Vital's own 0-1 raw space, so `vital_params()` is a direct read-out.
 """
 from __future__ import annotations
 import math, os, sys
-import numpy as np, torch, torch.nn as nn
+import numpy as np, torch, torch.nn as nn, torch.utils.checkpoint
 TAIL_MAX = 2.0        # longest release tail rendered after note-off (memory bound; longer releases fade out here)
 
 
@@ -266,7 +266,7 @@ class WavetableSynth(nn.Module):
         i0 = torch.floor(pos).long() % self.W; frac = pos - torch.floor(pos)
         return table[i0] * (1 - frac) + table[(i0 + 1) % self.W] * frac
 
-    def _chunk(self, t, f0, dur, vel, tables, detune, blend, level, attack, decay, sustain, release, filt=None, extra=None):
+    def _chunk(self, t, f0, dur, vel, tables, detune, blend, level, attack, decay, sustain, release, filt=None, extra=None, ph0=None):
         """B notes sharing one duration and one mip table. t: (T,), f0/vel: (B,). -> (B, T).
         filt: dict(cutoff_raw, resonance, fenv_amount, fattack, fdecay, fsustain, frelease) or None."""
         ph = dict(attack=attack, decay=decay, sustain=sustain, release=release, attack_power=extra["attack_power"],
@@ -275,8 +275,7 @@ class WavetableSynth(nn.Module):
         env = (self.envelope_shape(t, dur, ph)[None, :] * vshape[:, None]) ** 2                 # amp path: squared
         sig = torch.zeros_like(env); wsq = 0.0
         B = f0.shape[0]
-        ph0 = torch.rand(self.voices, B, device=t.device) if self.random_phase \
-              else (self.voice_phase / (2 * math.pi))[:, None].expand(self.voices, B)
+        if ph0 is None: ph0 = self.draw_phases(B, t.device)
         for v in range(self.voices):
             fv = f0 * 2 ** (self.voice_offset[v] * detune / 12)
             # phase in turns, wrapped: float32 at 1e6 rad loses ~0.1 rad and devices differ
@@ -305,6 +304,12 @@ class WavetableSynth(nn.Module):
             G, Q = self.res_law(filt["resonance"])
             sig = self.tv_lowpass(sig, fc.expand(sig.shape[0], -1), G, Q, extra.get("fblend", None))
         return self.OUT_GAIN * env * sig
+
+    def draw_phases(self, B, device):
+        """Per-note start phases in turns: Vital draws a random phase per note; deterministic mode uses the voice phases."""
+        return torch.rand(self.voices, B, device=device) if self.random_phase else (self.voice_phase / (2 * math.pi))[:, None].expand(self.voices, B)
+
+    checkpoint = False        # recompute each note group's forward in backward: ~400 MB -> ~30 MB saved activations at 20 notes
 
     def render(self, p, notes, L, chunk=80):
         dev = self.table.device; ph = self.physical(p)
@@ -339,7 +344,15 @@ class WavetableSynth(nn.Module):
             for i in range(0, len(group), chunk):
                 g = group[i:i + chunk]
                 f0 = torch.tensor([x[0] for x in g], device=dev); vel = torch.tensor([float(x[2]) for x in g], device=dev)
-                sig = self._chunk(t, f0, dur, vel, [tb[cut] for tb in tables], *args, filt=filt, extra=extra)
+                ph0 = self.draw_phases(len(g), dev)                       # drawn outside the checkpoint so the recompute sees the same phases
+                if self.checkpoint and torch.is_grad_enabled():
+                    fk, fv_ = (list(filt.keys()), list(filt.values())) if filt is not None else ([], []); ek, ev = list(extra.keys()), list(extra.values())
+                    def fn(t, f0, vel, ph0, *flat, tables=[tb[cut] for tb in tables], nf=len(fv_), fk=fk, ek=ek):
+                        a = flat[:len(args)]; fl = dict(zip(fk, flat[len(args):len(args) + nf])) if fk else None; ex = dict(zip(ek, flat[len(args) + nf:]))
+                        return self._chunk(t, f0, dur, vel, tables, *a, filt=fl, extra=ex, ph0=ph0)
+                    sig = torch.utils.checkpoint.checkpoint(fn, t, f0, vel, ph0, *args, *fv_, *ev, use_reentrant=False, preserve_rng_state=False)
+                else:
+                    sig = self._chunk(t, f0, dur, vel, [tb[cut] for tb in tables], *args, filt=filt, extra=extra, ph0=ph0)
                 if fade is not None: sig = torch.cat([sig[:, :-len(fade)], sig[:, -len(fade):] * fade], -1)
                 for row, (_, start, _) in zip(sig, g):
                     n0 = int(start * self.sr); n1 = min(L, n0 + T)

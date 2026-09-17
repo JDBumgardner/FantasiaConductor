@@ -88,10 +88,26 @@ Each: measure on the plugin → CPU-vs-MPS gradient cosine at full length →
 closed-loop recovery.
 
 ### Experiments
-- [ ] **Prompt → parameter sensitivity map** (~40 prompts): which params move,
-      which direction; turns "resonance is an attractor" into a table; warm starts.
-- [ ] **Directional loss, revisited** — "more like X" from the current sound;
-      no-op on a fixed EQ, natural with a synth + starting patch.
+- [x] **Prompt → parameter map** — `experiments/text2fx/words/` (page: *Ten
+      Words, Four Instruments*): 10 single words × cello / brass / e-piano /
+      flute × 3 objectives = 120 cells. Findings: spectrum/texture words gain
+      +0.15…+0.39 on every instrument; *soft / airy / distant* start at −0.1…
+      −0.15 (CLAP is sure a sustained single-osc tone is none of them) and only
+      reach zero — the noise/breath source, not the optimiser. The filter is
+      barely used; the EQ at its ±6 dB rails and the compressor do the spectral
+      work (prior weighting to fix). Half-amount scores separate paths (e-piano)
+      from corners (sustained instruments). Untouched twins read as their
+      instrument for brass (0.41) and e-piano (0.39) but not cello (0.18) or
+      flute (0.13).
+- [x] **Naming the instrument** ("a dark cello") — anchors identity (cello 0.18
+      → ~0.5 on "a cello") but the adjective evaporates on cello/flute/brass;
+      works on the e-piano, whose identity term is already saturated.
+- [x] **Directional loss, first form** — cos(named) − cos(instrument): more
+      adjective than the named sentence, less than the plain word, and it throws
+      the identity away (brass 0.41 → 0.05–0.28). Three objectives, three
+      failure modes.
+- [ ] **Hinge objective** — cos("a soft cello") + λ·min(0, cos("a cello") − cos₀):
+      hold identity, don't trade against it. The next grid.
 - [ ] **Amount as a knob** — candidates at 25/50/100% of the parameter delta,
       ear chooses (the paper's best numbers relied on exactly this).
 - [ ] **Transfer across phrases** — does a patch tuned on the hook survive a
