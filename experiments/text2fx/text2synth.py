@@ -1,7 +1,7 @@
 """Text -> synth + FX, end to end differentiable.
 
 clone (wavetable osc, unison off, amp env, filter + filter env)  ->  GRAFX chain (fxgraph.Chain; default
-EQ -> compressor -> drive -> delay -> reverb, override with T2_CHAIN="eq,dist,reverb")
+EQ -> comp -> drive -> pwtanh -> chorus -> transient -> gate -> delay -> reverb; override with T2_CHAIN="eq,dist,reverb")
 ->  loudness-normalise  ->  CLAP cosine to the prompt.  Every parameter gets a gradient.
 
 Unlike the FX-only runs, the generator can only produce synth sounds, so there is no
@@ -22,7 +22,7 @@ OUT = os.path.join(C.HERE, "text2synth"); notes = sustained_notes(); B = bounds_
 TBL = torch.load(os.path.join(C.HERE, "tables", "classic_fade.pt")); TABLE = TBL["table"]; F_T = TABLE.shape[0]
 FIXED_LEVEL = 0.35 * 0.694                      # not optimised: silence must not be reachable
 
-CHAIN_TYPES = os.environ.get("T2_CHAIN", "eq,comp,dist,delay,reverb").split(",")
+CHAIN_TYPES = os.environ.get("T2_CHAIN", "eq,comp,drive,pwtanh,chorus,transient,gate,delay,reverb").split(",")   # every node in the race: +0.02 mean over the 5-node chain, +10 % time
 CHAIN = Chain(CHAIN_TYPES, L, DEV)
 
 def build_fx(): return CHAIN.procs, CHAIN.rd
@@ -40,6 +40,7 @@ def init_synth(s_, seed):
     p.update(cutoff=logit(fam["cut"]), resonance=logit(fam["res"]), fenv_amount=logit(fam["amt"]), fattack=logit(s_._t_inv("attack", fam["a"])),
              fdecay=logit(s_._t_inv("decay", fam["d"])), fsustain=logit(fam["su"]), frelease=logit(s_._t_inv("release", fam["r"])))
     p["level"] = raw_from_physical(s_, frame=0, detune_semis=0, blend=0, level=FIXED_LEVEL, attack=0.01, decay=0.1, sustain=1, release=0.1)["level"]
+    if os.environ.get("T2_NOISE", "1") == "1": p["noise"] = logit(0.05)             # Vital's sample oscillator, quiet
     return {k: v.to(DEV).requires_grad_(k != "level") for k, v in p.items()}
 
 def loudness_norm(w, target_rms=0.12):

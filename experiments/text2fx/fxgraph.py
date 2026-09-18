@@ -4,7 +4,7 @@ This is the seed of the graph compiler: an app FX DAG becomes a list of node typ
 each with a differentiable twin, a musically-bounded init, a prior at its knees, and a
 plain-language description of what its parameters mean.
 
-Node types: eq, comp, dist (tanh), pwtanh (piecewise tanh), chorus, transient, gate, delay, reverb.
+Node types: eq, comp, drive (level-referenced tanh), dist (GRAFX tanh at absolute level), pwtanh, chorus, transient, gate, delay, reverb.
 """
 import math, torch, torch.utils.checkpoint, numpy as np
 from grafx.data import GRAFX, NodeConfigs, convert_to_tensor
@@ -142,19 +142,52 @@ class Dist:
     @staticmethod
     def describe(p): return {"drive_db": round(float(DB_PER_LPG * p["log_pre_gain"][0, 0]), 1)}
 
+class Drive(torch.nn.Module):
+    """Level-referenced soft clipper: the input is normalised to unit RMS, scaled by 0.3 * 10^(drive/20), pushed
+    through tanh, and brought back to the input RMS. So 'drive' means saturation, not level: 0 dB is a gentle bend
+    (0.3 rms into tanh), +10 dB is heavy, +20 dB is a near-hard clip — on any input level. Gain-neutral by
+    construction, so no gain-staging wrapper. (The GRAFX TanhDistortion 'dist' node was a tanh at absolute level:
+    on a -20 dBFS signal it did nothing until its +10 dB prior cap, and the grid never used it.)"""
+    def forward(self, x, drive_db):
+        rms = x.pow(2).mean(-1, keepdim=True).sqrt() + 1e-6
+        g = 0.3 * torch.pow(10.0, drive_db / 20)[:, None, :] if drive_db.ndim == 2 else 0.3 * torch.pow(10.0, drive_db / 20)
+        y = torch.tanh(g * x / rms)
+        return y * rms / (y.pow(2).mean(-1, keepdim=True).sqrt() + 1e-6)
+
+@node("drive")
+class DriveNode:
+    @staticmethod
+    def make(N): return Drive()
+    @staticmethod
+    def init(g): return {"drive_db": torch.tensor([[0.0]]) + _r(g, 1, 1, sd=2.0)}
+    @staticmethod
+    def prior(p): d = p["drive_db"][0, 0]; return torch.relu(d - 20.0) ** 2 / 100 + torch.relu(-6.0 - d) ** 2 / 36
+    @staticmethod
+    def describe(p): return {"drive_db": round(float(p["drive_db"][0, 0]), 1)}
+    @staticmethod
+    def scale(p, a): return {**p, "drive_db": p["drive_db"] * a - 40.0 * (1 - a)}     # amount 0 -> -40 dB: tanh linear, a bypass
+
+class LevelRef(torch.nn.Module):
+    """Run a saturator at a fixed reference level: normalise the input to 0.3 RMS x pre-gain, process, restore the RMS."""
+    def __init__(self, proc): super().__init__(); self.proc = proc
+    def forward(self, x, **kw):
+        rms = x.pow(2).mean(-1, keepdim=True).sqrt() + 1e-6
+        y = self.proc(0.3 * x / rms, **kw); y = y[0] if isinstance(y, tuple) else y
+        return y * rms / (y.pow(2).mean(-1, keepdim=True).sqrt() + 1e-6)
+
 @node("pwtanh")
 class PwTanh:
-    """Piecewise tanh: asymmetric hardness (e^x) and thresholds (sigmoid) — a different saturation flavour."""
+    """Piecewise tanh: asymmetric hardness (e^x) and thresholds (sigmoid) — a different saturation flavour, level-referenced."""
     @staticmethod
-    def scale(p, a): return {**p, "log_pre_gain": p["log_pre_gain"] * a}
+    def scale(p, a): return {**p, "log_pre_gain": p["log_pre_gain"] * a - (1 - a) * 40 / DB_PER_LPG}
     @staticmethod
-    def make(N): return P.GainStagingRegularization(P.PiecewiseTanhDistortion())
+    def make(N): return LevelRef(P.PiecewiseTanhDistortion())
     @staticmethod
     def init(g): return {"log_hardness": _r(g, 1, 2, sd=0.3), "z_threshold": _r(g, 1, 2, sd=0.5), "log_pre_gain": _r(g, 1, 1)}
     @staticmethod
     def prior(p):
         drive = DB_PER_LPG * p["log_pre_gain"][0, 0]
-        return torch.relu(drive - 10.0) ** 2 / 100 + torch.relu(-drive) ** 2 / 4 + (torch.relu(p["log_hardness"].abs() - 1.1) ** 2).sum()
+        return torch.relu(drive - 20.0) ** 2 / 100 + torch.relu(-6.0 - drive) ** 2 / 36 + (torch.relu(p["log_hardness"].abs() - 1.1) ** 2).sum()
     @staticmethod
     def describe(p):
         return {"pwtanh": dict(drive_db=round(float(DB_PER_LPG * p["log_pre_gain"][0, 0]), 1), hardness=[round(float(v), 2) for v in torch.exp(p["log_hardness"][0])],

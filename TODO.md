@@ -75,8 +75,21 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       spectral-morph modes only when presets need them.
 
 ### Vital features to add (ranked by palette bought)
-1. [ ] **Noise / sample source** — the mallet click, the breath, the pluck.
-       Every imitation that fell short fell short here. Highest value per line.
+1. [~] **Noise / sample source** — built 2026-09-17 as Vital's sample oscillator:
+       measured on the plugin (default sample is white noise within 0.4 dB;
+       output rms = 0.207·sample_level²; takes the voice amp envelope; destination
+       FILTER 1 sends it through the filter; keytrack negligible). Twin: `noise`
+       raw = linear amplitude fraction a, summed at the filter input with
+       NOISE_GAIN 0.28; export sample_level = √a. Level law matches Vital within
+       3 % over the range incl. the drive saturation at a = 1; filtered spectrum
+       within 1 dB/band; CPU-vs-MPS gradient cosine 1.0. On by default (quiet
+       start, `T2_NOISE=0` to disable) in recovery, house search and text2synth.
+       [ ] Closed loop is only partial (noise 0.09 recovered for 0.36 in a short
+       run, cutoff/level compensating): the STFT losses compare one noise
+       realisation against another, which puts a floor under "add noise" — add
+       a smoothed-spectrum (mel-band) term or average two realisations.
+       [ ] Re-recover cello and flute with noise; check CLAP "a cello" (0.18 now)
+       and the soft / airy / distant column.
 2. [ ] **LFO** (8 + random) — vibrato, wobble, tremolo; chorus with a delay line.
 3. [ ] **Oscillator 2 with FM/RM** — bells and metallic sounds need it.
 4. [ ] **Mod matrix as parameters** — routings + amounts searchable, not one
@@ -159,6 +172,19 @@ amount, airy 0.188 → −0.004.
        line search stalls on the piecewise-linear parts (table lookups, relus).
 7. [x] **Return the frontier**, with a robust score and the half-amount render.
 8. [ ] **Adaptive halving** — keep 2 finalists only when the survivors disagree.
+9. [x] **Rebalancing A/B** (2026-09-17, six cells, `words/balance/`): per-step
+       embedding sensitivity showed the cutoff moves CLAP *more* than an EQ band,
+       so the EQ's dominance is effectiveness, not weighting. Level-referenced
+       drive (A) and a locality term on the heard output (B): no change (±0.01).
+       Fully equalised per-parameter lr (C): moves work to drive/resonance but
+       −0.03…−0.10 on the cello, +0.05 on the e-piano. **Wide chain (D, all nine
+       nodes): +0.02 mean, cello soft 0.08 → 0.14, +10 % time — now the default.**
+       Per-node contribution (bypass): eq 0.09, delay 0.08, transient 0.05,
+       reverb 0.03, comp 0.03, gate 0.02, chorus 0.02, drive 0.01, pwtanh 0
+       (was absolute-level; now level-referenced). Outlier-only lr rule (E): ≈ D,
+       costs 45 s of measurement — off by default. One-bar excerpt for the early
+       stages (F): −0.02 and only 8 % faster (CLAP always sees 10 s; the synth is
+       a third of a step) — off. The optimiser's cost is CLAP, not the synth.
 
 ### The judge
 - [ ] **Parameter-space realness prior** from real Vital presets (75 installed,

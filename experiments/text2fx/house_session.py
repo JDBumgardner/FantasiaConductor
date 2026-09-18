@@ -53,29 +53,46 @@ def make_instrument(name, program):
           f"amp A{float(got['attack'])*1000:.0f}ms D{float(got['decay']):.2f} S{float(got['sustain']):.2f} R{float(got['release']):.2f}", flush=True)
     return p
 
+LOC_DRY = float(os.environ.get("T2_LOC_DRY", "0.05"))          # locality to the instrument on the dry synth output (the patch stays the instrument)
+LOC_WET = float(os.environ.get("T2_LOC_WET", "0.0"))           # ... and on the heard output (so FX moves are costed like synth moves)
+LR_EQ = os.environ.get("T2_LR_EQ", "0") == "1"                 # per-parameter lr from measured embedding sensitivity
+EXCERPT_S = float(os.environ.get("T2_EXCERPT", "0"))           # > 0: early halving stages optimise on the first EXCERPT_S seconds of the hook (fewer notes to render)
 OBJ = os.environ.get("T2_OBJ", "sim")                          # "sim": CLAP cosine to the prompt; "contrast": cosine(prompt) - cosine(anchor text), e.g. "a dark cello" minus "a cello"
 
-def prompt_on(name, p_inst, prompt, lam_loc=0.05, steps=300, restarts=3, anchor_text=None):
+def prompt_on(name, p_inst, prompt, lam_loc=None, steps=300, restarts=3, anchor_text=None):
+    lam_loc = LOC_DRY if lam_loc is None else lam_loc
     slug = "".join(ch if ch.isalnum() else "_" for ch in prompt)[:28].strip("_")
     T_named = C.text_emb("this sound is " + prompt); best = None
     T_self = C.text_emb("this sound is " + anchor_text) if anchor_text else None
     T = T_named - T_self if (OBJ == "contrast" and T_self is not None) else T_named        # the optimised direction
     s_ = WavetableSynth(CL.TABLE, SR, voices=1, bounds=B, interpolation=CL.TBL.get("interpolation", 1)).to(DEV)
-    with torch.no_grad(): anchor = s_.render({k: v.to(DEV) for k, v in p_inst.items()}, NOTES, L)[0, 0]; anchor_n = T2.loudness_norm(anchor)
+    p_dev = {k: v.to(DEV) for k, v in p_inst.items()}
+    with torch.no_grad(): anchor = s_.render(p_dev, NOTES, L)[0, 0]; anchor_n = T2.loudness_norm(anchor)
+    cur = dict(notes=NOTES, anchor=anchor_n)                                           # what the loss currently renders (coarse-to-fine swaps this)
+    short = [n for n in NOTES if n[1] < EXCERPT_S] if EXCERPT_S else None
+    if short:
+        with torch.no_grad(): a_s = T2.loudness_norm(s_.render(p_dev, short, L)[0, 0])
+    def stage_hook(si, last):
+        if short: cur.update(notes=NOTES if last else short, anchor=anchor_n if last else a_s)
     def forward(ps, pf):
-        y = s_.render(ps, NOTES, L); out, gs = T2.render_fx(y, pf); return y, out, gs, T2.loudness_norm(out)
+        y = s_.render(ps, cur["notes"], L); out, gs = T2.render_fx(y, pf); return y, out, gs, T2.loudness_norm(out)
     def loss_of(ps, pf):
-        y, out, gs, w = forward(ps, pf)
-        return (-(C.embed(w) @ T.T).squeeze() + T2.LAM_PRI * T2.fx_prior(pf) + T2.LAM_GS * gs + lam_loc * C.mrstft(T2.loudness_norm(y[0, 0]), anchor_n))
+        y, out, gs, w = forward(ps, pf); a = cur["anchor"]
+        loc = lam_loc * C.mrstft(T2.loudness_norm(y[0, 0]), a) + (LOC_WET * C.mrstft(w, a) if LOC_WET else 0.0)
+        return (-(C.embed(w) @ T.T).squeeze() + T2.LAM_PRI * T2.fx_prior(pf) + T2.LAM_GS * gs + loc)
     def evaluate(ps, pf):
-        y, out, gs, w = forward(ps, pf); e = C.embed(w); score = float((e @ T.T).squeeze())
+        saved = dict(cur); cur.update(notes=NOTES, anchor=anchor_n)                         # always judge on the whole hook
+        y, out, gs, w = forward(ps, pf); e = C.embed(w); score = float((e @ T.T).squeeze()); cur.update(saved)
         robust = float(sum((C.embed(torch.roll(w, int(sh * SR))) @ T.T).squeeze() for sh in (0.0, 0.37, 0.71, 1.9)) / 4)
         ev = dict(score=score, robust=robust, dist=float(C.mrstft(T2.loudness_norm(y[0, 0]), anchor_n)))
+        cur.update(saved)
         if T_self is not None: ev.update(named=float((e @ T_named.T).squeeze()), self=float((e @ T_self.T).squeeze()))
         return ev, y[0, 0].detach(), out.detach()
     def make_candidate(r, noise):
         g = torch.Generator().manual_seed(r)
         ps = {k: (v.clone().to(DEV) + (noise * torch.randn((), generator=g).to(DEV) if noise else 0)).requires_grad_(k != "level") for k, v in p_inst.items()}
+        if CL.NOISE and "noise" not in ps:                                            # instruments recovered before the noise source existed start it quiet
+            ps["noise"] = torch.logit(torch.tensor(0.05, device=DEV)).requires_grad_(True)
         return ps, T2.init_fx(r)
     t0 = time.time()
     if OPT == "sh":                                                     # successive halving + cosine + L-BFGS polish
@@ -86,17 +103,24 @@ def prompt_on(name, p_inst, prompt, lam_loc=0.05, steps=300, restarts=3, anchor_
             s_.random_phase = False
             try: yield
             finally: s_.random_phase = True
+        lr_mult = {}
+        if LR_EQ:
+            from optim import sensitivity_lr
+            def embed_fn(ps_, pf_):
+                y_ = s_.render(ps_, NOTES, L); o_, _ = T2.CHAIN.render(y_, pf_, checkpoint=False); return C.embed(T2.loudness_norm(o_))[0]
+            s_.random_phase = False; lr_mult, sens = sensitivity_lr(Candidate(*make_candidate(0, 0)), embed_fn); s_.random_phase = True
+            print("    lr multipliers: " + "  ".join(f"{k.split('/')[-1]}×{m:.2g}" for k, m in sorted(lr_mult.items(), key=lambda kv: -abs(math.log(kv[1]))) if abs(m - 1) > 0.05), flush=True)
         for attempt in (0, 1):
-            cands = [Candidate(*make_candidate(r, [0, 0.15, 0.15, 0.3, 0.3, 0.5, 0.5, 0.8][r % 8]), label=f"c{r}") for r in range(restarts)]
+            cands = [Candidate(*make_candidate(r, [0, 0.15, 0.15, 0.3, 0.3, 0.5, 0.5, 0.8][r % 8]), label=f"c{r}", lr_mult=lr_mult) for r in range(restarts)]
             try:
-                frontier, total = successive_halving(cands, lambda c: loss_of(c.ps, c.pf), lambda c: evaluate(c.ps, c.pf)[0], rounds=ROUNDS, lr=0.02, polish_ctx=fixed_phases); break
+                frontier, total = successive_halving(cands, lambda c: loss_of(c.ps, c.pf), lambda c: evaluate(c.ps, c.pf)[0], rounds=ROUNDS, lr=0.02, polish_ctx=fixed_phases, stage_hook=stage_hook); break
             except RuntimeError as e:                                    # out of memory: retry once with the synth's note groups checkpointed (-240 MB peak, +30 % time)
                 if "out of memory" not in str(e) or attempt: raise
                 print(f"    OOM — retrying with synth checkpointing", flush=True); del cands; free_cache(); s_.checkpoint = True
         ev, c = frontier[0]; ps, pf = c.ps, c.pf
         with torch.no_grad(): ev, dry, wet = evaluate(ps, pf)
         score, dist = ev["score"], ev["dist"]; ps = {k: v.detach() for k, v in ps.items()}; pf = {t: {k: v.detach() for k, v in d.items()} for t, d in pf.items()}
-        extra = dict(robust=ev["robust"], frontier=[dict(label=c.label, **e) for e, c in frontier], steps=total, opt="sh", objective=OBJ, anchor_text=anchor_text, **({"named": ev["named"], "self": ev["self"]} if T_self is not None else {}))
+        extra = dict(robust=ev["robust"], frontier=[dict(label=c.label, **e) for e, c in frontier], steps=total, opt="sh", objective=OBJ, anchor_text=anchor_text, loc_dry=lam_loc, loc_wet=LOC_WET, lr_eq=LR_EQ, lr_mult=lr_mult, **({"named": ev["named"], "self": ev["self"]} if T_self is not None else {}))
         print(f"    frontier: " + "  ".join(f"{c.label} {e['score']:+.3f} (robust {e['robust']:+.3f}, dist {e['dist']:.2f})" for e, c in frontier) + f"   {total} steps in {time.time()-t0:.0f}s", flush=True)
     else:
         for r in range(restarts):

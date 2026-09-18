@@ -59,6 +59,8 @@ def loss_fn(a, b):
     return (C.mrstft_lin(a, b, ffts=(128, 512, 2048, 8192, 16384)) + 2.0 * C.env_loss(a, b, win=7200)
             + 1.0 * C.mod_depth_loss(a, b, notes) + 1.0 * C.harmonic_loss(a, b, notes) + 1.0 * onset_profile_loss(a, b, notes))
 
+NOISE = os.environ.get("T2_NOISE", "1") == "1"                 # fit the noise source too (T2_NOISE=0 for the pre-2026-09-17 behaviour)
+
 def init_all(s_, seed):
     p = init_raw(s_, seed=seed)                                     # oscillator + amp env families
     g = torch.Generator().manual_seed(100 + seed)
@@ -67,6 +69,7 @@ def init_all(s_, seed):
            dict(cut=0.6, res=0.1, amt=0.5, a=0.01, d=0.1, su=0.1, r=0.2)][seed % 3]
     p.update(cutoff=logit(fam["cut"]), resonance=logit(fam["res"]), fenv_amount=logit(fam["amt"]), fdpow=logit(0.45),   # start at the default -2
              fattack=logit(s_._t_inv("attack", fam["a"])), fdecay=logit(s_._t_inv("decay", fam["d"])), fsustain=logit(fam["su"]), frelease=logit(s_._t_inv("release", fam["r"])))
+    if NOISE: p["noise"] = logit(0.05)                             # Vital's sample oscillator (white noise into the filter); starts quiet, not off
     return {k: v + 0.2 * torch.randn((), generator=g) for k, v in p.items()}
 
 def recover(tgt, steps=300, lr=0.03, restarts=None):

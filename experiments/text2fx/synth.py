@@ -53,7 +53,13 @@ def kalimba_notes():
 class WavetableSynth(nn.Module):
     RAW = ("frame", "detune", "blend", "level", "attack", "decay", "sustain", "release")
     FILTER_RAW = ("cutoff", "resonance", "fenv_amount", "fattack", "fdecay", "fsustain", "frelease")
-    OPTIONAL_RAW = ("apow", "dpow", "rpow", "fapow", "fdpow", "frpow", "keytrack", "frame_spread", "fblend", "fdrive")   # present only if given
+    OPTIONAL_RAW = ("apow", "dpow", "rpow", "fapow", "fdpow", "frpow", "keytrack", "frame_spread", "fblend", "fdrive", "noise")   # present only if given
+    # Vital's sample oscillator, measured 2026-09-17 on the plugin: the default sample is white noise (band energies
+    # within 0.4 dB of white), it takes the voice's amplitude envelope like the oscillators, its output rms is
+    # 0.207 * sample_level_raw^2 (sustain 1, velocity 100, filter off), keytrack barely tilts it (skip), and
+    # destination FILTER 1 sends it through the filter with the oscillators. The twin's `noise` raw is the linear
+    # amplitude fraction a (gradient-friendly); Vital's sample_level raw = sqrt(a). NOISE_GAIN calibrated below.
+    NOISE_GAIN = 0.28                                  # twin unit-variance noise -> Vital filter-input amplitude (measured, see below)
     # Level chain, measured: osc level is applied BEFORE the filter (display level 0.5 -> 0.224 peak for a
     # sine at the filter input), the filter input always passes tanh(2 g x)/(2 sqrt g) with g = 10^(drive_raw)
     # (drive display = 20 raw dB; THD -33 dB at level 0.5 even at 0 dB drive), then the amp env. PRE_GAIN
@@ -92,7 +98,7 @@ class WavetableSynth(nn.Module):
         self.sr, self.voices, self.detune_range = sr, voices, detune_range_semitones
         F, K = table.shape
         self.F, self.K = F, K
-        g = torch.Generator().manual_seed(seed)
+        self._seed = seed; g = torch.Generator().manual_seed(seed)
         self.register_buffer("voice_phase", 2 * math.pi * torch.rand(voices, generator=g))   # Vital: random phase
         # Measured on Vital (detune_power default): 5 voices sit at +/-1.0 and +/-0.35 of
         # the detune, i.e. offset = sign(i) * (|i|/K)^1.5, centre voice at 0 when odd.
@@ -123,6 +129,7 @@ class WavetableSynth(nn.Module):
         if "fblend" in s: out["fblend"] = 2 * s["fblend"]                                   # display 0 LP .. 1 BP .. 2 HP
         if "fdrive" in s: out["fdrive"] = s["fdrive"]                                       # raw: 0..1 = 0..20 dB
         if "frame_spread" in s: out["frame_spread"] = 256 * (s["frame_spread"] - 0.5)     # DISPLAY frames (raw 0.5 = 0); rows in render()
+        if "noise" in s: out["noise"] = s["noise"]                                          # white-noise amplitude fraction at the filter input
         if "cutoff" in s:                                              # filter section present
             out.update(cutoff_raw=s["cutoff"], resonance=s["resonance"],
                        fenv_amount=(2 * s["fenv_amount"] - 1) if self.bipolar_fenv else s["fenv_amount"],
@@ -145,6 +152,9 @@ class WavetableSynth(nn.Module):
                         ("fapow", "envelope_2_attack_power"), ("fdpow", "envelope_2_decay_power"), ("frpow", "envelope_2_release_power"),
                         ("keytrack", "filter_1_key_track"), ("frame_spread", "oscillator_1_unison_frame_spread"), ("fblend", "filter_1_blend"), ("fdrive", "filter_1_drive")):
             if k in s: out[name] = s[k]
+        if "noise" in s:
+            out.update({"sample_switch": 1.0 if s["noise"] > 1e-3 else 0.0, "sample_level": s["noise"] ** 0.5, "sample_destination": 0.0,   # FILTER 1
+                        "sample_keytrack": 0.0, "sample_loop": 1.0, "sample_random_phase": 1.0})
         if "cutoff" in s:
             out.update({"filter_1_cutoff": s["cutoff"], "filter_1_resonance": s["resonance"],
                         "modulation_1_amount": (float(ph["fenv_amount"]) + 1) / 2,     # raw = (amount + 1) / 2
@@ -266,7 +276,7 @@ class WavetableSynth(nn.Module):
         i0 = torch.floor(pos).long() % self.W; frac = pos - torch.floor(pos)
         return table[i0] * (1 - frac) + table[(i0 + 1) % self.W] * frac
 
-    def _chunk(self, t, f0, dur, vel, tables, detune, blend, level, attack, decay, sustain, release, filt=None, extra=None, ph0=None):
+    def _chunk(self, t, f0, dur, vel, tables, detune, blend, level, attack, decay, sustain, release, filt=None, extra=None, ph0=None, white=None):
         """B notes sharing one duration and one mip table. t: (T,), f0/vel: (B,). -> (B, T).
         filt: dict(cutoff_raw, resonance, fenv_amount, fattack, fdecay, fsustain, frelease) or None."""
         ph = dict(attack=attack, decay=decay, sustain=sustain, release=release, attack_power=extra["attack_power"],
@@ -291,6 +301,8 @@ class WavetableSynth(nn.Module):
         # rms 1.000 +/- 0.01 for 2-8 voices, blend 0-1); blend changes character, not level
         sig = sig / torch.sqrt(torch.as_tensor(wsq, device=sig.device) + 1e-8)
         sig = self.PRE_GAIN * (level / 0.694) * sig                        # Vital's filter-input amplitude (level is torch units)
+        if "noise" in extra and white is not None:                         # sample oscillator (white noise) summed at the filter input
+            sig = sig + self.NOISE_GAIN * extra["noise"] * white
         if filt is not None:                                               # osc -> drive -> filter -> amp, as in Vital
             g = 10 ** extra.get("fdrive", torch.tensor(0.0, device=sig.device))
             sig = torch.tanh(2 * g * sig) / (2 * torch.sqrt(g))
@@ -309,6 +321,11 @@ class WavetableSynth(nn.Module):
         """Per-note start phases in turns: Vital draws a random phase per note; deterministic mode uses the voice phases."""
         return torch.rand(self.voices, B, device=device) if self.random_phase else (self.voice_phase / (2 * math.pi))[:, None].expand(self.voices, B)
 
+    def draw_noise(self, B, T, device):
+        """Unit-variance white noise per note; a fixed realisation in deterministic mode so renders reproduce."""
+        if self.random_phase: return torch.randn(B, T, device=device)
+        g = torch.Generator().manual_seed(self._seed); return torch.randn(B, T, generator=g).to(device)
+
     checkpoint = False        # recompute each note group's forward in backward: ~400 MB -> ~30 MB saved activations at 20 notes
 
     def render(self, p, notes, L, chunk=80):
@@ -317,7 +334,7 @@ class WavetableSynth(nn.Module):
         args = (ph["detune_semis"], ph["blend"], ph["level"], ph["attack"], ph["decay"], ph["sustain"], ph["release"])
         filt = {k: ph[k] for k in ("cutoff_raw", "resonance", "fenv_amount", "fattack", "fdecay", "fsustain", "frelease",
                                    "fattack_power", "fdecay_power", "frelease_power")} if "cutoff_raw" in ph else None
-        extra = {k: ph[k] for k in ("attack_power", "decay_power", "release_power", "keytrack", "fblend", "fdrive") if k in ph}
+        extra = {k: ph[k] for k in ("attack_power", "decay_power", "release_power", "keytrack", "fblend", "fdrive", "noise") if k in ph}
         spread = ph["frame_spread"] * (self.F - 1) / 256 if "frame_spread" in ph else None    # display frames -> rows
         groups = {}
         for pitch, start, dur, vel in notes:
@@ -345,14 +362,15 @@ class WavetableSynth(nn.Module):
                 g = group[i:i + chunk]
                 f0 = torch.tensor([x[0] for x in g], device=dev); vel = torch.tensor([float(x[2]) for x in g], device=dev)
                 ph0 = self.draw_phases(len(g), dev)                       # drawn outside the checkpoint so the recompute sees the same phases
+                white = self.draw_noise(len(g), T, dev) if "noise" in extra else None
                 if self.checkpoint and torch.is_grad_enabled():
                     fk, fv_ = (list(filt.keys()), list(filt.values())) if filt is not None else ([], []); ek, ev = list(extra.keys()), list(extra.values())
-                    def fn(t, f0, vel, ph0, *flat, tables=[tb[cut] for tb in tables], nf=len(fv_), fk=fk, ek=ek):
+                    def fn(t, f0, vel, ph0, white, *flat, tables=[tb[cut] for tb in tables], nf=len(fv_), fk=fk, ek=ek):
                         a = flat[:len(args)]; fl = dict(zip(fk, flat[len(args):len(args) + nf])) if fk else None; ex = dict(zip(ek, flat[len(args) + nf:]))
-                        return self._chunk(t, f0, dur, vel, tables, *a, filt=fl, extra=ex, ph0=ph0)
-                    sig = torch.utils.checkpoint.checkpoint(fn, t, f0, vel, ph0, *args, *fv_, *ev, use_reentrant=False, preserve_rng_state=False)
+                        return self._chunk(t, f0, dur, vel, tables, *a, filt=fl, extra=ex, ph0=ph0, white=white)
+                    sig = torch.utils.checkpoint.checkpoint(fn, t, f0, vel, ph0, white, *args, *fv_, *ev, use_reentrant=False, preserve_rng_state=False)
                 else:
-                    sig = self._chunk(t, f0, dur, vel, [tb[cut] for tb in tables], *args, filt=filt, extra=extra, ph0=ph0)
+                    sig = self._chunk(t, f0, dur, vel, [tb[cut] for tb in tables], *args, filt=filt, extra=extra, ph0=ph0, white=white)
                 if fade is not None: sig = torch.cat([sig[:, :-len(fade)], sig[:, -len(fade):] * fade], -1)
                 for row, (_, start, _) in zip(sig, g):
                     n0 = int(start * self.sr); n1 = min(L, n0 + T)
