@@ -109,17 +109,23 @@ def level_match(w, ref):
     lr = loudness(ref)
     return w * (lr / (loudness(w) + 1e-3 * lr))
 
+def _mag(x, n): return torch.stft(reflect_pad(x, n // 2), n, n // 4, window=torch.hann_window(n, device=x.device), center=False, return_complex=True).abs()
+
+class SpectralAnchor:
+    """A fixed reference for mrstft: its magnitudes are computed once. In a locality term the anchor is the same
+    every step, and recomputing its STFTs was half the term's cost."""
+    def __init__(self, b, ffts=(128, 512, 1024, 2048)):
+        with torch.no_grad(): self.ffts = ffts; self.mags = {n: _mag(b, n) for n in ffts}; self.logs = {n: torch.log(self.mags[n] + 1e-5) for n in ffts}
+
 def mrstft(a, b, ffts=(128, 512, 1024, 2048)):
-    """Spectral convergence + log-magnitude L1, averaged over resolutions."""
-    tot = 0.0
-    for n in ffts:
-        win = torch.hann_window(n, device=a.device)
-        A = torch.stft(reflect_pad(a, n // 2), n, n // 4, window=win, center=False, return_complex=True).abs()
-        B = torch.stft(reflect_pad(b, n // 2), n, n // 4, window=win, center=False, return_complex=True).abs()
+    """Spectral convergence + log-magnitude L1, averaged over resolutions. `b` may be a SpectralAnchor."""
+    tot = 0.0; anchored = isinstance(b, SpectralAnchor)
+    for n in (b.ffts if anchored else ffts):
+        A = _mag(a, n); B = b.mags[n] if anchored else _mag(b, n); logB = b.logs[n] if anchored else torch.log(B + 1e-5)
         sc = (A - B).flatten(-2).norm(dim=-1) / (A.flatten(-2).norm(dim=-1) + 1e-8)
-        lm = (torch.log(A + 1e-5) - torch.log(B + 1e-5)).abs().flatten(-2).mean(-1)
+        lm = (torch.log(A + 1e-5) - logB).abs().flatten(-2).mean(-1)
         tot = tot + sc + lm
-    return tot / len(ffts)                                   # (B,) or scalar
+    return tot / len(b.ffts if anchored else ffts)          # (B,) or scalar
 
 def score(w, target: torch.Tensor, src: torch.Tensor) -> float:
     """The neutral yardstick: plain cosine on loudness-matched audio."""

@@ -56,7 +56,10 @@ def make_instrument(name, program):
 LOC_DRY = float(os.environ.get("T2_LOC_DRY", "0.05"))          # locality to the instrument on the dry synth output (the patch stays the instrument)
 LOC_WET = float(os.environ.get("T2_LOC_WET", "0.0"))           # ... and on the heard output (so FX moves are costed like synth moves)
 LR_EQ = os.environ.get("T2_LR_EQ", "0") == "1"                 # per-parameter lr from measured embedding sensitivity
-EXCERPT_S = float(os.environ.get("T2_EXCERPT", "0"))           # > 0: early halving stages optimise on the first EXCERPT_S seconds of the hook (fewer notes to render)
+EXCERPT_S = float(os.environ.get("T2_EXCERPT", "0"))
+WARM_K = int(os.environ.get("T2_WARM", "2"))                    # this many candidates come from earlier results on the same instrument (nearest prompts); 0 = cold
+WARM_DIR = os.environ.get("T2_WARM_DIR", "")                    # where to look for them (default: the output folder and everything under it)
+ROUNDS_WARM = tuple(tuple(int(x) for x in r.split(":")) for r in os.environ.get("T2_ROUNDS_WARM", "15:3,30:2,110:1").split(","))   # used when warm candidates were found: 370 steps beat 700 cold on 6/6 cells (mean 0.341 vs 0.322)           # > 0: early halving stages optimise on the first EXCERPT_S seconds of the hook (fewer notes to render)
 OBJ = os.environ.get("T2_OBJ", "sim")                          # "sim": CLAP cosine to the prompt; "contrast": cosine(prompt) - cosine(anchor text), e.g. "a dark cello" minus "a cello"
 
 def prompt_on(name, p_inst, prompt, lam_loc=None, steps=300, restarts=3, anchor_text=None):
@@ -67,11 +70,11 @@ def prompt_on(name, p_inst, prompt, lam_loc=None, steps=300, restarts=3, anchor_
     T = T_named - T_self if (OBJ == "contrast" and T_self is not None) else T_named        # the optimised direction
     s_ = WavetableSynth(CL.TABLE, SR, voices=1, bounds=B, interpolation=CL.TBL.get("interpolation", 1)).to(DEV)
     p_dev = {k: v.to(DEV) for k, v in p_inst.items()}
-    with torch.no_grad(): anchor = s_.render(p_dev, NOTES, L)[0, 0]; anchor_n = T2.loudness_norm(anchor)
+    with torch.no_grad(): anchor = s_.render(p_dev, NOTES, L)[0, 0]; anchor_n = C.SpectralAnchor(T2.loudness_norm(anchor), ffts=(512, 2048))   # two resolutions: half the cost of four, same job
     cur = dict(notes=NOTES, anchor=anchor_n)                                           # what the loss currently renders (coarse-to-fine swaps this)
     short = [n for n in NOTES if n[1] < EXCERPT_S] if EXCERPT_S else None
     if short:
-        with torch.no_grad(): a_s = T2.loudness_norm(s_.render(p_dev, short, L)[0, 0])
+        with torch.no_grad(): a_s = C.SpectralAnchor(T2.loudness_norm(s_.render(p_dev, short, L)[0, 0]), ffts=(512, 2048))
     def stage_hook(si, last):
         if short: cur.update(notes=NOTES if last else short, anchor=anchor_n if last else a_s)
     def forward(ps, pf):
@@ -88,6 +91,32 @@ def prompt_on(name, p_inst, prompt, lam_loc=None, steps=300, restarts=3, anchor_
         cur.update(saved)
         if T_self is not None: ev.update(named=float((e @ T_named.T).squeeze()), self=float((e @ T_self.T).squeeze()))
         return ev, y[0, 0].detach(), out.detach()
+    def warm_candidates(k):
+        """Earlier results for this instrument whose prompts CLAP finds closest to this one: their synth parameters, and the
+        FX parameters of the node types the current chain shares with theirs; the rest of the FX from a fresh init."""
+        import glob
+        pool = []
+        for f in glob.glob(os.path.join(WARM_DIR or OUT, "**", f"{name}__*.json"), recursive=True):
+            try: d = json.load(open(f))
+            except Exception: continue
+            if d.get("prompt") == prompt or "raw" not in d or "fx_raw" not in d: continue
+            if any(q["prompt"] == d["prompt"] and q["score"] >= d["score"] for q in pool): continue        # one result per prompt: the best
+            pool = [q for q in pool if q["prompt"] != d["prompt"]] + [d]
+        if not pool: return []
+        te = torch.cat([C.text_emb("this sound is " + d["prompt"]) for d in pool]); sims = (te @ T_named.T).squeeze(-1)
+        picks = [pool[i] for i in sims.argsort(descending=True)[:k].tolist()]
+        out = []
+        for i, d in enumerate(picks):
+            ps = {kk: torch.tensor(float(v), device=DEV).requires_grad_(kk != "level") for kk, v in d["raw"].items()}
+            if CL.NOISE and "noise" not in ps: ps["noise"] = torch.logit(torch.tensor(0.05, device=DEV)).requires_grad_(True)
+            pf = T2.init_fx(100 + i)
+            for t, dd in d["fx_raw"].items():
+                if t in pf and all(kk in pf[t] and list(torch.tensor(v).shape) == list(pf[t][kk].shape) for kk, v in dd.items()):
+                    pf[t] = {kk: torch.tensor(v, device=DEV).requires_grad_(True) for kk, v in dd.items()}
+            out.append((ps, pf, f"w{i}:{d['prompt'][:12]}"))
+        print("    warm start from: " + ", ".join(f"'{d['prompt']}' ({float(s):+.2f})" for d, s in zip(picks, sims.sort(descending=True).values[:k].tolist())), flush=True)
+        return out
+
     def make_candidate(r, noise):
         g = torch.Generator().manual_seed(r)
         ps = {k: (v.clone().to(DEV) + (noise * torch.randn((), generator=g).to(DEV) if noise else 0)).requires_grad_(k != "level") for k, v in p_inst.items()}
@@ -110,17 +139,20 @@ def prompt_on(name, p_inst, prompt, lam_loc=None, steps=300, restarts=3, anchor_
                 y_ = s_.render(ps_, NOTES, L); o_, _ = T2.CHAIN.render(y_, pf_, checkpoint=False); return C.embed(T2.loudness_norm(o_))[0]
             s_.random_phase = False; lr_mult, sens = sensitivity_lr(Candidate(*make_candidate(0, 0)), embed_fn); s_.random_phase = True
             print("    lr multipliers: " + "  ".join(f"{k.split('/')[-1]}×{m:.2g}" for k, m in sorted(lr_mult.items(), key=lambda kv: -abs(math.log(kv[1]))) if abs(m - 1) > 0.05), flush=True)
+        warm = warm_candidates(WARM_K) if WARM_K else []
+        rounds = ROUNDS_WARM if warm else ROUNDS; n_cands = (len(warm) + 2) if warm else restarts       # warm: the retrieved ones + the instrument + one perturbed
         for attempt in (0, 1):
-            cands = [Candidate(*make_candidate(r, [0, 0.15, 0.15, 0.3, 0.3, 0.5, 0.5, 0.8][r % 8]), label=f"c{r}", lr_mult=lr_mult) for r in range(restarts)]
+            cands = [Candidate(ps_, pf_, label=lab, lr_mult=lr_mult) for ps_, pf_, lab in warm]
+            cands += [Candidate(*make_candidate(r, [0, 0.3, 0.15, 0.5, 0.3, 0.5, 0.15, 0.8][r % 8]), label=f"c{r}", lr_mult=lr_mult) for r in range(n_cands - len(cands))]
             try:
-                frontier, total = successive_halving(cands, lambda c: loss_of(c.ps, c.pf), lambda c: evaluate(c.ps, c.pf)[0], rounds=ROUNDS, lr=0.02, polish_ctx=fixed_phases, stage_hook=stage_hook); break
+                frontier, total = successive_halving(cands, lambda c: loss_of(c.ps, c.pf), lambda c: evaluate(c.ps, c.pf)[0], rounds=rounds, lr=0.02, polish_ctx=fixed_phases, stage_hook=stage_hook); break
             except RuntimeError as e:                                    # out of memory: retry once with the synth's note groups checkpointed (-240 MB peak, +30 % time)
                 if "out of memory" not in str(e) or attempt: raise
                 print(f"    OOM — retrying with synth checkpointing", flush=True); del cands; free_cache(); s_.checkpoint = True
         ev, c = frontier[0]; ps, pf = c.ps, c.pf
         with torch.no_grad(): ev, dry, wet = evaluate(ps, pf)
         score, dist = ev["score"], ev["dist"]; ps = {k: v.detach() for k, v in ps.items()}; pf = {t: {k: v.detach() for k, v in d.items()} for t, d in pf.items()}
-        extra = dict(robust=ev["robust"], frontier=[dict(label=c.label, **e) for e, c in frontier], steps=total, opt="sh", objective=OBJ, anchor_text=anchor_text, loc_dry=lam_loc, loc_wet=LOC_WET, lr_eq=LR_EQ, lr_mult=lr_mult, **({"named": ev["named"], "self": ev["self"]} if T_self is not None else {}))
+        extra = dict(robust=ev["robust"], frontier=[dict(label=c.label, **e) for e, c in frontier], steps=total, opt="sh", objective=OBJ, anchor_text=anchor_text, warm=[lab for _, _, lab in warm], loc_dry=lam_loc, loc_wet=LOC_WET, lr_eq=LR_EQ, lr_mult=lr_mult, **({"named": ev["named"], "self": ev["self"]} if T_self is not None else {}))
         print(f"    frontier: " + "  ".join(f"{c.label} {e['score']:+.3f} (robust {e['robust']:+.3f}, dist {e['dist']:.2f})" for e, c in frontier) + f"   {total} steps in {time.time()-t0:.0f}s", flush=True)
     else:
         for r in range(restarts):
@@ -135,7 +167,8 @@ def prompt_on(name, p_inst, prompt, lam_loc=None, steps=300, restarts=3, anchor_
     d = T2.describe(s_, ps, pf); vp = s_.vital_params(ps)
     # amount knob: half-way from the instrument to the result (synth in raw space, every FX node half-way from bypass)
     with torch.no_grad():
-        ps_half = {k: (p_inst[k].to(DEV) + 0.5 * (v - p_inst[k].to(DEV))) for k, v in ps.items()}
+        p0 = lambda k: p_inst[k].to(DEV) if k in p_inst else torch.logit(torch.tensor(0.05, device=DEV))      # noise: the instrument patch may predate it
+        ps_half = {k: (p0(k) + 0.5 * (v - p0(k))) for k, v in ps.items()}
         ev_half, _, wet_half = evaluate(ps_half, T2.CHAIN.scale(pf, 0.5))
     extra["amount50"] = ev_half
     sf.write(os.path.join(OUT, f"{name}__{slug}{TAG}_fx_amt50.wav"), (wet_half / (wet_half.abs().max() + 1e-9) * 0.5).cpu().numpy(), SR)

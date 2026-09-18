@@ -160,9 +160,15 @@ deterministic (CLAP has no augmentation; per-note random phases move the score
 by a std of 0.006 over six draws), so the restart spread is multimodality, not noise. "At 50 %
 amount" scores show the corners are real: under water 0.458 → 0.295 at half
 amount, airy 0.188 → −0.004.
-1. [ ] **Amortised inference** — train mel→parameters on twin-rendered random
-       patches (free, exact labels); use as the descent start. Minutes → seconds.
-       Refs: Masuda & Saito DDSP sound matching, InverSynth, DDSP autoencoders.
+1. [~] **Amortised inference** — the cheapest form is in and on by default
+       (2026-09-17): a **retrieval warm start**. Two candidates are the finished
+       results of the nearest earlier prompts on the same instrument (CLAP text
+       similarity; synth params plus the FX params of shared node types), and
+       the budget drops to 370 steps. Held-out on six cells: mean 0.341 vs 0.322
+       cold at 700 steps, 120 s vs 214 s per prompt; never worse than −0.03,
+       +0.07 / +0.09 on metallic / e-piano punchy. Every result the tool makes
+       speeds up the next; a fresh instrument still starts cold. The learned
+       version (mel→parameters on twin-rendered patches) remains for later.
 2. [ ] **Batch the restarts** — the synth's saved activations are ~400 MB per
        candidate at 20 notes; two fit, eight do not, on 8 GB.
 3. [~] **Average phase draws** — measured: std 0.006 per draw; not worth it for 1 voice.
@@ -174,7 +180,11 @@ amount, airy 0.188 → −0.004.
        loses to Adam from the same init (0.085 vs 0.367, 0.289 vs 0.334): the
        line search stalls on the piecewise-linear parts (table lookups, relus).
 7. [x] **Return the frontier**, with a robust score and the half-amount render.
-8. [ ] **Adaptive halving** — keep 2 finalists only when the survivors disagree.
+8. [x] **Adaptive halving — measured, rejected.** Over 155 logged runs the
+       stage-1 runner-up overtook the leader 37 % of the time, and 14 % even when
+       the stage-1 gap exceeded 0.05; pruning would save ≤ 3 % of the budget.
+       Keeping 3 instead of 4 after stage 0 would have lost the winner in 13/155.
+       The landscape is too rugged to prune early.
 9. [x] **Rebalancing A/B** (2026-09-17, six cells, `words/balance/`): per-step
        embedding sensitivity showed the cutoff moves CLAP *more* than an EQ band,
        so the EQ's dominance is effectiveness, not weighting. Level-referenced
@@ -186,8 +196,11 @@ amount, airy 0.188 → −0.004.
        reverb 0.03, comp 0.03, gate 0.02, chorus 0.02, drive 0.01, pwtanh 0
        (was absolute-level; now level-referenced). Outlier-only lr rule (E): ≈ D,
        costs 45 s of measurement — off by default. One-bar excerpt for the early
-       stages (F): −0.02 and only 8 % faster (CLAP always sees 10 s; the synth is
-       a third of a step) — off. The optimiser's cost is CLAP, not the synth.
+       stages (F): −0.02 and only 8 % faster — off. Step profile on the wide
+       chain: synth 102 ms, chain 90 (comp ballistics 21, transient 22, gate 13,
+       reverb 12, ~30 of checkpoint recompute; the FFT convolutions are 2–5 ms
+       each), CLAP 46, locality 43 → 17 after dropping to two resolutions with
+       cached anchor spectra.
 
 ### The judge
 - [ ] **Parameter-space realness prior** from real Vital presets (75 installed,
