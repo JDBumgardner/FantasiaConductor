@@ -1,0 +1,13 @@
+    stage 0 (30 steps x 8): c0:+0.160  c1:+0.101  c3:+0.095  c4:+0.092  c5:+0.091  c2:+0.083  c6:+0.060  c7:+0.051   [40s]   [mps live 632 MB, pool 1153 MB]
+    stage 1 (60 steps x 4): c0:+0.244  c4:+0.210  c1:+0.209  c3:+0.143   [77s]   [mps live 632 MB, pool 1153 MB]
+      polish c0: loss -0.1778 -> -0.1971   [mps live 633 MB, pool 1162 MB]
+      polish c4: loss -0.2174 -> -0.2353   [mps live 633 MB, pool 1152 MB]
+    stage 2 (220 steps x 2): c4:+0.394  c0:+0.354   [152s]   [mps live 633 MB, pool 1161 MB]
+  [cello soundfont + 'dark'] score +0.394 (untouched -0.10, robust +0.400, half amount +0.085) | eq=[(68, -6.7), (468, -2.3), (1213, 5.9), (4471, -6.2), (7088, -6.3), (11311, 6.4)], comp={'threshold_db': -18.4, 'ratio': 2.82, 'knee_db': 4.6, 'attack_ms': 42.9, 'release_ms': 146.5}, drive_db=0.4, pwtanh={'drive_db': 2.4, 'hardness': [0.33, 2.02], 'threshold': [0.54, 0.4]}, chorus={'delay_ms': 11.5, 'depth_ms': 2.5, 'rate_hz': 0.46, 'mix': 0.26}, transient={'attack': 0.98, 'sustain': 0.88, 'window_ms': 116.2}, gate={'threshold_db': -36.4, 'width_db': 2.9, 'range_db': 7.3, 'smoothing_ms': 3.0}, delay_mix=0.52, reverb={'mix': 0.67, 'rt60_lo_mid_hi_ms': [481, 1284, 950]}   950 steps in 152s
+    stage 0 (30 steps x 8): c7:-0.011  c1:-0.014  c5:-0.027  c0:-0.030  c4:-0.030  c3:-0.032  c2:-0.032  c6:-0.048   [40s]   [mps live 609 MB, pool 1123 MB]
+    stage 1 (60 steps x 4): c7:+0.028  c5:+0.005  c1:-0.000  c0:-0.005   [77s]   [mps live 609 MB, pool 1147 MB]
+      polish c7: loss -0.0114 -> -0.0169   [mps live 610 MB, pool 1136 MB]
+      polish c5: loss 0.0214 -> 0.0174   [mps live 611 MB, pool 1144 MB]
+    stage 2 (220 steps x 2): c7:+0.104  c5:+0.038   [155s]   [mps live 611 MB, pool 1163 MB]
+  [cello soundfont + 'soft'] score +0.104 (untouched -0.07, robust +0.090, half amount -0.019) | eq=[(87, 6.1), (208, -1.8), (854, 4.9), (1916, 6.1), (5767, 5.7), (9257, -1.7)], comp={'threshold_db': -10.0, 'ratio': 5.68, 'knee_db': 2.9, 'attack_ms': 36.3, 'release_ms': 86.7}, drive_db=-2.1, pwtanh={'drive_db': -0.6, 'hardness': [3.07, 1.7], 'threshold': [0.78, 0.47]}, chorus={'delay_ms': 14.8, 'depth_ms': 2.6, 'rate_hz': 0.31, 'mix': 0.04}, transient={'attack': -0.34, 'sustain': 0.47, 'window_ms': 208.9}, gate={'threshold_db': -42.7, 'width_db': 2.1, 'range_db': 2.2, 'smoothing_ms': 3.0}, delay_mix=0.05, reverb={'mix': 0.39, 'rt60_lo_mid_hi_ms': [710, 894, 1348]}   950 steps in 155s
+    stage 0 (30 steps x 8): c1:+0.110  c4:+0.086  c0:+0.086  c5:+0.066  c7:+0.053  c6:+0.052  c3:+0.050  c2:+0.024   [40s]   [mps live 609 MB, pool 1147 MB]

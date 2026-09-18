@@ -6,7 +6,7 @@ sys.path.insert(0, "."); sys.path.insert(0, "experiments/text2fx"); sys.path.ins
 import common as C; C.DEVICE = "cpu"
 import synth as S, house_session as H, text2synth as T2
 from word_grid import INSTRUMENTS, WORDS, DISPLAY, art
-SR = 48000; L = 10 * SR; W = "experiments/text2fx/words"
+SR = 48000; L = 10 * SR; W = "experiments/text2fx/words"; PLAIN = os.path.join(W, "plain")
 s_ = S.WavetableSynth(H.CL.TABLE, SR, voices=1, bounds=H.B, interpolation=H.CL.TBL.get("interpolation", 1)); s_.random_phase = False
 base = json.load(open(os.path.join(W, "baseline.json")))
 def render(d):
@@ -22,7 +22,7 @@ for name in ARGS or [n for n, _ in INSTRUMENTS]:
     print(f"\n{name}: result of the PLAIN prompt | result of the NAMED prompt — each scored on: bare word / named / 'a {DISPLAY[name]}'   (untouched: self {base[name]['_self']:+.2f})")
     print(f"  {'word':9s} {'plain→word':>11s} {'plain→named':>12s} {'plain→self':>11s}   {'named→word':>11s} {'named→named':>12s} {'named→self':>11s}   {'contr→word':>11s} {'contr→named':>12s} {'contr→self':>11s}")
     for w in WORDS:
-        dp, dn = find(W, name, w), (find(os.path.join(W, "named"), name, f"a {w} {DISPLAY[name]}") or find(os.path.join(W, "named"), name, art(f"{w} {DISPLAY[name]}")))
+        dp, dn = find(PLAIN, name, w), (find(os.path.join(W, "named"), name, f"a {w} {DISPLAY[name]}") or find(os.path.join(W, "named"), name, art(f"{w} {DISPLAY[name]}")))
         dc = find(os.path.join(W, "contrast"), name, art(f"{w} {DISPLAY[name]}")) if os.path.isdir(os.path.join(W, "contrast")) else None
         row = {}
         for tag, d in (("plain", dp), ("named", dn), ("contrast", dc)):

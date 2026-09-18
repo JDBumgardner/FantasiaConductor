@@ -14,9 +14,9 @@ def clap_self(y, name):
     with torch.no_grad(): return float((C.embed(T2.loudness_norm(torch.as_tensor(y, device=DEV))) @ C.text_emb("this sound is " + art(DISPLAY[name])).T).squeeze())
 for name, prog in INSTRUMENTS:
     if ARGS and name not in ARGS: continue
-    old = json.load(open(os.path.join(HERE, f"{name}_patch.json")))["raw"]
+    old = json.load(open(os.path.join(HERE, "instruments", f"{name}_patch.json")))["raw"]
     with torch.no_grad(): y_old = s_.render({k: torch.tensor(float(v), device=DEV) for k, v in old.items()}, H.NOTES, L)[0, 0].cpu().numpy()
-    ref, _ = sf.read(os.path.join(HERE, f"{name}_ref.wav"))
+    ref, _ = sf.read(os.path.join(HERE, "instruments", f"{name}_ref.wav"))
     t0 = time.time(); p = H.make_instrument(name, prog)                     # writes <name>_{ref,clone,vital}.wav and _patch.json into OUT
     new = json.load(open(os.path.join(OUT, f"{name}_patch.json")))
     with torch.no_grad(): y_new = s_.render({k: torch.tensor(float(v), device=DEV) for k, v in new["raw"].items()}, H.NOTES, L)[0, 0].cpu().numpy()

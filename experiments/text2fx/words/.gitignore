@@ -1,2 +1,3 @@
 site/mp3/
-run*.log
+logs/
+*.log

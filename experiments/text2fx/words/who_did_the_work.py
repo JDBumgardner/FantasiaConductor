@@ -10,7 +10,7 @@ SR = 48000; L = 10 * SR; DEV = C.DEVICE; W = "experiments/text2fx/words"
 s_ = S.WavetableSynth(H.CL.TABLE, SR, voices=1, bounds=H.B, interpolation=H.CL.TBL.get("interpolation", 1)).to(DEV); s_.random_phase = False
 ch = T2.CHAIN; base = json.load(open(os.path.join(W, "baseline.json")))
 def find(name, prompt):
-    for f in glob.glob(os.path.join(W, f"{name}__*_eq-comp-dist-delay-reverb.json")):
+    for f in glob.glob(os.path.join(W, "plain", f"{name}__*_eq-comp-dist-delay-reverb.json")):
         d = json.load(open(f))
         if d["prompt"] == prompt: return d
 out = {}; agg = {"synth": [], "fx": [], **{t: [] for t in ch.types}}

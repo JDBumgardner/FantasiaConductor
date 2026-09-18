@@ -18,7 +18,7 @@ import torch, house_session as H
 HERE = os.path.dirname(os.path.abspath(__file__)); H.OUT = os.path.join(HERE, "balance", VARIANT); os.makedirs(H.OUT, exist_ok=True)
 for cell in CELLS:
     name, w = cell.split(":")
-    p = {k: torch.tensor(float(v)) for k, v in json.load(open(os.path.join(HERE, f"{name}_patch.json")))["raw"].items()}
+    p = {k: torch.tensor(float(v)) for k, v in json.load(open(os.path.join(HERE, "instruments", f"{name}_patch.json")))["raw"].items()}
     if os.path.exists(os.path.join(H.OUT, f"{name}__{w}{H.TAG}.json")): continue
     t0 = time.time(); H.prompt_on(name, p, w, restarts=8); print(f"      ({time.time()-t0:.0f}s)", flush=True)
 print("VARIANT DONE")

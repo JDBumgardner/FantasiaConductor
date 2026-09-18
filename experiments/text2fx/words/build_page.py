@@ -36,8 +36,8 @@ def fxline(d, inst):
     if eq: parts.append("eq " + " ".join(eq))
     return " · ".join(parts)
 
-names = [n for n, _ in INSTRUMENTS]; inst_json = {n: json.load(open(os.path.join(D, f"{n}_patch.json"))) for n in names}
-plain = {(n, w): load(D, n, w) for n in names for w in WORDS}
+names = [n for n, _ in INSTRUMENTS]; inst_json = {n: json.load(open(os.path.join(D, "instruments", f"{n}_patch.json"))) for n in names}
+plain = {(n, w): load(os.path.join(D, "plain"), n, w) for n in names for w in WORDS}
 named = {(n, w): (load(os.path.join(D, "named"), n, f"a {w} {DISPLAY[n]}")[0] or load(os.path.join(D, "named"), n, art(f"{w} {DISPLAY[n]}"))[0],
                   load(os.path.join(D, "named"), n, f"a {w} {DISPLAY[n]}")[1] or load(os.path.join(D, "named"), n, art(f"{w} {DISPLAY[n]}"))[1]) for n in names for w in WORDS}
 contrast = {(n, w): load(os.path.join(D, "contrast"), n, art(f"{w} {DISPLAY[n]}")) for n in names for w in WORDS} if os.path.isdir(os.path.join(D, "contrast")) else {}
@@ -70,8 +70,8 @@ P.append('''<h2><span class="num">01</span>The setup</h2>
 <div class="stack">''')
 for n, prog in INSTRUMENTS:
     ij = inst_json[n]; ph = ij["physical"]
-    P.append(clip(mp3(os.path.join(D, f"{n}_ref.wav"), f"{n}_ref"), "ref", f"{DISPLAY[n].capitalize()} — GM program {prog + 1}"))
-    P.append(clip(mp3(os.path.join(D, f"{n}_clone.wav"), f"{n}_clone"), "clone", f"{DISPLAY[n].capitalize()} — the twin's patch", f"cutoff {ph['cutoff_raw']:.2f} · res {ph['resonance']:.2f} · attack {ph['attack']*1000:.0f} ms · release {ph['release']:.2f} s · CLAP “a {DISPLAY[n]}” {base[n]['_self']:+.2f}"))
+    P.append(clip(mp3(os.path.join(D, "instruments", f"{n}_ref.wav"), f"{n}_ref"), "ref", f"{DISPLAY[n].capitalize()} — GM program {prog + 1}"))
+    P.append(clip(mp3(os.path.join(D, "instruments", f"{n}_clone.wav"), f"{n}_clone"), "clone", f"{DISPLAY[n].capitalize()} — the twin's patch", f"cutoff {ph['cutoff_raw']:.2f} · res {ph['resonance']:.2f} · attack {ph['attack']*1000:.0f} ms · release {ph['release']:.2f} s · CLAP “a {DISPLAY[n]}” {base[n]['_self']:+.2f}"))
 P.append('''</div>
 <p>The ten words were chosen one or two per axis of the space a sound designer actually works in:</p>
 <div class="defs">

@@ -2,7 +2,7 @@
 import os, sys, json, glob
 D = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, D); from word_grid import INSTRUMENTS, WORDS, DISPLAY
-NAMED = len(sys.argv) > 1 and sys.argv[1] == "named"; R = os.path.join(D, "named") if NAMED else D
+NAMED = len(sys.argv) > 1 and sys.argv[1] == "named"; R = os.path.join(D, "named") if NAMED else os.path.join(D, "plain")
 rows = {}
 for f in glob.glob(os.path.join(R, "*__*_eq-comp-dist-delay-reverb.json")):
     d = json.load(open(f)); name = os.path.basename(f).split("__", 1)[0]
@@ -24,7 +24,7 @@ if base:
     lines += ["", "Untouched instrument vs “this sound is a ⟨instrument⟩”: " + ", ".join(f"{n} {base[n]['_self']:+.2f}" for n in names if n in base) + " — CLAP recognises the brass and e-piano twins as their instruments, not the cello or flute twins."]
 lines += ["", "## What moved (result minus instrument; physical units)", ""]
 for n in names:
-    inst = json.load(open(os.path.join(D, f"{n}_patch.json")))["physical"]
+    inst = json.load(open(os.path.join(D, "instruments", f"{n}_patch.json")))["physical"]
     lines += [f"### {n}", "", "| word | score | dist | cutoff | res | env amt | attack ms | release s | drive dB | comp ratio | delay | reverb | eq (Hz: dB) |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for w in WORDS:
         d = rows.get((n, w))

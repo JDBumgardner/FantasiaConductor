@@ -15,7 +15,7 @@ import house_session as H
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAMED = os.environ.get("T2_NAMED", "0") == "1"                # "this sound is a dark cello" instead of "this sound is dark"
 CONTRAST = H.OBJ == "contrast"                                # optimise cosine("a dark cello") - cosine("a cello"): the adjective's direction, not the instrument's
-H.OUT = os.path.join(HERE, "contrast" if CONTRAST else "named") if NAMED else HERE
+H.OUT = os.path.join(HERE, "contrast" if CONTRAST else "named") if NAMED else os.path.join(HERE, "plain")
 os.makedirs(H.OUT, exist_ok=True)
 
 INSTRUMENTS = [("cello", 42), ("brass", 61), ("epiano", 4), ("flute", 73)]
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     for name, prog in INSTRUMENTS:
         if name not in names: continue
         patch = os.path.join(H.OUT, f"{name}_patch.json")
-        if not os.path.exists(patch) and os.path.exists(os.path.join(HERE, f"{name}_patch.json")): patch = os.path.join(HERE, f"{name}_patch.json")   # named grid reuses the plain grid's instruments
+        if not os.path.exists(patch) and os.path.exists(os.path.join(HERE, "instruments", f"{name}_patch.json")): patch = os.path.join(HERE, "instruments", f"{name}_patch.json")   # named grid reuses the plain grid's instruments
         if os.path.exists(patch):
             p = {k: torch.tensor(float(v)) for k, v in json.load(open(patch))["raw"].items()}; print(f"  [{name}] patch loaded", flush=True)
         else:

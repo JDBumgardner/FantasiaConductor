@@ -14,7 +14,7 @@ def embed(ps, pf):
     with torch.no_grad(): y = s_.render(ps, H.NOTES, L); out, _ = T2.CHAIN.render(y, pf, checkpoint=False); return C.embed(T2.loudness_norm(out))[0]
 res = {}
 for name in ARGS or [n for n, _ in INSTRUMENTS]:
-    raw = json.load(open(os.path.join(W, f"{name}_patch.json")))["raw"]
+    raw = json.load(open(os.path.join(W, "instruments", f"{name}_patch.json")))["raw"]
     ps = {k: torch.tensor(float(v), device=DEV) for k, v in raw.items()}; pf = T2.init_fx(0); pf = {t: {k: v.detach() for k, v in d.items()} for t, d in pf.items()}
     e0 = embed(ps, pf); rows = []
     for k in ps:

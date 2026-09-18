@@ -2,7 +2,7 @@
 import os, sys, json, glob
 D = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, D)
 base = json.load(open(os.path.join(D, "baseline.json")))
-inst = {n: json.load(open(os.path.join(D, f"{n}_patch.json")))["physical"] for n in ("cello", "brass", "epiano", "flute")}
+inst = {n: json.load(open(os.path.join(D, "instruments", f"{n}_patch.json")))["physical"] for n in ("cello", "brass", "epiano", "flute")}
 def row(d, n):
     s, de = d["describe"]["synth"], d["describe"]; i = inst[n]
     eqmax = max(abs(g) for _, g in de["eq"])
@@ -13,7 +13,7 @@ cells = sorted({os.path.basename(f).split("_eq-comp")[0] for v in variants for f
 print(f"{'cell':18s} {'var':4s} {'score':>6s} {'grid':>6s} {'half':>6s} | {'Δcut':>6s} {'Δres':>6s} {'Δatt':>6s} {'drive':>6s} {'comp':>5s} {'delay':>5s} {'rev':>5s} {'eq|max|':>7s} {'dist':>5s}")
 for c in cells:
     n, w = c.split("__")
-    g = glob.glob(os.path.join(D, f"{c}_eq-comp-dist-delay-reverb.json")); grid = json.load(open(g[0]))["score"] if g else float("nan")
+    g = glob.glob(os.path.join(D, "plain", f"{c}_eq-comp-dist-delay-reverb.json")); grid = json.load(open(g[0]))["score"] if g else float("nan")
     for v in variants:
         f = glob.glob(os.path.join(D, "balance", v, f"{c}_eq-comp-*.json"))
         if not f: continue
