@@ -13,7 +13,7 @@ from __future__ import annotations
 import os, sys, types, warnings
 import numpy as np
 import soundfile as sf
-import torch, torchaudio
+import math, torch, torchaudio
 
 warnings.filterwarnings("ignore")
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -247,3 +247,26 @@ def harmonic_loss(a, b, notes, K=64):
     ha = ha - ha.max(-1, keepdim=True).values; hb = hb - hb.max(-1, keepdim=True).values   # shape, not level
     ha, hb = ha.clamp(min=-60.0), hb.clamp(min=-60.0)          # -60 dB floor: don't compare noise floors
     return (ha - hb).abs().mean() / 10.0
+
+
+_BANDS = {}
+def band_energy_loss(a, b, n_fft=2048, hop=480, n_bands=32, f_lo=60.0, smooth=8, sr=48000):
+    """Log band energies over time (32 log-spaced bands of at least 4 bins, 43 Hz frames, power averaged over 8
+    frames = 80 ms), L1. Noise-realisation-invariant: two independent white noises of the same level agree here
+    to ~0.03 (log10) where the fine STFT terms see a Rayleigh-fluctuation floor of 0.73 that barely moves with
+    level -- which made the twin prefer *less* noise than the target and compensate with cutoff/level.
+    Complements mrstft_lin; does not replace it (it has no phase/onset resolution)."""
+    key = (n_fft, n_bands, str(a.device))
+    if key not in _BANDS:
+        f = torch.fft.rfftfreq(n_fft, 1 / sr); edges = torch.logspace(math.log10(f_lo), math.log10(sr / 2), n_bands + 1)
+        rows, lo = [], 0
+        for i in range(n_bands):
+            hi_idx = int((f < edges[i + 1]).sum()); hi_idx = max(hi_idx, lo + 4)          # at least 4 bins per band
+            if hi_idx > f.numel(): break
+            r = torch.zeros(f.numel()); r[lo:hi_idx] = 1.0 / (hi_idx - lo); rows.append(r); lo = hi_idx
+        _BANDS[key] = torch.stack(rows).to(a.device)
+    M = _BANDS[key]; win = torch.hann_window(n_fft, device=a.device)
+    def P(x):
+        S = M @ torch.stft(reflect_pad(x, n_fft // 2), n_fft, hop, window=win, center=False, return_complex=True).abs() ** 2
+        return torch.nn.functional.avg_pool1d(S[None], smooth, stride=smooth // 2)[0]
+    return (torch.log10(P(a) + 1e-9) - torch.log10(P(b) + 1e-9)).abs().mean()

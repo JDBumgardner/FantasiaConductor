@@ -55,9 +55,11 @@ def onset_profile_loss(a, b, notes, K=64):
     ha = (ha - ha.max(-1, keepdim=True).values).clamp(min=-60.0); hb = (hb - hb.max(-1, keepdim=True).values).clamp(min=-60.0)
     return (ha - hb).abs().mean() / 10.0
 
+BAND_W = float(os.environ.get("T2_BAND_W", "3.0"))            # smoothed-spectrum term: the one that can see noise level (T2_BAND_W=0 for the old loss)
 def loss_fn(a, b):
     return (C.mrstft_lin(a, b, ffts=(128, 512, 2048, 8192, 16384)) + 2.0 * C.env_loss(a, b, win=7200)
-            + 1.0 * C.mod_depth_loss(a, b, notes) + 1.0 * C.harmonic_loss(a, b, notes) + 1.0 * onset_profile_loss(a, b, notes))
+            + 1.0 * C.mod_depth_loss(a, b, notes) + 1.0 * C.harmonic_loss(a, b, notes) + 1.0 * onset_profile_loss(a, b, notes)
+            + (BAND_W * C.band_energy_loss(a, b) if BAND_W else 0.0))
 
 NOISE = os.environ.get("T2_NOISE", "1") == "1"                 # fit the noise source too (T2_NOISE=0 for the pre-2026-09-17 behaviour)
 

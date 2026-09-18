@@ -84,12 +84,15 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
        3 % over the range incl. the drive saturation at a = 1; filtered spectrum
        within 1 dB/band; CPU-vs-MPS gradient cosine 1.0. On by default (quiet
        start, `T2_NOISE=0` to disable) in recovery, house search and text2synth.
-       [ ] Closed loop is only partial (noise 0.09 recovered for 0.36 in a short
-       run, cutoff/level compensating): the STFT losses compare one noise
-       realisation against another, which puts a floor under "add noise" — add
-       a smoothed-spectrum (mel-band) term or average two realisations.
-       [ ] Re-recover cello and flute with noise; check CLAP "a cello" (0.18 now)
-       and the soft / airy / distant column.
+       [x] Loss fixed: `common.band_energy_loss` (32 log bands, 80 ms smoothing)
+       is noise-realisation-invariant (0.12 equal level vs 0.61 half level; the
+       fine STFT floor is 0.73 → 0.78) and enters `closed_loop_filter.loss_fn`
+       at weight 3. Secret pluck: noise 0.44 → 0.68 recovered for 0.60.
+       [x] Re-recovered cello and flute with noise (`words/noise/`). CLAP "a
+       flute": twin 0.13 → 0.20 (soundfont 0.33), survives the Vital round trip
+       (0.18); noise 0.31. Cello: 0.18 → 0.19 — bow noise is pitched and
+       granular, not white at the filter input. [ ] re-run the soft / airy /
+       distant column on the noise patches.
 2. [ ] **LFO** (8 + random) — vibrato, wobble, tremolo; chorus with a delay line.
 3. [ ] **Oscillator 2 with FM/RM** — bells and metallic sounds need it.
 4. [ ] **Mod matrix as parameters** — routings + amounts searchable, not one
