@@ -123,7 +123,29 @@ closed-loop recovery.
       the identity away (brass 0.41 → 0.05–0.28). Three objectives, three
       failure modes.
 - [ ] **Hinge objective** — cos("a soft cello") + λ·min(0, cos("a cello") − cos₀):
-      hold identity, don't trade against it. The next grid.
+      hold identity, don't trade against it.
+- [x] **Text → FX on the recording itself** (`words/source/`, 2026-09-17): works on
+      the fixed chain (cello dark −0.10 → 0.39); twin ahead where the word is
+      about the source (punchy, e-piano dark), recording ahead on e-piano punchy.
+      But: endpoints — see the frontier.
+- [x] **The frontier (`words/frontier.py`, 2026-09-18)** — "make it darker" is a
+      direction and an amount, so a route is judged by its score-vs-distance
+      curve: each stop its own optimum at that distance (locality weight swept
+      3 → 0.01 by continuation, 80 steps per stop), every effect starting at
+      bypass, distance = band-energy of the HEARD output vs the untouched
+      instrument (phase-invariant; the fine mrstft has a 0.32 phase floor),
+      candidates ranked by the objective (ranking by score alone let the
+      locality have no say in which start wins — also true of prompt_on until
+      now). Four attempts, each exposing an asymmetry; the last was that the
+      twin's effects were not counted as distance. Result on cello dark / punchy,
+      e-piano dark: at matched distance the twin is above the recording route on
+      all three (cello @0.5: +0.12 / +0.23 vs −0.01 / +0.05); the recording route
+      saturates on cello dark (never past −0.01). Musical stops are 3–5, not 6.
+      Listening: `words/listen_frontier/` (+ `ab/` ladders and A/Bs — adjacent
+      stops spaced by λ are hard to tell apart).
+- [ ] **Stops at fixed distances** (≈ 0.15 / 0.4 / 0.8 / 1.5) instead of by λ, and
+      `prompt_on` / `tune_toward` return the ladder; rank by the objective in
+      `prompt_on` too; the band-energy locality replaces the mrstft there.
 - [ ] **Amount as a knob** — candidates at 25/50/100% of the parameter delta,
       ear chooses (the paper's best numbers relied on exactly this).
 - [ ] **Transfer across phrases** — does a patch tuned on the hook survive a
@@ -203,6 +225,18 @@ amount, airy 0.188 → −0.004.
        cached anchor spectra.
 
 ### The judge
+- [x] **Signal-level artefact detectors** (`text2fx/artefacts.py`, 2026-09-18):
+      clip fraction, sample jumps vs local level, within-note spectral flux
+      (chorus / flanger / pumping), within-note 2–14 Hz level modulation
+      (tremolo / pumping), crest change (squashed), gate chops — each inside
+      sustained notes and as a delta vs the same notes without the effects (a
+      naive modulation detector flagged 119/168 because melodies move the
+      centroid at note rate). Over 168 results: pumping 39, chorus/flanger 12,
+      stutter 7, squashed 1, clipping 0. Worst offenders sent for listening.
+- [ ] **Artefact penalties in the loss** — the differentiable four (flux,
+      tremolo, crest, jump) against the dry render; gate range prior 60 → 25 dB.
+- [ ] **Audiobox-Aesthetics** (production-quality axis) as a reranker of
+      finalists; flag a result whose PQ dropped vs the original.
 - [ ] **Parameter-space realness prior** from real Vital presets (75 installed,
       thousands online): density model / real-vs-random classifier over the
       searched parameters. Cannot be fooled by audio tricks; supplies magnitude.

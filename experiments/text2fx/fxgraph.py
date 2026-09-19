@@ -6,7 +6,7 @@ plain-language description of what its parameters mean.
 
 Node types: eq, comp, drive (level-referenced tanh), dist (GRAFX tanh at absolute level), pwtanh, chorus, transient, gate, delay, reverb.
 """
-import math, torch, torch.utils.checkpoint, numpy as np
+import os, math, torch, torch.utils.checkpoint, numpy as np
 from grafx.data import GRAFX, NodeConfigs, convert_to_tensor
 from grafx.render import render_grafx, reorder_for_fast_render
 from grafx.render.prepare import prepare_render
@@ -34,6 +34,13 @@ class DryWet(P.DryWet):
     and 'mix 0.5' meant z = 0 = fully dry. Every run before 2026-09-15 had this. This subclass applies the sigmoid."""
     def forward(self, input_signals, drywet_weight, **kw): return super().forward(input_signals, torch.sigmoid(drywet_weight), **kw)
 
+# Initialisation policy. "neutral": every effect starts at (near) bypass -- flat EQ, ratio 1.1, drive -24 dB, mixes
+# 0.015, shaper 0, gate range 1 dB -- so a search begins AT the instrument and the locality weight decides how much
+# each node switches on. "prior": the older musical mid-settings (compressor 3:1, mixes 0.2-0.3...), which put every
+# result a fixed hop from the instrument before the prompt had said anything (e-piano: distance 0.46 for +0.03).
+NEUTRAL = os.environ.get("T2_FX_INIT", "neutral") == "neutral"
+def _mix0(g, sd=0.15): return torch.logit(torch.tensor(0.015)) + _r(g, 1, 1, sd=sd)     # a mix of ~1.5 %: a live gradient, an inaudible effect
+
 # ---------------------------------------------------------------------------------------------
 NODES = {}
 def node(name):
@@ -49,7 +56,7 @@ class EQ:
     @staticmethod
     def init(g):
         f0 = torch.tensor(np.geomspace(80, 12000, 6), dtype=torch.float32)
-        return {"w0": torch.logit(2 * f0 / SR)[None, None] + _r(g, 1, 1, 6, sd=0.1), "q_inv": _r(g, 1, 1, 6), "log_gain": _r(g, 1, 1, 6, sd=0.2)}
+        return {"w0": torch.logit(2 * f0 / SR)[None, None] + _r(g, 1, 1, 6, sd=0.1), "q_inv": _r(g, 1, 1, 6), "log_gain": _r(g, 1, 1, 6, sd=0.02 if NEUTRAL else 0.2)}
     @staticmethod
     def prior(p):
         hz = torch.sigmoid(p["w0"][0, 0]) * SR / 2; db = DB_PER_LG * p["log_gain"][0, 0]; q = torch.exp(-p["q_inv"][0, 0])
@@ -114,7 +121,7 @@ class Comp:
     @classmethod
     def init(cls, g):
         za = torch.tensor([[7.3, 9.2]]) if cls.ballistics else torch.tensor([[7.3]])                # ~30 ms attack, ~200 ms release
-        return {"thr_db": torch.tensor([[-18.0]]) + _r(g, 1, 1, sd=3.0), "log_ratio": torch.tensor([[math.log(2.0)]]) + _r(g, 1, 1),
+        return {"thr_db": torch.tensor([[-6.0 if NEUTRAL else -18.0]]) + _r(g, 1, 1, sd=3.0), "log_ratio": torch.tensor([[math.log(0.05 if NEUTRAL else 2.0)]]) + _r(g, 1, 1, sd=0.3 if NEUTRAL else 1.0),   # neutral: 1.05:1 above -6 dB touches only peaks
                 "log_knee": torch.tensor([[math.log(6.0)]]) + _r(g, 1, 1, sd=0.2), "z_alpha": za + _r(g, *za.shape, sd=0.5)}
     @staticmethod
     def prior(p):
@@ -135,7 +142,7 @@ class Dist:
     @staticmethod
     def make(N): return P.GainStagingRegularization(P.TanhDistortion())
     @staticmethod
-    def init(g): return {"log_pre_gain": _r(g, 1, 1)}
+    def init(g): return {"log_pre_gain": _r(g, 1, 1)}         # absolute-level tanh: 0 dB is already near-linear on our signals
     @staticmethod
     def prior(p):
         drive = DB_PER_LPG * p["log_pre_gain"][0, 0]; return torch.relu(drive - 10.0) ** 2 / 100 + torch.relu(-drive) ** 2 / 4
@@ -159,7 +166,7 @@ class DriveNode:
     @staticmethod
     def make(N): return Drive()
     @staticmethod
-    def init(g): return {"drive_db": torch.tensor([[0.0]]) + _r(g, 1, 1, sd=2.0)}
+    def init(g): return {"drive_db": torch.tensor([[-24.0 if NEUTRAL else 0.0]]) + _r(g, 1, 1, sd=2.0)}
     @staticmethod
     def prior(p): d = p["drive_db"][0, 0]; return torch.relu(d - 20.0) ** 2 / 100 + torch.relu(-6.0 - d) ** 2 / 36
     @staticmethod
@@ -183,7 +190,7 @@ class PwTanh:
     @staticmethod
     def make(N): return LevelRef(P.PiecewiseTanhDistortion())
     @staticmethod
-    def init(g): return {"log_hardness": _r(g, 1, 2, sd=0.3), "z_threshold": _r(g, 1, 2, sd=0.5), "log_pre_gain": _r(g, 1, 1)}
+    def init(g): return {"log_hardness": _r(g, 1, 2, sd=0.3), "z_threshold": _r(g, 1, 2, sd=0.5), "log_pre_gain": torch.tensor([[-24.0 / DB_PER_LPG if NEUTRAL else 0.0]]) + _r(g, 1, 1)}
     @staticmethod
     def prior(p):
         drive = DB_PER_LPG * p["log_pre_gain"][0, 0]
@@ -218,7 +225,7 @@ class ChorusNode:
     def make(N): return P.GainStagingRegularization(Chorus(N))
     @staticmethod
     def init(g): return {"z_delay_ms": torch.full((1, 1), -0.5) + _r(g, 1, 1), "z_depth": torch.full((1, 1), -1.0) + _r(g, 1, 1),
-                         "z_rate": torch.full((1, 1), -0.5) + _r(g, 1, 1), "drywet_weight": torch.full((1, 1), -1.0) + _r(g, 1, 1)}
+                         "z_rate": torch.full((1, 1), -0.5) + _r(g, 1, 1), "drywet_weight": _mix0(g) if NEUTRAL else torch.full((1, 1), -1.0) + _r(g, 1, 1)}
     @staticmethod
     def prior(p): return torch.relu(torch.sigmoid(p["drywet_weight"][0, 0]) - 0.5) ** 2 / 0.25
     @staticmethod
@@ -258,7 +265,7 @@ class TransientNode:
     @staticmethod
     def make(N): return TransientShaper(N)
     @staticmethod
-    def init(g): return {"attack": _r(g, 1, 1, sd=0.3), "sustain": _r(g, 1, 1, sd=0.3), "z_slow": torch.tensor([[8.4]]) + _r(g, 1, 1, sd=0.3)}   # ~90 ms
+    def init(g): return {"attack": _r(g, 1, 1, sd=0.02 if NEUTRAL else 0.3), "sustain": _r(g, 1, 1, sd=0.02 if NEUTRAL else 0.3), "z_slow": torch.tensor([[8.4]]) + _r(g, 1, 1, sd=0.3)}   # ~90 ms
     @staticmethod
     def prior(p): z = p["z_slow"][0, 0]; return torch.relu(6.9 - z) ** 2 + torch.relu(z - 9.2) ** 2      # 20..200 ms
     @staticmethod
@@ -282,7 +289,7 @@ class GateNode:
     def make(N): return Gate(N)
     @staticmethod
     def init(g): return {"thr_db": torch.tensor([[-40.0]]) + _r(g, 1, 1, sd=3), "log_width": torch.tensor([[math.log(6.0)]]) + _r(g, 1, 1, sd=0.2),
-                         "z_alpha": torch.tensor([[7.3]]) + _r(g, 1, 1, sd=0.3), "log_range": torch.tensor([[math.log(24.0)]]) + _r(g, 1, 1, sd=0.2)}
+                         "z_alpha": torch.tensor([[7.3]]) + _r(g, 1, 1, sd=0.3), "log_range": torch.tensor([[math.log(1.0 if NEUTRAL else 24.0)]]) + _r(g, 1, 1, sd=0.2)}
     @staticmethod
     def prior(p):
         thr = p["thr_db"][0, 0]; z = p["z_alpha"][0, 0]
@@ -303,7 +310,7 @@ class Delay:
     def make(N):
         return DryWet(P.MultitapDelay(processor_channel="mono", num_segments=8, zp_filter_per_tap=False, flashfftconv=False, max_input_len=N), external_param=False)
     @staticmethod
-    def init(g): return {"delay_z": _r(g, 1, 8, 2, sd=0.5), "drywet_weight": torch.full((1, 1), -1.5) + _r(g, 1, 1)}
+    def init(g): return {"delay_z": _r(g, 1, 8, 2, sd=0.5), "drywet_weight": _mix0(g) if NEUTRAL else torch.full((1, 1), -1.5) + _r(g, 1, 1)}
     @staticmethod
     def prior(p): return torch.relu(torch.sigmoid(p["drywet_weight"][0, 0]) - 0.4) ** 2 / 0.16
     @staticmethod
@@ -321,7 +328,7 @@ class Reverb:
         np.random.seed(0)
         return P.GainStagingRegularization(DryWet(P.FilteredNoiseShapingReverb(sr=SR, processor_channel="mono", zerophase=False, noise_randomness="fixed", flashfftconv=False, max_input_len=N), external_param=False))
     @staticmethod
-    def init(g): return {"log_decay": _r(g, 1, 1, 12, sd=0.5), "log_gain": 1.0 + _r(g, 1, 1, 12, sd=0.1), "drywet_weight": torch.full((1, 1), -1.0) + _r(g, 1, 1)}
+    def init(g): return {"log_decay": _r(g, 1, 1, 12, sd=0.5), "log_gain": 1.0 + _r(g, 1, 1, 12, sd=0.1), "drywet_weight": _mix0(g) if NEUTRAL else torch.full((1, 1), -1.0) + _r(g, 1, 1)}
     @staticmethod
     def prior(p): return (torch.relu(-p["log_gain"]) ** 2).sum() + torch.relu(torch.sigmoid(p["drywet_weight"][0, 0]) - 0.5) ** 2 / 0.25
     @staticmethod

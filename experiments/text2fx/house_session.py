@@ -121,7 +121,7 @@ def prompt_on(name, p_inst, prompt, lam_loc=None, steps=300, restarts=3, anchor_
         g = torch.Generator().manual_seed(r)
         ps = {k: (v.clone().to(DEV) + (noise * torch.randn((), generator=g).to(DEV) if noise else 0)).requires_grad_(k != "level") for k, v in p_inst.items()}
         if CL.NOISE and "noise" not in ps:                                            # instruments recovered before the noise source existed start it quiet
-            ps["noise"] = torch.logit(torch.tensor(0.05, device=DEV)).requires_grad_(True)
+            ps["noise"] = torch.logit(torch.tensor(0.005, device=DEV)).requires_grad_(True)    # near-silent start; 0.05 was an audible hiss
         return ps, T2.init_fx(r)
     t0 = time.time()
     if OPT == "sh":                                                     # successive halving + cosine + L-BFGS polish
