@@ -293,7 +293,7 @@ class GateNode:
     @staticmethod
     def prior(p):
         thr = p["thr_db"][0, 0]; z = p["z_alpha"][0, 0]
-        return (torch.relu(-70 - thr) ** 2 + torch.relu(thr + 10) ** 2) / 100 + torch.relu(3.9 - z) ** 2 + torch.relu(z - 9.2) ** 2 + torch.relu(torch.exp(p["log_range"][0, 0]) - 60) ** 2 / 100
+        return (torch.relu(-70 - thr) ** 2 + torch.relu(thr + 10) ** 2) / 100 + torch.relu(3.9 - z) ** 2 + torch.relu(z - 9.2) ** 2 + torch.relu(torch.exp(p["log_range"][0, 0]) - 25) ** 2 / 100
     @staticmethod
     def describe(p):
         tau = -1000 / (SR * math.log(min(1 / (1 + math.exp(-float(p["z_alpha"][0, 0]))), 0.999999)))

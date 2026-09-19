@@ -1,0 +1,1994 @@
+{
+ "experiments/text2fx/words/balance/A/cello__dark_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.681016445159912,
+  "CU": 7.397857666015625,
+  "PC": 2.2844061851501465,
+  "PQ": 7.114164352416992
+ },
+ "experiments/text2fx/words/balance/A/cello__dark_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.490920543670654,
+  "CU": 7.031808853149414,
+  "PC": 2.696678638458252,
+  "PQ": 6.362397193908691
+ },
+ "experiments/text2fx/words/balance/A/cello__metallic_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.126678466796875,
+  "CU": 7.480658054351807,
+  "PC": 2.1339755058288574,
+  "PQ": 7.40199613571167
+ },
+ "experiments/text2fx/words/balance/A/cello__metallic_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 5.058463096618652,
+  "CU": 7.530760288238525,
+  "PC": 2.4163081645965576,
+  "PQ": 7.373388290405273
+ },
+ "experiments/text2fx/words/balance/A/cello__punchy_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.145787239074707,
+  "CU": 7.315322399139404,
+  "PC": 1.9897112846374512,
+  "PQ": 6.724761962890625
+ },
+ "experiments/text2fx/words/balance/A/cello__punchy_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.377305030822754,
+  "CU": 7.450505256652832,
+  "PC": 2.003082513809204,
+  "PQ": 6.879716873168945
+ },
+ "experiments/text2fx/words/balance/A/cello__soft_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.734584331512451,
+  "CU": 7.951767921447754,
+  "PC": 2.1606497764587402,
+  "PQ": 8.09071159362793
+ },
+ "experiments/text2fx/words/balance/A/cello__soft_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 6.055727005004883,
+  "CU": 8.115655899047852,
+  "PC": 2.0909948348999023,
+  "PQ": 8.01786994934082
+ },
+ "experiments/text2fx/words/balance/A/epiano__dark_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.674905300140381,
+  "CU": 7.564852714538574,
+  "PC": 1.9575586318969727,
+  "PQ": 7.989928245544434
+ },
+ "experiments/text2fx/words/balance/A/epiano__dark_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 5.107533931732178,
+  "CU": 7.390588760375977,
+  "PC": 2.082764148712158,
+  "PQ": 7.440917491912842
+ },
+ "experiments/text2fx/words/balance/A/epiano__punchy_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.285656929016113,
+  "CU": 6.961856842041016,
+  "PC": 1.7765194177627563,
+  "PQ": 7.45536470413208
+ },
+ "experiments/text2fx/words/balance/A/epiano__punchy_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.482726573944092,
+  "CU": 7.2335076332092285,
+  "PC": 1.8913251161575317,
+  "PQ": 7.45427942276001
+ },
+ "experiments/text2fx/words/balance/B/cello__dark_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.79254674911499,
+  "CU": 7.418233394622803,
+  "PC": 2.214755058288574,
+  "PQ": 7.1183695793151855
+ },
+ "experiments/text2fx/words/balance/B/cello__dark_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.049058437347412,
+  "CU": 6.603025436401367,
+  "PC": 2.440700054168701,
+  "PQ": 5.9604291915893555
+ },
+ "experiments/text2fx/words/balance/B/cello__metallic_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.620556354522705,
+  "CU": 7.5678629875183105,
+  "PC": 2.2697043418884277,
+  "PQ": 7.685781955718994
+ },
+ "experiments/text2fx/words/balance/B/cello__metallic_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.201957702636719,
+  "CU": 7.0197954177856445,
+  "PC": 2.490272045135498,
+  "PQ": 6.586150646209717
+ },
+ "experiments/text2fx/words/balance/B/cello__punchy_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.313406944274902,
+  "CU": 7.413951873779297,
+  "PC": 2.0063626766204834,
+  "PQ": 6.923678398132324
+ },
+ "experiments/text2fx/words/balance/B/cello__punchy_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.434462547302246,
+  "CU": 7.484962463378906,
+  "PC": 1.981033444404602,
+  "PQ": 6.955126762390137
+ },
+ "experiments/text2fx/words/balance/B/cello__soft_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.52793025970459,
+  "CU": 7.456754684448242,
+  "PC": 2.229253053665161,
+  "PQ": 7.557977676391602
+ },
+ "experiments/text2fx/words/balance/B/cello__soft_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.025286674499512,
+  "CU": 6.953150272369385,
+  "PC": 2.4916269779205322,
+  "PQ": 6.7292327880859375
+ },
+ "experiments/text2fx/words/balance/B/epiano__dark_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.645294666290283,
+  "CU": 7.341768264770508,
+  "PC": 2.1603026390075684,
+  "PQ": 7.77085018157959
+ },
+ "experiments/text2fx/words/balance/B/epiano__dark_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 5.33418083190918,
+  "CU": 7.6041364669799805,
+  "PC": 2.569735050201416,
+  "PQ": 7.260842323303223
+ },
+ "experiments/text2fx/words/balance/B/epiano__punchy_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.2184858322143555,
+  "CU": 6.932018280029297,
+  "PC": 1.7691118717193604,
+  "PQ": 7.456598281860352
+ },
+ "experiments/text2fx/words/balance/B/epiano__punchy_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.400318622589111,
+  "CU": 7.238620281219482,
+  "PC": 1.8734147548675537,
+  "PQ": 7.568568229675293
+ },
+ "experiments/text2fx/words/balance/C/cello__dark_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.138711452484131,
+  "CU": 7.611878871917725,
+  "PC": 2.1419436931610107,
+  "PQ": 7.881057262420654
+ },
+ "experiments/text2fx/words/balance/C/cello__dark_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.257115840911865,
+  "CU": 7.161895275115967,
+  "PC": 2.2987143993377686,
+  "PQ": 7.084918975830078
+ },
+ "experiments/text2fx/words/balance/C/cello__metallic_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.253297328948975,
+  "CU": 7.6883134841918945,
+  "PC": 2.2030444145202637,
+  "PQ": 7.944766998291016
+ },
+ "experiments/text2fx/words/balance/C/cello__metallic_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.651485443115234,
+  "CU": 7.536471843719482,
+  "PC": 2.5672850608825684,
+  "PQ": 7.611214637756348
+ },
+ "experiments/text2fx/words/balance/C/cello__punchy_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.202221870422363,
+  "CU": 7.61002779006958,
+  "PC": 2.1323251724243164,
+  "PQ": 7.468732833862305
+ },
+ "experiments/text2fx/words/balance/C/cello__punchy_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 5.0363664627075195,
+  "CU": 7.928802490234375,
+  "PC": 2.162034511566162,
+  "PQ": 7.8744659423828125
+ },
+ "experiments/text2fx/words/balance/C/cello__soft_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.205929756164551,
+  "CU": 7.5774664878845215,
+  "PC": 2.172860622406006,
+  "PQ": 7.747372150421143
+ },
+ "experiments/text2fx/words/balance/C/cello__soft_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 3.9995474815368652,
+  "CU": 7.078956127166748,
+  "PC": 2.430049180984497,
+  "PQ": 7.071648120880127
+ },
+ "experiments/text2fx/words/balance/C/epiano__dark_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.2178120613098145,
+  "CU": 7.344675064086914,
+  "PC": 1.9042671918869019,
+  "PQ": 7.778390884399414
+ },
+ "experiments/text2fx/words/balance/C/epiano__dark_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.868045806884766,
+  "CU": 7.334381580352783,
+  "PC": 2.42586350440979,
+  "PQ": 6.7814531326293945
+ },
+ "experiments/text2fx/words/balance/C/epiano__punchy_eq-comp-drive-delay-reverb_dry.wav": {
+  "CE": 4.183493137359619,
+  "CU": 6.9504523277282715,
+  "PC": 1.740777611732483,
+  "PQ": 7.517233848571777
+ },
+ "experiments/text2fx/words/balance/C/epiano__punchy_eq-comp-drive-delay-reverb_fx.wav": {
+  "CE": 4.883932590484619,
+  "CU": 7.503357887268066,
+  "PC": 1.8404914140701294,
+  "PQ": 7.847513198852539
+ },
+ "experiments/text2fx/words/balance/D/cello__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.556663513183594,
+  "CU": 7.373799800872803,
+  "PC": 2.3179125785827637,
+  "PQ": 7.2256975173950195
+ },
+ "experiments/text2fx/words/balance/D/cello__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 3.9794061183929443,
+  "CU": 6.526864528656006,
+  "PC": 2.558506727218628,
+  "PQ": 5.886005401611328
+ },
+ "experiments/text2fx/words/balance/D/cello__metallic_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.3873395919799805,
+  "CU": 7.7351603507995605,
+  "PC": 2.1634273529052734,
+  "PQ": 8.000251770019531
+ },
+ "experiments/text2fx/words/balance/D/cello__metallic_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.684431552886963,
+  "CU": 7.0258965492248535,
+  "PC": 2.3129782676696777,
+  "PQ": 6.643701076507568
+ },
+ "experiments/text2fx/words/balance/D/cello__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 3.998779773712158,
+  "CU": 7.243791580200195,
+  "PC": 2.02204966545105,
+  "PQ": 6.673465728759766
+ },
+ "experiments/text2fx/words/balance/D/cello__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.814354419708252,
+  "CU": 7.442826271057129,
+  "PC": 1.8928028345108032,
+  "PQ": 7.426718235015869
+ },
+ "experiments/text2fx/words/balance/D/cello__soft_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 3.642529010772705,
+  "CU": 6.705655574798584,
+  "PC": 2.0902605056762695,
+  "PQ": 6.48948860168457
+ },
+ "experiments/text2fx/words/balance/D/cello__soft_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.7337446212768555,
+  "CU": 7.528604030609131,
+  "PC": 2.0873899459838867,
+  "PQ": 7.645482063293457
+ },
+ "experiments/text2fx/words/balance/D/epiano__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.07419490814209,
+  "CU": 7.226771354675293,
+  "PC": 1.9124144315719604,
+  "PQ": 7.6648101806640625
+ },
+ "experiments/text2fx/words/balance/D/epiano__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.863547325134277,
+  "CU": 7.281383514404297,
+  "PC": 2.756988763809204,
+  "PQ": 7.3685383796691895
+ },
+ "experiments/text2fx/words/balance/D/epiano__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.487124443054199,
+  "CU": 7.041987895965576,
+  "PC": 1.797374963760376,
+  "PQ": 7.5675272941589355
+ },
+ "experiments/text2fx/words/balance/D/epiano__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 5.402586936950684,
+  "CU": 7.511120796203613,
+  "PC": 1.9398469924926758,
+  "PQ": 7.876501083374023
+ },
+ "experiments/text2fx/words/balance/E/cello__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.718295097351074,
+  "CU": 7.653623580932617,
+  "PC": 2.2136778831481934,
+  "PQ": 7.9067606925964355
+ },
+ "experiments/text2fx/words/balance/E/cello__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 5.202874183654785,
+  "CU": 7.465656280517578,
+  "PC": 2.578263282775879,
+  "PQ": 7.016607284545898
+ },
+ "experiments/text2fx/words/balance/E/cello__metallic_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.3391242027282715,
+  "CU": 7.007538795471191,
+  "PC": 2.129568576812744,
+  "PQ": 6.749218463897705
+ },
+ "experiments/text2fx/words/balance/E/cello__metallic_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.461047649383545,
+  "CU": 7.332678318023682,
+  "PC": 2.1473517417907715,
+  "PQ": 7.1497931480407715
+ },
+ "experiments/text2fx/words/balance/E/cello__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 3.94209885597229,
+  "CU": 7.178773880004883,
+  "PC": 2.0030624866485596,
+  "PQ": 6.901059627532959
+ },
+ "experiments/text2fx/words/balance/E/cello__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.806798458099365,
+  "CU": 7.730552673339844,
+  "PC": 2.311483144760132,
+  "PQ": 7.4202375411987305
+ },
+ "experiments/text2fx/words/balance/E/cello__soft_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.515205383300781,
+  "CU": 6.67801570892334,
+  "PC": 2.1308698654174805,
+  "PQ": 6.337761878967285
+ },
+ "experiments/text2fx/words/balance/E/cello__soft_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 5.066647052764893,
+  "CU": 7.385219097137451,
+  "PC": 2.362816333770752,
+  "PQ": 7.321056842803955
+ },
+ "experiments/text2fx/words/balance/E/epiano__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.86869478225708,
+  "CU": 7.669520854949951,
+  "PC": 1.9658890962600708,
+  "PQ": 8.027188301086426
+ },
+ "experiments/text2fx/words/balance/E/epiano__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 5.140100955963135,
+  "CU": 7.643632888793945,
+  "PC": 2.2069172859191895,
+  "PQ": 7.860560417175293
+ },
+ "experiments/text2fx/words/balance/E/epiano__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.532161235809326,
+  "CU": 7.125619888305664,
+  "PC": 1.8761487007141113,
+  "PQ": 7.409769535064697
+ },
+ "experiments/text2fx/words/balance/E/epiano__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 5.045164108276367,
+  "CU": 7.454525470733643,
+  "PC": 2.124221086502075,
+  "PQ": 7.686180591583252
+ },
+ "experiments/text2fx/words/balance/F/cello__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.543209552764893,
+  "CU": 7.576849937438965,
+  "PC": 2.1488990783691406,
+  "PQ": 7.865798473358154
+ },
+ "experiments/text2fx/words/balance/F/cello__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.2069172859191895,
+  "CU": 6.988970756530762,
+  "PC": 2.271162509918213,
+  "PQ": 6.6822686195373535
+ },
+ "experiments/text2fx/words/balance/F/cello__metallic_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.633966445922852,
+  "CU": 7.766292572021484,
+  "PC": 2.1519460678100586,
+  "PQ": 8.049644470214844
+ },
+ "experiments/text2fx/words/balance/F/cello__metallic_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.456935405731201,
+  "CU": 7.202145576477051,
+  "PC": 2.3157448768615723,
+  "PQ": 7.177393913269043
+ },
+ "experiments/text2fx/words/balance/F/cello__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 3.9330811500549316,
+  "CU": 7.221527099609375,
+  "PC": 2.000084400177002,
+  "PQ": 6.942266941070557
+ },
+ "experiments/text2fx/words/balance/F/cello__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.81029748916626,
+  "CU": 7.543118476867676,
+  "PC": 2.375566244125366,
+  "PQ": 7.431613922119141
+ },
+ "experiments/text2fx/words/balance/F/cello__soft_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.5327863693237305,
+  "CU": 7.721780776977539,
+  "PC": 2.174651622772217,
+  "PQ": 8.021471977233887
+ },
+ "experiments/text2fx/words/balance/F/cello__soft_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 5.269204139709473,
+  "CU": 7.506292343139648,
+  "PC": 2.691500186920166,
+  "PQ": 7.558117866516113
+ },
+ "experiments/text2fx/words/balance/F/epiano__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.8361053466796875,
+  "CU": 7.795326232910156,
+  "PC": 2.0901522636413574,
+  "PQ": 7.959502220153809
+ },
+ "experiments/text2fx/words/balance/F/epiano__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.861501693725586,
+  "CU": 7.471999168395996,
+  "PC": 2.1724047660827637,
+  "PQ": 7.598592758178711
+ },
+ "experiments/text2fx/words/balance/F/epiano__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.4908833503723145,
+  "CU": 7.2949419021606445,
+  "PC": 1.938453197479248,
+  "PQ": 7.742143630981445
+ },
+ "experiments/text2fx/words/balance/F/epiano__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.873520851135254,
+  "CU": 7.426726341247559,
+  "PC": 2.1845993995666504,
+  "PQ": 7.676097393035889
+ },
+ "experiments/text2fx/words/balance/W/cello__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.3666462898254395,
+  "CU": 7.992954254150391,
+  "PC": 2.0339016914367676,
+  "PQ": 8.113243103027344
+ },
+ "experiments/text2fx/words/balance/W/cello__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.611162185668945,
+  "CU": 7.298696517944336,
+  "PC": 2.3714842796325684,
+  "PQ": 6.6295976638793945
+ },
+ "experiments/text2fx/words/balance/W/cello__metallic_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 5.692124366760254,
+  "CU": 7.825521469116211,
+  "PC": 2.0601887702941895,
+  "PQ": 7.588954925537109
+ },
+ "experiments/text2fx/words/balance/W/cello__metallic_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.068928241729736,
+  "CU": 6.670991897583008,
+  "PC": 2.8709652423858643,
+  "PQ": 5.903451919555664
+ },
+ "experiments/text2fx/words/balance/W/cello__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 3.5443942546844482,
+  "CU": 7.0385518074035645,
+  "PC": 2.0526647567749023,
+  "PQ": 6.6908392906188965
+ },
+ "experiments/text2fx/words/balance/W/cello__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 4.428713798522949,
+  "CU": 7.321831703186035,
+  "PC": 2.377457857131958,
+  "PQ": 7.267314910888672
+ },
+ "experiments/text2fx/words/balance/W/cello__soft_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.298532962799072,
+  "CU": 7.700779914855957,
+  "PC": 2.1263034343719482,
+  "PQ": 7.947003364562988
+ },
+ "experiments/text2fx/words/balance/W/cello__soft_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 6.217940807342529,
+  "CU": 7.88075065612793,
+  "PC": 1.8743478059768677,
+  "PQ": 8.238425254821777
+ },
+ "experiments/text2fx/words/balance/W/epiano__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.162542343139648,
+  "CU": 7.504189968109131,
+  "PC": 1.8965264558792114,
+  "PQ": 7.9776201248168945
+ },
+ "experiments/text2fx/words/balance/W/epiano__dark_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 5.140467643737793,
+  "CU": 7.506178855895996,
+  "PC": 2.380805253982544,
+  "PQ": 7.022696018218994
+ },
+ "experiments/text2fx/words/balance/W/epiano__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_dry.wav": {
+  "CE": 4.18406867980957,
+  "CU": 7.305778503417969,
+  "PC": 1.9283788204193115,
+  "PQ": 7.885312080383301
+ },
+ "experiments/text2fx/words/balance/W/epiano__punchy_eq-comp-drive-pwtanh-chorus-transient-gate-delay-reverb_fx.wav": {
+  "CE": 5.196895122528076,
+  "CU": 7.729001998901367,
+  "PC": 2.0638368129730225,
+  "PQ": 8.013590812683105
+ },
+ "experiments/text2fx/words/contrast/brass__a_bright_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.779336929321289,
+  "CU": 7.724847316741943,
+  "PC": 1.9014241695404053,
+  "PQ": 7.994819164276123
+ },
+ "experiments/text2fx/words/contrast/brass__a_bright_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.779783248901367,
+  "CU": 7.319979667663574,
+  "PC": 2.4026002883911133,
+  "PQ": 7.681682109832764
+ },
+ "experiments/text2fx/words/contrast/brass__a_dark_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 6.59422492980957,
+  "CU": 7.720287322998047,
+  "PC": 2.2984018325805664,
+  "PQ": 7.242534637451172
+ },
+ "experiments/text2fx/words/contrast/brass__a_dark_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.375698566436768,
+  "CU": 6.570530891418457,
+  "PC": 2.661654233932495,
+  "PQ": 5.724456787109375
+ },
+ "experiments/text2fx/words/contrast/brass__a_distant_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.1339688301086426,
+  "CU": 6.734440803527832,
+  "PC": 1.8839191198349,
+  "PQ": 6.7832841873168945
+ },
+ "experiments/text2fx/words/contrast/brass__a_distant_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.24393367767334,
+  "CU": 6.79811954498291,
+  "PC": 1.991153597831726,
+  "PQ": 7.550512313842773
+ },
+ "experiments/text2fx/words/contrast/brass__a_harsh_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.5654754638671875,
+  "CU": 7.025505065917969,
+  "PC": 1.958302617073059,
+  "PQ": 7.027603626251221
+ },
+ "experiments/text2fx/words/contrast/brass__a_harsh_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.47458553314209,
+  "CU": 6.49599027633667,
+  "PC": 2.110046148300171,
+  "PQ": 6.979099273681641
+ },
+ "experiments/text2fx/words/contrast/brass__a_metallic_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.7804951667785645,
+  "CU": 7.148164749145508,
+  "PC": 1.999336838722229,
+  "PQ": 7.04051399230957
+ },
+ "experiments/text2fx/words/contrast/brass__a_metallic_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.4996590614318848,
+  "CU": 6.765410423278809,
+  "PC": 2.3106560707092285,
+  "PQ": 6.808433532714844
+ },
+ "experiments/text2fx/words/contrast/brass__a_punchy_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.884270191192627,
+  "CU": 7.184710502624512,
+  "PC": 1.8567728996276855,
+  "PQ": 7.246190071105957
+ },
+ "experiments/text2fx/words/contrast/brass__a_punchy_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.5927681922912598,
+  "CU": 6.719965934753418,
+  "PC": 1.9859797954559326,
+  "PQ": 7.16248083114624
+ },
+ "experiments/text2fx/words/contrast/brass__a_soft_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.918888807296753,
+  "CU": 7.7458391189575195,
+  "PC": 2.2389018535614014,
+  "PQ": 7.967035293579102
+ },
+ "experiments/text2fx/words/contrast/brass__a_soft_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.606159687042236,
+  "CU": 7.512170791625977,
+  "PC": 2.504229784011841,
+  "PQ": 7.003166198730469
+ },
+ "experiments/text2fx/words/contrast/brass__a_warm_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.0471646785736084,
+  "CU": 6.850939750671387,
+  "PC": 1.7912178039550781,
+  "PQ": 7.0693254470825195
+ },
+ "experiments/text2fx/words/contrast/brass__a_warm_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.886708974838257,
+  "CU": 6.776117324829102,
+  "PC": 2.4969615936279297,
+  "PQ": 6.934540271759033
+ },
+ "experiments/text2fx/words/contrast/brass__a_wooden_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 6.310644626617432,
+  "CU": 7.736845016479492,
+  "PC": 2.2343809604644775,
+  "PQ": 7.342423915863037
+ },
+ "experiments/text2fx/words/contrast/brass__a_wooden_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.305977821350098,
+  "CU": 7.159757137298584,
+  "PC": 2.435298204421997,
+  "PQ": 6.33565616607666
+ },
+ "experiments/text2fx/words/contrast/brass__an_airy_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.374614715576172,
+  "CU": 7.832767963409424,
+  "PC": 2.108215093612671,
+  "PQ": 8.034836769104004
+ },
+ "experiments/text2fx/words/contrast/brass__an_airy_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.5985798835754395,
+  "CU": 7.873508453369141,
+  "PC": 2.1125826835632324,
+  "PQ": 8.035004615783691
+ },
+ "experiments/text2fx/words/contrast/cello__a_bright_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.11801815032959,
+  "CU": 7.569107532501221,
+  "PC": 2.1710469722747803,
+  "PQ": 7.32705545425415
+ },
+ "experiments/text2fx/words/contrast/cello__a_bright_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.231164932250977,
+  "CU": 8.024206161499023,
+  "PC": 2.687269926071167,
+  "PQ": 7.992067337036133
+ },
+ "experiments/text2fx/words/contrast/cello__a_dark_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.262443542480469,
+  "CU": 7.484281539916992,
+  "PC": 2.269237756729126,
+  "PQ": 7.725790500640869
+ },
+ "experiments/text2fx/words/contrast/cello__a_dark_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.041459083557129,
+  "CU": 7.226541519165039,
+  "PC": 2.6702721118927,
+  "PQ": 7.279246807098389
+ },
+ "experiments/text2fx/words/contrast/cello__a_distant_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.365333557128906,
+  "CU": 7.619410514831543,
+  "PC": 2.2248222827911377,
+  "PQ": 7.823296070098877
+ },
+ "experiments/text2fx/words/contrast/cello__a_distant_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.55052375793457,
+  "CU": 7.503249168395996,
+  "PC": 2.2124276161193848,
+  "PQ": 7.471092224121094
+ },
+ "experiments/text2fx/words/contrast/cello__a_harsh_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.721010684967041,
+  "CU": 7.2903313636779785,
+  "PC": 1.9971157312393188,
+  "PQ": 6.583283424377441
+ },
+ "experiments/text2fx/words/contrast/cello__a_harsh_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.3361310958862305,
+  "CU": 6.9520745277404785,
+  "PC": 2.3743083477020264,
+  "PQ": 6.6943888664245605
+ },
+ "experiments/text2fx/words/contrast/cello__a_metallic_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.129702091217041,
+  "CU": 7.752412796020508,
+  "PC": 2.2416343688964844,
+  "PQ": 7.524594306945801
+ },
+ "experiments/text2fx/words/contrast/cello__a_metallic_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.124818325042725,
+  "CU": 7.142060279846191,
+  "PC": 2.2229132652282715,
+  "PQ": 7.533268451690674
+ },
+ "experiments/text2fx/words/contrast/cello__a_punchy_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.07131290435791,
+  "CU": 7.221968650817871,
+  "PC": 2.0413146018981934,
+  "PQ": 6.416948318481445
+ },
+ "experiments/text2fx/words/contrast/cello__a_punchy_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.736253261566162,
+  "CU": 7.5792765617370605,
+  "PC": 2.0767674446105957,
+  "PQ": 7.2941389083862305
+ },
+ "experiments/text2fx/words/contrast/cello__a_soft_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.5086259841918945,
+  "CU": 7.759413719177246,
+  "PC": 2.2643556594848633,
+  "PQ": 7.303163528442383
+ },
+ "experiments/text2fx/words/contrast/cello__a_soft_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 6.440446376800537,
+  "CU": 8.074813842773438,
+  "PC": 2.856832981109619,
+  "PQ": 7.802101135253906
+ },
+ "experiments/text2fx/words/contrast/cello__a_warm_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.4499053955078125,
+  "CU": 7.2775397300720215,
+  "PC": 2.4100747108459473,
+  "PQ": 6.779556751251221
+ },
+ "experiments/text2fx/words/contrast/cello__a_warm_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.416158676147461,
+  "CU": 7.334503173828125,
+  "PC": 2.8156137466430664,
+  "PQ": 7.0555620193481445
+ },
+ "experiments/text2fx/words/contrast/cello__a_wooden_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 2.885364294052124,
+  "CU": 6.683125019073486,
+  "PC": 1.9363433122634888,
+  "PQ": 6.793895721435547
+ },
+ "experiments/text2fx/words/contrast/cello__a_wooden_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.219305038452148,
+  "CU": 7.719102382659912,
+  "PC": 1.9297341108322144,
+  "PQ": 7.474445343017578
+ },
+ "experiments/text2fx/words/contrast/cello__an_airy_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.247673988342285,
+  "CU": 7.633373737335205,
+  "PC": 2.192981719970703,
+  "PQ": 7.9439778327941895
+ },
+ "experiments/text2fx/words/contrast/cello__an_airy_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.232786178588867,
+  "CU": 7.128725528717041,
+  "PC": 2.3690218925476074,
+  "PQ": 7.286935806274414
+ },
+ "experiments/text2fx/words/contrast/epiano__a_bright_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 5.170502185821533,
+  "CU": 7.901246070861816,
+  "PC": 1.9852712154388428,
+  "PQ": 8.291787147521973
+ },
+ "experiments/text2fx/words/contrast/epiano__a_bright_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.2334794998168945,
+  "CU": 7.811359405517578,
+  "PC": 2.564545154571533,
+  "PQ": 7.97550106048584
+ },
+ "experiments/text2fx/words/contrast/epiano__a_dark_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.475995063781738,
+  "CU": 7.010403633117676,
+  "PC": 1.8350753784179688,
+  "PQ": 7.458371162414551
+ },
+ "experiments/text2fx/words/contrast/epiano__a_dark_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.139374732971191,
+  "CU": 7.040611267089844,
+  "PC": 2.271634578704834,
+  "PQ": 6.161650657653809
+ },
+ "experiments/text2fx/words/contrast/epiano__a_distant_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.510409832000732,
+  "CU": 7.53519344329834,
+  "PC": 1.9070228338241577,
+  "PQ": 8.103198051452637
+ },
+ "experiments/text2fx/words/contrast/epiano__a_distant_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.9556660652160645,
+  "CU": 7.651267051696777,
+  "PC": 2.0919604301452637,
+  "PQ": 8.21899127960205
+ },
+ "experiments/text2fx/words/contrast/epiano__a_harsh_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.396669387817383,
+  "CU": 7.201066970825195,
+  "PC": 1.9707114696502686,
+  "PQ": 7.861565589904785
+ },
+ "experiments/text2fx/words/contrast/epiano__a_harsh_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.2752623558044434,
+  "CU": 7.17202615737915,
+  "PC": 2.5925889015197754,
+  "PQ": 7.090301990509033
+ },
+ "experiments/text2fx/words/contrast/epiano__a_metallic_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.629465579986572,
+  "CU": 7.406122207641602,
+  "PC": 2.0441834926605225,
+  "PQ": 7.844141006469727
+ },
+ "experiments/text2fx/words/contrast/epiano__a_metallic_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.113910675048828,
+  "CU": 6.60808801651001,
+  "PC": 2.675405263900757,
+  "PQ": 5.841510772705078
+ },
+ "experiments/text2fx/words/contrast/epiano__a_punchy_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.470799446105957,
+  "CU": 7.527165412902832,
+  "PC": 2.025045156478882,
+  "PQ": 8.170923233032227
+ },
+ "experiments/text2fx/words/contrast/epiano__a_punchy_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.753941535949707,
+  "CU": 7.053396701812744,
+  "PC": 2.0073399543762207,
+  "PQ": 7.498396396636963
+ },
+ "experiments/text2fx/words/contrast/epiano__a_soft_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.127353191375732,
+  "CU": 7.308376312255859,
+  "PC": 1.971895456314087,
+  "PQ": 7.719271183013916
+ },
+ "experiments/text2fx/words/contrast/epiano__a_soft_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.572826385498047,
+  "CU": 7.046350479125977,
+  "PC": 2.636833429336548,
+  "PQ": 6.573996543884277
+ },
+ "experiments/text2fx/words/contrast/epiano__a_warm_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.595666885375977,
+  "CU": 7.640948295593262,
+  "PC": 1.8993582725524902,
+  "PQ": 8.160805702209473
+ },
+ "experiments/text2fx/words/contrast/epiano__a_warm_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.773062705993652,
+  "CU": 7.603270530700684,
+  "PC": 2.506023406982422,
+  "PQ": 7.629635810852051
+ },
+ "experiments/text2fx/words/contrast/epiano__a_wooden_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.529533386230469,
+  "CU": 7.160497665405273,
+  "PC": 1.7398910522460938,
+  "PQ": 7.573759078979492
+ },
+ "experiments/text2fx/words/contrast/epiano__a_wooden_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.67514705657959,
+  "CU": 7.413277626037598,
+  "PC": 2.9843711853027344,
+  "PQ": 7.178889274597168
+ },
+ "experiments/text2fx/words/contrast/epiano__an_airy_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 5.319536209106445,
+  "CU": 7.921878814697266,
+  "PC": 2.2066359519958496,
+  "PQ": 8.361705780029297
+ },
+ "experiments/text2fx/words/contrast/epiano__an_airy_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.545042037963867,
+  "CU": 7.7570953369140625,
+  "PC": 3.2285854816436768,
+  "PQ": 7.805368423461914
+ },
+ "experiments/text2fx/words/contrast/flute__a_bright_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.6405763626098633,
+  "CU": 7.27443790435791,
+  "PC": 1.9441009759902954,
+  "PQ": 7.176326751708984
+ },
+ "experiments/text2fx/words/contrast/flute__a_bright_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.779968738555908,
+  "CU": 7.845099449157715,
+  "PC": 2.1879544258117676,
+  "PQ": 7.887534141540527
+ },
+ "experiments/text2fx/words/contrast/flute__a_dark_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 5.752213954925537,
+  "CU": 7.9045281410217285,
+  "PC": 2.195335865020752,
+  "PQ": 7.871785640716553
+ },
+ "experiments/text2fx/words/contrast/flute__a_dark_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.322105884552002,
+  "CU": 7.24826717376709,
+  "PC": 2.571897268295288,
+  "PQ": 6.866327285766602
+ },
+ "experiments/text2fx/words/contrast/flute__a_distant_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.471869468688965,
+  "CU": 6.9159979820251465,
+  "PC": 1.962173342704773,
+  "PQ": 7.102057456970215
+ },
+ "experiments/text2fx/words/contrast/flute__a_distant_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.859480857849121,
+  "CU": 7.622121810913086,
+  "PC": 1.9872127771377563,
+  "PQ": 7.905733108520508
+ },
+ "experiments/text2fx/words/contrast/flute__a_harsh_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.436563491821289,
+  "CU": 7.047249794006348,
+  "PC": 1.9141933917999268,
+  "PQ": 7.108389854431152
+ },
+ "experiments/text2fx/words/contrast/flute__a_harsh_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.022669315338135,
+  "CU": 7.4757399559021,
+  "PC": 2.281667709350586,
+  "PQ": 7.494422912597656
+ },
+ "experiments/text2fx/words/contrast/flute__a_metallic_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.206844806671143,
+  "CU": 6.791346073150635,
+  "PC": 2.044785499572754,
+  "PQ": 6.580386638641357
+ },
+ "experiments/text2fx/words/contrast/flute__a_metallic_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.4690136909484863,
+  "CU": 6.592836856842041,
+  "PC": 1.9777882099151611,
+  "PQ": 6.6050825119018555
+ },
+ "experiments/text2fx/words/contrast/flute__a_punchy_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.368699550628662,
+  "CU": 6.926643371582031,
+  "PC": 1.9356690645217896,
+  "PQ": 7.013762474060059
+ },
+ "experiments/text2fx/words/contrast/flute__a_punchy_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.35101318359375,
+  "CU": 6.813102722167969,
+  "PC": 2.1760787963867188,
+  "PQ": 6.853553771972656
+ },
+ "experiments/text2fx/words/contrast/flute__a_soft_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.311898708343506,
+  "CU": 6.951625823974609,
+  "PC": 1.9258602857589722,
+  "PQ": 7.133929252624512
+ },
+ "experiments/text2fx/words/contrast/flute__a_soft_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.939127445220947,
+  "CU": 7.423935890197754,
+  "PC": 1.9636107683181763,
+  "PQ": 7.624380588531494
+ },
+ "experiments/text2fx/words/contrast/flute__a_warm_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.223560333251953,
+  "CU": 6.83611536026001,
+  "PC": 1.8932907581329346,
+  "PQ": 6.968263626098633
+ },
+ "experiments/text2fx/words/contrast/flute__a_warm_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.085997581481934,
+  "CU": 7.069938659667969,
+  "PC": 2.3096892833709717,
+  "PQ": 7.161284446716309
+ },
+ "experiments/text2fx/words/contrast/flute__a_wooden_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.175983428955078,
+  "CU": 6.775537967681885,
+  "PC": 1.8704628944396973,
+  "PQ": 7.002222061157227
+ },
+ "experiments/text2fx/words/contrast/flute__a_wooden_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.068962097167969,
+  "CU": 7.883102893829346,
+  "PC": 2.038235664367676,
+  "PQ": 7.8388190269470215
+ },
+ "experiments/text2fx/words/contrast/flute__an_airy_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.236118793487549,
+  "CU": 6.856555938720703,
+  "PC": 1.9077688455581665,
+  "PQ": 6.961616039276123
+ },
+ "experiments/text2fx/words/contrast/flute__an_airy_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.9030086994171143,
+  "CU": 7.070123672485352,
+  "PC": 1.8953953981399536,
+  "PQ": 6.900139331817627
+ },
+ "experiments/text2fx/words/instruments/cello_ref.wav": {
+  "CE": 5.256323337554932,
+  "CU": 7.72422456741333,
+  "PC": 1.9075756072998047,
+  "PQ": 7.883428573608398
+ },
+ "experiments/text2fx/words/instruments/epiano_ref.wav": {
+  "CE": 4.856588363647461,
+  "CU": 7.4082818031311035,
+  "PC": 1.8265548944473267,
+  "PQ": 7.750073432922363
+ },
+ "experiments/text2fx/words/named/brass__a_airy_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.9668068885803223,
+  "CU": 7.429541110992432,
+  "PC": 1.7170836925506592,
+  "PQ": 7.5985894203186035
+ },
+ "experiments/text2fx/words/named/brass__a_airy_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.064231872558594,
+  "CU": 7.395153999328613,
+  "PC": 1.8783643245697021,
+  "PQ": 7.24142599105835
+ },
+ "experiments/text2fx/words/named/brass__a_bright_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.1359119415283203,
+  "CU": 6.762301445007324,
+  "PC": 1.9548946619033813,
+  "PQ": 6.879644393920898
+ },
+ "experiments/text2fx/words/named/brass__a_bright_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.416315078735352,
+  "CU": 7.699193000793457,
+  "PC": 2.2797582149505615,
+  "PQ": 7.406155109405518
+ },
+ "experiments/text2fx/words/named/brass__a_dark_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 2.9630064964294434,
+  "CU": 6.788600444793701,
+  "PC": 1.8531172275543213,
+  "PQ": 6.972318172454834
+ },
+ "experiments/text2fx/words/named/brass__a_dark_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.895359992980957,
+  "CU": 7.29834508895874,
+  "PC": 2.288858652114868,
+  "PQ": 7.271367073059082
+ },
+ "experiments/text2fx/words/named/brass__a_distant_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.058018684387207,
+  "CU": 6.675971984863281,
+  "PC": 2.015017032623291,
+  "PQ": 6.8586883544921875
+ },
+ "experiments/text2fx/words/named/brass__a_distant_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.369694948196411,
+  "CU": 6.868625640869141,
+  "PC": 1.952324628829956,
+  "PQ": 6.969812393188477
+ },
+ "experiments/text2fx/words/named/brass__a_harsh_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.317417621612549,
+  "CU": 7.174345970153809,
+  "PC": 1.8063313961029053,
+  "PQ": 7.221517086029053
+ },
+ "experiments/text2fx/words/named/brass__a_harsh_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.5788819789886475,
+  "CU": 7.015166759490967,
+  "PC": 1.9295971393585205,
+  "PQ": 6.950229644775391
+ },
+ "experiments/text2fx/words/named/brass__a_metallic_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.06006121635437,
+  "CU": 6.838891983032227,
+  "PC": 1.893035650253296,
+  "PQ": 7.003739356994629
+ },
+ "experiments/text2fx/words/named/brass__a_metallic_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.635500431060791,
+  "CU": 6.8430891036987305,
+  "PC": 2.148381471633911,
+  "PQ": 7.001891136169434
+ },
+ "experiments/text2fx/words/named/brass__a_punchy_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.134066104888916,
+  "CU": 6.939184188842773,
+  "PC": 1.8192408084869385,
+  "PQ": 6.985570907592773
+ },
+ "experiments/text2fx/words/named/brass__a_punchy_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.7329981327056885,
+  "CU": 7.046455383300781,
+  "PC": 1.8370492458343506,
+  "PQ": 7.231868267059326
+ },
+ "experiments/text2fx/words/named/brass__a_soft_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.2235283851623535,
+  "CU": 7.125080585479736,
+  "PC": 1.8956080675125122,
+  "PQ": 7.856611251831055
+ },
+ "experiments/text2fx/words/named/brass__a_soft_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.138983249664307,
+  "CU": 7.809544563293457,
+  "PC": 1.9305979013442993,
+  "PQ": 8.185561180114746
+ },
+ "experiments/text2fx/words/named/brass__a_warm_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 2.8412764072418213,
+  "CU": 6.713581562042236,
+  "PC": 1.83280348777771,
+  "PQ": 6.996262550354004
+ },
+ "experiments/text2fx/words/named/brass__a_warm_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.9440531730651855,
+  "CU": 7.626479625701904,
+  "PC": 1.997228741645813,
+  "PQ": 7.624317646026611
+ },
+ "experiments/text2fx/words/named/brass__a_wooden_brass_section_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.8552422523498535,
+  "CU": 7.4565324783325195,
+  "PC": 1.7370176315307617,
+  "PQ": 7.638309955596924
+ },
+ "experiments/text2fx/words/named/brass__a_wooden_brass_section_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.77297830581665,
+  "CU": 7.681222438812256,
+  "PC": 1.9882545471191406,
+  "PQ": 7.458761215209961
+ },
+ "experiments/text2fx/words/named/cello__a_airy_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.155087471008301,
+  "CU": 7.586291313171387,
+  "PC": 2.140397787094116,
+  "PQ": 7.85256290435791
+ },
+ "experiments/text2fx/words/named/cello__a_airy_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.2483978271484375,
+  "CU": 7.119405746459961,
+  "PC": 2.493729591369629,
+  "PQ": 6.587040901184082
+ },
+ "experiments/text2fx/words/named/cello__a_bright_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.155080318450928,
+  "CU": 7.683091640472412,
+  "PC": 2.1153855323791504,
+  "PQ": 7.971946716308594
+ },
+ "experiments/text2fx/words/named/cello__a_bright_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.853843688964844,
+  "CU": 7.285079002380371,
+  "PC": 2.463791847229004,
+  "PQ": 6.930678367614746
+ },
+ "experiments/text2fx/words/named/cello__a_dark_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.5796594619750977,
+  "CU": 7.181402206420898,
+  "PC": 1.966484785079956,
+  "PQ": 6.746588230133057
+ },
+ "experiments/text2fx/words/named/cello__a_dark_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.673624515533447,
+  "CU": 7.755022048950195,
+  "PC": 2.6383163928985596,
+  "PQ": 7.908076286315918
+ },
+ "experiments/text2fx/words/named/cello__a_distant_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.533651828765869,
+  "CU": 7.763210296630859,
+  "PC": 2.1661806106567383,
+  "PQ": 7.885459899902344
+ },
+ "experiments/text2fx/words/named/cello__a_distant_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 6.03174352645874,
+  "CU": 7.794386863708496,
+  "PC": 2.406254768371582,
+  "PQ": 7.751936435699463
+ },
+ "experiments/text2fx/words/named/cello__a_harsh_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.537643909454346,
+  "CU": 7.669054985046387,
+  "PC": 2.1692023277282715,
+  "PQ": 7.960044860839844
+ },
+ "experiments/text2fx/words/named/cello__a_harsh_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.3285675048828125,
+  "CU": 7.519696235656738,
+  "PC": 2.1173014640808105,
+  "PQ": 7.636592388153076
+ },
+ "experiments/text2fx/words/named/cello__a_metallic_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.0636298656463623,
+  "CU": 6.838263034820557,
+  "PC": 1.97536301612854,
+  "PQ": 6.595456123352051
+ },
+ "experiments/text2fx/words/named/cello__a_metallic_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.055166244506836,
+  "CU": 7.08410120010376,
+  "PC": 2.2795939445495605,
+  "PQ": 7.0483598709106445
+ },
+ "experiments/text2fx/words/named/cello__a_punchy_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.261286735534668,
+  "CU": 6.954342365264893,
+  "PC": 1.9717060327529907,
+  "PQ": 6.614779472351074
+ },
+ "experiments/text2fx/words/named/cello__a_punchy_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.354301452636719,
+  "CU": 7.5750861167907715,
+  "PC": 2.197580099105835,
+  "PQ": 7.07172966003418
+ },
+ "experiments/text2fx/words/named/cello__a_soft_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.178311347961426,
+  "CU": 7.614666938781738,
+  "PC": 2.145233154296875,
+  "PQ": 7.910032749176025
+ },
+ "experiments/text2fx/words/named/cello__a_soft_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.5775146484375,
+  "CU": 7.192120552062988,
+  "PC": 2.5830140113830566,
+  "PQ": 6.6303181648254395
+ },
+ "experiments/text2fx/words/named/cello__a_warm_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.808088779449463,
+  "CU": 7.389186859130859,
+  "PC": 2.069693088531494,
+  "PQ": 7.791779518127441
+ },
+ "experiments/text2fx/words/named/cello__a_warm_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.374894142150879,
+  "CU": 7.453514575958252,
+  "PC": 2.099729061126709,
+  "PQ": 7.256816864013672
+ },
+ "experiments/text2fx/words/named/cello__a_wooden_cello_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.9494528770446777,
+  "CU": 7.511594295501709,
+  "PC": 2.142825126647949,
+  "PQ": 7.784845352172852
+ },
+ "experiments/text2fx/words/named/cello__a_wooden_cello_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.795015335083008,
+  "CU": 6.992095947265625,
+  "PC": 2.1348345279693604,
+  "PQ": 7.158079624176025
+ },
+ "experiments/text2fx/words/named/epiano__a_airy_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.576801300048828,
+  "CU": 7.391631126403809,
+  "PC": 1.9007632732391357,
+  "PQ": 8.023002624511719
+ },
+ "experiments/text2fx/words/named/epiano__a_airy_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.428018093109131,
+  "CU": 7.491780757904053,
+  "PC": 2.2205185890197754,
+  "PQ": 7.389443397521973
+ },
+ "experiments/text2fx/words/named/epiano__a_bright_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.450813293457031,
+  "CU": 7.388827323913574,
+  "PC": 1.9362866878509521,
+  "PQ": 7.974381446838379
+ },
+ "experiments/text2fx/words/named/epiano__a_bright_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.530986785888672,
+  "CU": 7.843541622161865,
+  "PC": 2.1079742908477783,
+  "PQ": 7.9286956787109375
+ },
+ "experiments/text2fx/words/named/epiano__a_dark_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.293231964111328,
+  "CU": 7.1977949142456055,
+  "PC": 1.9185432195663452,
+  "PQ": 7.813319683074951
+ },
+ "experiments/text2fx/words/named/epiano__a_dark_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.920857906341553,
+  "CU": 7.085519790649414,
+  "PC": 2.092421054840088,
+  "PQ": 6.997658729553223
+ },
+ "experiments/text2fx/words/named/epiano__a_distant_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.369362831115723,
+  "CU": 7.237985134124756,
+  "PC": 1.9364391565322876,
+  "PQ": 7.8088250160217285
+ },
+ "experiments/text2fx/words/named/epiano__a_distant_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.456465244293213,
+  "CU": 7.054698944091797,
+  "PC": 2.2856287956237793,
+  "PQ": 6.4030070304870605
+ },
+ "experiments/text2fx/words/named/epiano__a_harsh_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.4593071937561035,
+  "CU": 7.460704326629639,
+  "PC": 1.9153497219085693,
+  "PQ": 7.9984965324401855
+ },
+ "experiments/text2fx/words/named/epiano__a_harsh_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.544738292694092,
+  "CU": 7.909337043762207,
+  "PC": 2.0770506858825684,
+  "PQ": 8.158757209777832
+ },
+ "experiments/text2fx/words/named/epiano__a_metallic_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.430375576019287,
+  "CU": 7.3558454513549805,
+  "PC": 1.9474540948867798,
+  "PQ": 7.818345069885254
+ },
+ "experiments/text2fx/words/named/epiano__a_metallic_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.964689254760742,
+  "CU": 7.131195545196533,
+  "PC": 2.1727962493896484,
+  "PQ": 6.887099266052246
+ },
+ "experiments/text2fx/words/named/epiano__a_punchy_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.141514301300049,
+  "CU": 7.130809783935547,
+  "PC": 1.877352237701416,
+  "PQ": 7.791210651397705
+ },
+ "experiments/text2fx/words/named/epiano__a_punchy_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.410209655761719,
+  "CU": 7.109048843383789,
+  "PC": 2.1459720134735107,
+  "PQ": 7.3372111320495605
+ },
+ "experiments/text2fx/words/named/epiano__a_soft_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.424582004547119,
+  "CU": 7.2799882888793945,
+  "PC": 1.9616801738739014,
+  "PQ": 7.824433326721191
+ },
+ "experiments/text2fx/words/named/epiano__a_soft_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.184514045715332,
+  "CU": 7.415596961975098,
+  "PC": 2.165106773376465,
+  "PQ": 6.933299541473389
+ },
+ "experiments/text2fx/words/named/epiano__a_warm_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.367056846618652,
+  "CU": 7.282351493835449,
+  "PC": 1.9317129850387573,
+  "PQ": 7.83685827255249
+ },
+ "experiments/text2fx/words/named/epiano__a_warm_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.024546146392822,
+  "CU": 7.306866645812988,
+  "PC": 2.411006212234497,
+  "PQ": 6.97667121887207
+ },
+ "experiments/text2fx/words/named/epiano__a_wooden_electric_piano_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 5.074260711669922,
+  "CU": 7.325568675994873,
+  "PC": 1.9371734857559204,
+  "PQ": 7.409619331359863
+ },
+ "experiments/text2fx/words/named/epiano__a_wooden_electric_piano_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.597332954406738,
+  "CU": 7.2329607009887695,
+  "PC": 2.2582004070281982,
+  "PQ": 6.513391017913818
+ },
+ "experiments/text2fx/words/named/flute__a_bright_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.648262977600098,
+  "CU": 7.791046619415283,
+  "PC": 1.963074803352356,
+  "PQ": 8.124897003173828
+ },
+ "experiments/text2fx/words/named/flute__a_bright_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.883816719055176,
+  "CU": 7.7655110359191895,
+  "PC": 2.336660385131836,
+  "PQ": 7.652443885803223
+ },
+ "experiments/text2fx/words/named/flute__a_dark_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.210041522979736,
+  "CU": 7.622164249420166,
+  "PC": 1.991471767425537,
+  "PQ": 8.092644691467285
+ },
+ "experiments/text2fx/words/named/flute__a_dark_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.9933557510375977,
+  "CU": 7.037641525268555,
+  "PC": 2.085176706314087,
+  "PQ": 7.369161605834961
+ },
+ "experiments/text2fx/words/named/flute__a_distant_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.059683799743652,
+  "CU": 7.369297027587891,
+  "PC": 1.9588531255722046,
+  "PQ": 7.352097988128662
+ },
+ "experiments/text2fx/words/named/flute__a_distant_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.099869251251221,
+  "CU": 7.048900604248047,
+  "PC": 2.0964925289154053,
+  "PQ": 6.729420185089111
+ },
+ "experiments/text2fx/words/named/flute__a_harsh_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.422018051147461,
+  "CU": 7.8786468505859375,
+  "PC": 2.002145290374756,
+  "PQ": 8.101341247558594
+ },
+ "experiments/text2fx/words/named/flute__a_harsh_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.761706352233887,
+  "CU": 7.532329082489014,
+  "PC": 2.0169410705566406,
+  "PQ": 7.674077987670898
+ },
+ "experiments/text2fx/words/named/flute__a_metallic_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.920195579528809,
+  "CU": 7.810682773590088,
+  "PC": 2.0235869884490967,
+  "PQ": 8.03370189666748
+ },
+ "experiments/text2fx/words/named/flute__a_metallic_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.698863506317139,
+  "CU": 7.269271373748779,
+  "PC": 2.4826440811157227,
+  "PQ": 7.160472869873047
+ },
+ "experiments/text2fx/words/named/flute__a_punchy_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.2679314613342285,
+  "CU": 7.745454788208008,
+  "PC": 2.1127161979675293,
+  "PQ": 7.971938133239746
+ },
+ "experiments/text2fx/words/named/flute__a_punchy_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.676878452301025,
+  "CU": 7.499558925628662,
+  "PC": 2.0771584510803223,
+  "PQ": 7.661734580993652
+ },
+ "experiments/text2fx/words/named/flute__a_soft_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 5.070971965789795,
+  "CU": 7.94341516494751,
+  "PC": 2.033013343811035,
+  "PQ": 7.603906154632568
+ },
+ "experiments/text2fx/words/named/flute__a_soft_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.515830039978027,
+  "CU": 7.135178565979004,
+  "PC": 2.202775716781616,
+  "PQ": 6.349164009094238
+ },
+ "experiments/text2fx/words/named/flute__a_warm_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 5.031394958496094,
+  "CU": 7.836397171020508,
+  "PC": 2.0595197677612305,
+  "PQ": 8.081263542175293
+ },
+ "experiments/text2fx/words/named/flute__a_warm_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.476121425628662,
+  "CU": 7.25675630569458,
+  "PC": 2.359384536743164,
+  "PQ": 7.186120986938477
+ },
+ "experiments/text2fx/words/named/flute__a_wooden_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.111496925354004,
+  "CU": 7.550258636474609,
+  "PC": 2.0519168376922607,
+  "PQ": 7.939267635345459
+ },
+ "experiments/text2fx/words/named/flute__a_wooden_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.283388137817383,
+  "CU": 7.24566125869751,
+  "PC": 1.787156105041504,
+  "PQ": 7.571040630340576
+ },
+ "experiments/text2fx/words/named/flute__an_airy_flute_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.255274772644043,
+  "CU": 7.747099876403809,
+  "PC": 1.9978573322296143,
+  "PQ": 8.037566184997559
+ },
+ "experiments/text2fx/words/named/flute__an_airy_flute_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.87368631362915,
+  "CU": 7.590209007263184,
+  "PC": 1.8183542490005493,
+  "PQ": 7.821453094482422
+ },
+ "experiments/text2fx/words/plain/brass__airy_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.15321683883667,
+  "CU": 7.636489391326904,
+  "PC": 1.9553368091583252,
+  "PQ": 8.132987976074219
+ },
+ "experiments/text2fx/words/plain/brass__airy_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.769369125366211,
+  "CU": 7.766354084014893,
+  "PC": 2.032036304473877,
+  "PQ": 8.086252212524414
+ },
+ "experiments/text2fx/words/plain/brass__bright_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.597609519958496,
+  "CU": 7.633399486541748,
+  "PC": 1.9195035696029663,
+  "PQ": 7.886828422546387
+ },
+ "experiments/text2fx/words/plain/brass__bright_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.250341415405273,
+  "CU": 7.37175178527832,
+  "PC": 2.1867544651031494,
+  "PQ": 7.394580364227295
+ },
+ "experiments/text2fx/words/plain/brass__dark_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.506026268005371,
+  "CU": 7.595738410949707,
+  "PC": 2.288994550704956,
+  "PQ": 7.3629913330078125
+ },
+ "experiments/text2fx/words/plain/brass__dark_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.490649700164795,
+  "CU": 7.202860355377197,
+  "PC": 2.472615957260132,
+  "PQ": 6.5357890129089355
+ },
+ "experiments/text2fx/words/plain/brass__distant_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.265354633331299,
+  "CU": 7.796051979064941,
+  "PC": 1.8766331672668457,
+  "PQ": 8.213909149169922
+ },
+ "experiments/text2fx/words/plain/brass__distant_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.409951210021973,
+  "CU": 7.721739292144775,
+  "PC": 1.9866243600845337,
+  "PQ": 7.983004093170166
+ },
+ "experiments/text2fx/words/plain/brass__harsh_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 5.372280597686768,
+  "CU": 7.849089622497559,
+  "PC": 2.131826400756836,
+  "PQ": 7.927630424499512
+ },
+ "experiments/text2fx/words/plain/brass__harsh_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.770387649536133,
+  "CU": 6.815765857696533,
+  "PC": 2.3363447189331055,
+  "PQ": 6.440001964569092
+ },
+ "experiments/text2fx/words/plain/brass__metallic_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 6.449703693389893,
+  "CU": 7.870855331420898,
+  "PC": 2.2935361862182617,
+  "PQ": 7.448777198791504
+ },
+ "experiments/text2fx/words/plain/brass__metallic_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.29060173034668,
+  "CU": 7.212141036987305,
+  "PC": 2.1777281761169434,
+  "PQ": 6.33774995803833
+ },
+ "experiments/text2fx/words/plain/brass__punchy_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.450537204742432,
+  "CU": 7.534667491912842,
+  "PC": 1.9382869005203247,
+  "PQ": 7.738636016845703
+ },
+ "experiments/text2fx/words/plain/brass__punchy_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.62345027923584,
+  "CU": 7.459322452545166,
+  "PC": 2.2701449394226074,
+  "PQ": 7.751134872436523
+ },
+ "experiments/text2fx/words/plain/brass__soft_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 5.345043659210205,
+  "CU": 7.848615646362305,
+  "PC": 2.086010456085205,
+  "PQ": 7.9500813484191895
+ },
+ "experiments/text2fx/words/plain/brass__soft_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.497185707092285,
+  "CU": 7.684566497802734,
+  "PC": 2.1652684211730957,
+  "PQ": 7.3497138023376465
+ },
+ "experiments/text2fx/words/plain/brass__warm_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.60683536529541,
+  "CU": 7.751974105834961,
+  "PC": 2.022587537765503,
+  "PQ": 8.023164749145508
+ },
+ "experiments/text2fx/words/plain/brass__warm_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.794676303863525,
+  "CU": 7.824593544006348,
+  "PC": 2.3555374145507812,
+  "PQ": 7.685937881469727
+ },
+ "experiments/text2fx/words/plain/brass__wooden_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 5.927419662475586,
+  "CU": 7.877109527587891,
+  "PC": 2.208505868911743,
+  "PQ": 7.705462455749512
+ },
+ "experiments/text2fx/words/plain/brass__wooden_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.098573684692383,
+  "CU": 7.025453567504883,
+  "PC": 2.2924904823303223,
+  "PQ": 6.89409065246582
+ },
+ "experiments/text2fx/words/plain/cello__airy_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.5706939697265625,
+  "CU": 7.542489051818848,
+  "PC": 2.2993111610412598,
+  "PQ": 7.78846549987793
+ },
+ "experiments/text2fx/words/plain/cello__airy_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.5029778480529785,
+  "CU": 6.821682929992676,
+  "PC": 2.2779417037963867,
+  "PQ": 6.598244667053223
+ },
+ "experiments/text2fx/words/plain/cello__bright_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.499948024749756,
+  "CU": 7.911741733551025,
+  "PC": 2.1500821113586426,
+  "PQ": 7.98379373550415
+ },
+ "experiments/text2fx/words/plain/cello__bright_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.802995204925537,
+  "CU": 8.097086906433105,
+  "PC": 1.965422511100769,
+  "PQ": 8.148962020874023
+ },
+ "experiments/text2fx/words/plain/cello__dark_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.6046462059021,
+  "CU": 7.237414836883545,
+  "PC": 2.354231357574463,
+  "PQ": 6.8966264724731445
+ },
+ "experiments/text2fx/words/plain/cello__dark_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.489344120025635,
+  "CU": 7.054237365722656,
+  "PC": 2.567267894744873,
+  "PQ": 6.125107765197754
+ },
+ "experiments/text2fx/words/plain/cello__distant_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.214709758758545,
+  "CU": 7.6362738609313965,
+  "PC": 2.160001277923584,
+  "PQ": 7.876450538635254
+ },
+ "experiments/text2fx/words/plain/cello__distant_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 6.1576361656188965,
+  "CU": 8.05874252319336,
+  "PC": 2.013688325881958,
+  "PQ": 8.315939903259277
+ },
+ "experiments/text2fx/words/plain/cello__harsh_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.499368190765381,
+  "CU": 7.490746021270752,
+  "PC": 2.2966527938842773,
+  "PQ": 7.661749839782715
+ },
+ "experiments/text2fx/words/plain/cello__harsh_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.052104949951172,
+  "CU": 6.86126184463501,
+  "PC": 2.381941318511963,
+  "PQ": 6.464715480804443
+ },
+ "experiments/text2fx/words/plain/cello__metallic_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.640977382659912,
+  "CU": 7.4454450607299805,
+  "PC": 2.307399272918701,
+  "PQ": 7.405989170074463
+ },
+ "experiments/text2fx/words/plain/cello__metallic_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.337703227996826,
+  "CU": 6.95775032043457,
+  "PC": 2.545938014984131,
+  "PQ": 6.251562595367432
+ },
+ "experiments/text2fx/words/plain/cello__punchy_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.107797145843506,
+  "CU": 7.293292999267578,
+  "PC": 1.981500267982483,
+  "PQ": 6.872518062591553
+ },
+ "experiments/text2fx/words/plain/cello__punchy_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.5464982986450195,
+  "CU": 7.4575910568237305,
+  "PC": 1.938632845878601,
+  "PQ": 7.132583141326904
+ },
+ "experiments/text2fx/words/plain/cello__soft_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.310649394989014,
+  "CU": 7.468520641326904,
+  "PC": 2.2135379314422607,
+  "PQ": 7.646368026733398
+ },
+ "experiments/text2fx/words/plain/cello__soft_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.516452312469482,
+  "CU": 7.329935073852539,
+  "PC": 2.412836790084839,
+  "PQ": 6.953372955322266
+ },
+ "experiments/text2fx/words/plain/cello__warm_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.639915943145752,
+  "CU": 7.833205699920654,
+  "PC": 2.2524211406707764,
+  "PQ": 7.596778392791748
+ },
+ "experiments/text2fx/words/plain/cello__warm_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.990436553955078,
+  "CU": 8.04220962524414,
+  "PC": 2.253244400024414,
+  "PQ": 7.951685905456543
+ },
+ "experiments/text2fx/words/plain/cello__wooden_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.525630950927734,
+  "CU": 7.432995319366455,
+  "PC": 2.2704789638519287,
+  "PQ": 7.5362138748168945
+ },
+ "experiments/text2fx/words/plain/cello__wooden_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.8852806091308594,
+  "CU": 6.757439613342285,
+  "PC": 2.4672932624816895,
+  "PQ": 6.303785800933838
+ },
+ "experiments/text2fx/words/plain/epiano__airy_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.393037796020508,
+  "CU": 7.380393028259277,
+  "PC": 2.0716843605041504,
+  "PQ": 7.907826900482178
+ },
+ "experiments/text2fx/words/plain/epiano__airy_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.142172336578369,
+  "CU": 7.427216529846191,
+  "PC": 2.5401811599731445,
+  "PQ": 7.512396812438965
+ },
+ "experiments/text2fx/words/plain/epiano__bright_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.241438388824463,
+  "CU": 7.401422023773193,
+  "PC": 1.8904672861099243,
+  "PQ": 7.925586700439453
+ },
+ "experiments/text2fx/words/plain/epiano__bright_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.012187480926514,
+  "CU": 7.726802825927734,
+  "PC": 1.991011381149292,
+  "PQ": 8.159790992736816
+ },
+ "experiments/text2fx/words/plain/epiano__dark_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.232858657836914,
+  "CU": 7.355663299560547,
+  "PC": 1.9222334623336792,
+  "PQ": 7.806976318359375
+ },
+ "experiments/text2fx/words/plain/epiano__dark_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.824422359466553,
+  "CU": 7.243926048278809,
+  "PC": 2.3275070190429688,
+  "PQ": 6.942656517028809
+ },
+ "experiments/text2fx/words/plain/epiano__distant_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.277331352233887,
+  "CU": 7.273160457611084,
+  "PC": 1.8974167108535767,
+  "PQ": 7.858955383300781
+ },
+ "experiments/text2fx/words/plain/epiano__distant_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.800463676452637,
+  "CU": 7.523975372314453,
+  "PC": 2.0834860801696777,
+  "PQ": 7.941648960113525
+ },
+ "experiments/text2fx/words/plain/epiano__harsh_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.0906758308410645,
+  "CU": 7.293033123016357,
+  "PC": 1.8857569694519043,
+  "PQ": 7.725090980529785
+ },
+ "experiments/text2fx/words/plain/epiano__harsh_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.321369647979736,
+  "CU": 6.819826602935791,
+  "PC": 2.7562243938446045,
+  "PQ": 6.73764181137085
+ },
+ "experiments/text2fx/words/plain/epiano__metallic_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.128354072570801,
+  "CU": 7.272075653076172,
+  "PC": 1.9520196914672852,
+  "PQ": 7.681464195251465
+ },
+ "experiments/text2fx/words/plain/epiano__metallic_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.938808917999268,
+  "CU": 7.415951728820801,
+  "PC": 2.528381824493408,
+  "PQ": 7.310536861419678
+ },
+ "experiments/text2fx/words/plain/epiano__punchy_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.636385440826416,
+  "CU": 7.174476146697998,
+  "PC": 1.8810843229293823,
+  "PQ": 7.548541069030762
+ },
+ "experiments/text2fx/words/plain/epiano__punchy_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.942821502685547,
+  "CU": 7.366786956787109,
+  "PC": 1.957209587097168,
+  "PQ": 7.597115516662598
+ },
+ "experiments/text2fx/words/plain/epiano__soft_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.010971546173096,
+  "CU": 7.083085060119629,
+  "PC": 1.828163743019104,
+  "PQ": 7.614978313446045
+ },
+ "experiments/text2fx/words/plain/epiano__soft_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.997115135192871,
+  "CU": 7.357461929321289,
+  "PC": 2.4835541248321533,
+  "PQ": 7.345375061035156
+ },
+ "experiments/text2fx/words/plain/epiano__warm_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.336952209472656,
+  "CU": 7.665681838989258,
+  "PC": 1.872276782989502,
+  "PQ": 8.100579261779785
+ },
+ "experiments/text2fx/words/plain/epiano__warm_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.221439838409424,
+  "CU": 7.523744583129883,
+  "PC": 2.4873974323272705,
+  "PQ": 7.553927421569824
+ },
+ "experiments/text2fx/words/plain/epiano__wooden_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.104150295257568,
+  "CU": 7.09088134765625,
+  "PC": 1.8369487524032593,
+  "PQ": 7.642319202423096
+ },
+ "experiments/text2fx/words/plain/epiano__wooden_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.707300186157227,
+  "CU": 7.390120506286621,
+  "PC": 2.2915196418762207,
+  "PQ": 7.301764011383057
+ },
+ "experiments/text2fx/words/plain/flute__airy_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.5609049797058105,
+  "CU": 6.897425651550293,
+  "PC": 1.9141258001327515,
+  "PQ": 7.1196489334106445
+ },
+ "experiments/text2fx/words/plain/flute__airy_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.123383045196533,
+  "CU": 7.5274224281311035,
+  "PC": 1.8529033660888672,
+  "PQ": 7.871669292449951
+ },
+ "experiments/text2fx/words/plain/flute__bright_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.802983283996582,
+  "CU": 7.633261680603027,
+  "PC": 2.01839017868042,
+  "PQ": 7.488214492797852
+ },
+ "experiments/text2fx/words/plain/flute__bright_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.99979305267334,
+  "CU": 7.629362106323242,
+  "PC": 2.2182059288024902,
+  "PQ": 7.6678948402404785
+ },
+ "experiments/text2fx/words/plain/flute__dark_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 6.1746721267700195,
+  "CU": 7.80116081237793,
+  "PC": 2.244835376739502,
+  "PQ": 7.416586875915527
+ },
+ "experiments/text2fx/words/plain/flute__dark_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.165045261383057,
+  "CU": 6.4731125831604,
+  "PC": 2.6551294326782227,
+  "PQ": 5.604897499084473
+ },
+ "experiments/text2fx/words/plain/flute__distant_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.6728994846343994,
+  "CU": 6.762958526611328,
+  "PC": 1.9469681978225708,
+  "PQ": 7.022583484649658
+ },
+ "experiments/text2fx/words/plain/flute__distant_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.698143005371094,
+  "CU": 7.463515281677246,
+  "PC": 1.7571485042572021,
+  "PQ": 7.658962249755859
+ },
+ "experiments/text2fx/words/plain/flute__harsh_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.625250339508057,
+  "CU": 7.409441947937012,
+  "PC": 2.178475856781006,
+  "PQ": 7.098867416381836
+ },
+ "experiments/text2fx/words/plain/flute__harsh_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 3.2112245559692383,
+  "CU": 6.708061218261719,
+  "PC": 2.468791961669922,
+  "PQ": 6.46964168548584
+ },
+ "experiments/text2fx/words/plain/flute__metallic_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 5.743039131164551,
+  "CU": 7.858221054077148,
+  "PC": 2.214019775390625,
+  "PQ": 7.816461563110352
+ },
+ "experiments/text2fx/words/plain/flute__metallic_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.863482475280762,
+  "CU": 7.270688056945801,
+  "PC": 2.1726982593536377,
+  "PQ": 6.76655387878418
+ },
+ "experiments/text2fx/words/plain/flute__punchy_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.519185543060303,
+  "CU": 7.467629909515381,
+  "PC": 1.950178623199463,
+  "PQ": 7.543162822723389
+ },
+ "experiments/text2fx/words/plain/flute__punchy_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 4.862346649169922,
+  "CU": 7.458064079284668,
+  "PC": 1.917291522026062,
+  "PQ": 7.570769309997559
+ },
+ "experiments/text2fx/words/plain/flute__soft_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.7063207626342773,
+  "CU": 6.87651252746582,
+  "PC": 1.9171581268310547,
+  "PQ": 7.21826171875
+ },
+ "experiments/text2fx/words/plain/flute__soft_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.078660488128662,
+  "CU": 7.28766393661499,
+  "PC": 1.726603388786316,
+  "PQ": 7.558526992797852
+ },
+ "experiments/text2fx/words/plain/flute__warm_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 4.342541217803955,
+  "CU": 7.67148494720459,
+  "PC": 1.9371205568313599,
+  "PQ": 8.10518741607666
+ },
+ "experiments/text2fx/words/plain/flute__warm_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.627565860748291,
+  "CU": 7.503306865692139,
+  "PC": 2.305474042892456,
+  "PQ": 7.216757774353027
+ },
+ "experiments/text2fx/words/plain/flute__wooden_eq-comp-dist-delay-reverb_dry.wav": {
+  "CE": 3.4241602420806885,
+  "CU": 6.725380897521973,
+  "PC": 1.8727799654006958,
+  "PQ": 7.248717308044434
+ },
+ "experiments/text2fx/words/plain/flute__wooden_eq-comp-dist-delay-reverb_fx.wav": {
+  "CE": 5.348567962646484,
+  "CU": 7.593827724456787,
+  "PC": 1.896527886390686,
+  "PQ": 7.789630889892578
+ },
+ "experiments/text2fx/words/source/cello__dark_fx.wav": {
+  "CE": 5.990766525268555,
+  "CU": 7.260966777801514,
+  "PC": 3.5283029079437256,
+  "PQ": 6.49461555480957
+ },
+ "experiments/text2fx/words/source/cello__metallic_fx.wav": {
+  "CE": 5.170048236846924,
+  "CU": 7.180422782897949,
+  "PC": 3.207794189453125,
+  "PQ": 6.3590874671936035
+ },
+ "experiments/text2fx/words/source/cello__punchy_fx.wav": {
+  "CE": 6.010091781616211,
+  "CU": 8.043033599853516,
+  "PC": 2.4434008598327637,
+  "PQ": 7.495167255401611
+ },
+ "experiments/text2fx/words/source/cello__soft_fx.wav": {
+  "CE": 5.230672359466553,
+  "CU": 7.688553333282471,
+  "PC": 1.9644052982330322,
+  "PQ": 7.572467803955078
+ },
+ "experiments/text2fx/words/source/epiano__dark_fx.wav": {
+  "CE": 4.987533092498779,
+  "CU": 7.489595413208008,
+  "PC": 1.9295765161514282,
+  "PQ": 7.840372085571289
+ },
+ "experiments/text2fx/words/source/epiano__punchy_fx.wav": {
+  "CE": 4.759956359863281,
+  "CU": 7.201801300048828,
+  "PC": 1.917473554611206,
+  "PQ": 7.714099884033203
+ }
+}

@@ -143,9 +143,19 @@ closed-loop recovery.
       saturates on cello dark (never past −0.01). Musical stops are 3–5, not 6.
       Listening: `words/listen_frontier/` (+ `ab/` ladders and A/Bs — adjacent
       stops spaced by λ are hard to tell apart).
-- [ ] **Stops at fixed distances** (≈ 0.15 / 0.4 / 0.8 / 1.5) instead of by λ, and
-      `prompt_on` / `tune_toward` return the ladder; rank by the objective in
-      `prompt_on` too; the band-energy locality replaces the mrstft there.
+- [x] **Stops at fixed distances** — `text2fx/ladder.py` (2026-09-18): soft
+      constraint μ·relu(dist − d*)² at d* = 0.15 / 0.4 / 0.8 / 1.5 / 3.0 / ∞,
+      each stop warm-started from the previous AND two fresh starts (a tight
+      optimum is a poor init for a loose one: without them the far end stalled
+      at +0.10 where a cold search reached +0.39), artefact penalties in the
+      loss, ranking by the objective, every effect from bypass. Stops land on
+      their targets (0.20 / 0.43 / 0.82 / 1.14 for 0.15 / 0.4 / 0.8 / 1.5).
+      Final ladders, all stops clean: cello dark twin +0.35 @1.30, recording
+      +0.20 @0.90; cello punchy twin +0.33 @0.97, recording +0.47 @1.77; cello
+      soft twin +0.11 @1.18; e-piano dark twin +0.39 @1.68, recording +0.35
+      @0.79. Listening: `words/listen_frontier/ladder_final/`.
+      [ ] `prompt_on` / `tune_toward` return the ladder; rank by the objective
+      and use the band-energy locality there too.
 - [ ] **Amount as a knob** — candidates at 25/50/100% of the parameter delta,
       ear chooses (the paper's best numbers relied on exactly this).
 - [ ] **Transfer across phrases** — does a patch tuned on the hook survive a
@@ -233,10 +243,22 @@ amount, airy 0.188 → −0.004.
       naive modulation detector flagged 119/168 because melodies move the
       centroid at note rate). Over 168 results: pumping 39, chorus/flanger 12,
       stutter 7, squashed 1, clipping 0. Worst offenders sent for listening.
-- [ ] **Artefact penalties in the loss** — the differentiable four (flux,
-      tremolo, crest, jump) against the dry render; gate range prior 60 → 25 dB.
-- [ ] **Audiobox-Aesthetics** (production-quality axis) as a reranker of
-      finalists; flag a result whose PQ dropped vs the original.
+- [x] **Artefact penalties in the loss** (`artefacts.penalty`): hinges on
+      within-note flux, 2–14 Hz tremolo, crest drop, sample jumps, plus a
+      differentiable gate-drop term (falls > 6 dB per 10 ms anywhere within
+      45 dB of the peak — the chops the flags found were in the release
+      tails, which a note mask excluded), all against the same render's
+      detached dry signal; weights ×3 after the first ladders still bought
+      their last +0.05 with wobble; gate range prior 60 → 25 dB. Result: every
+      ladder stop clean, scores held or improved (cello punchy on the
+      recording +0.43 with chops → +0.47 clean).
+- [x] **Audiobox-Aesthetics — measured, rejected** (`text2fx/aesthetics.py`
+      kept as an extra signal). Over 168 results vs their dry renders: ΔPQ clean
+      −0.28, pumping −0.43, gate stutter −0.66, but chorus/flanger **+0.15**
+      and its enjoyment axis rises *more* for pumping (+0.73) than for clean
+      (+0.39): it reads modulation and pumping as production, not damage. Per
+      file it is too noisy to gate with (the clean control lost 1.36 PQ, the
+      chorus offender nothing). Note torch.median leaks driver memory on MPS.
 - [ ] **Parameter-space realness prior** from real Vital presets (75 installed,
       thousands online): density model / real-vs-random classifier over the
       searched parameters. Cannot be fooled by audio tricks; supplies magnitude.

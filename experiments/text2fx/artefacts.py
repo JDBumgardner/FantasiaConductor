@@ -85,7 +85,7 @@ def within_note_flux(x, notes, sr=48000, n_fft=2048, hop=480):
     """Median frame-to-frame change of the log spectrum inside sustained note segments (dB per frame). A steady
     tone is ~0; chorus, flanger, tremolo, pumping and stutter all raise it."""
     S = torch.stft(x, n_fft, hop, window=torch.hann_window(n_fft), return_complex=True).abs()
-    Ld = 20 * torch.log10(S + 1e-5); flux = (Ld[:, 1:] - Ld[:, :-1]).abs().mean(0)
+    Ld = 20 * torch.log10(S + 1e-3); flux = (Ld[:, 1:] - Ld[:, :-1]).abs().mean(0)      # 1e-3 floor: the log of empty bins otherwise dominates the gradient
     lvl = 20 * torch.log10(S.pow(2).sum(0).sqrt() + 1e-6)[1:]; m = _sustained_mask(len(flux), notes, sr, hop=hop) & (lvl > lvl.max() - 40)
     return float(flux[m].median()) if m.any() else 0.0
 
@@ -104,3 +104,50 @@ def measure_notes(fx, dry, notes, sr=48000):
     return m
 FLAGS_NOTES = dict(clip=(0.001, "clipping"), d_jump=(3.0, "clicks/breaking"), d_flux=(1.5, "modulation (chorus/flanger/pumping)"), d_trem=(4.0, "tremolo/pumping"), d_crest=(-6.0, "squashed"), d_stutter=(3, "stutter (gate)"))
 def flags_notes(m): return [name for k, (t, name) in FLAGS_NOTES.items() if k in m and ((m[k] < t) if k == "d_crest" else (m[k] > t))]
+
+
+# ---- differentiable penalty for the loss: hinges beyond the flag thresholds, against the same render's dry signal.
+# ---- Each term is ~0.1-0.3 per unit past its threshold so it trades against CLAP score at the right scale.
+PEN_W = dict(d_flux=0.45, d_trem=0.12, d_crest=0.09, d_jump=0.3, d_drop=0.1)     # x3 after the first ladders: at x1 the optimiser still bought its last +0.05 with wobble and chops
+def penalty(fx, dry, notes, sr=48000, thresholds=None):
+    t = dict(d_flux=1.0, d_trem=3.0, d_crest=-6.0, d_jump=3.0) if thresholds is None else thresholds     # tighter than the flags: the penalty should engage before a listener does
+    dry = dry.detach()                                   # the reference is what the dry render IS, not a second thing to optimise (and no second graph)
+    pen0 = PEN_W["d_drop"] * torch.relu(within_note_drops_t(fx, notes, sr) - within_note_drops_t(dry, notes, sr))     # gate chops: sudden falls inside notes
+    pen = PEN_W["d_flux"] * torch.relu(within_note_flux_t(fx, notes, sr) - within_note_flux_t(dry, notes, sr) - t["d_flux"])
+    pen = pen + PEN_W["d_trem"] * torch.relu(within_note_tremolo_t(fx, notes, sr) - within_note_tremolo_t(dry, notes, sr) - t["d_trem"])
+    pen = pen + PEN_W["d_crest"] * torch.relu((crest_t(dry) - crest_t(fx)) + t["d_crest"])          # t is -6: penalise crest drops beyond 6 dB
+    pen = pen + PEN_W["d_jump"] * torch.relu(jump_t(fx, sr) - jump_t(dry, sr) - t["d_jump"])
+    return pen + pen0
+
+# tensor-returning twins of the detectors (the float versions above are for reporting)
+def _env_t(x, win): return torch.nn.functional.avg_pool1d(x[None, None] ** 2, win, win)[0, 0].add(1e-10).sqrt()
+def _mask_t(n, notes, sr, hop, device, skip_ms=100):
+    m = torch.zeros(n, dtype=torch.bool)
+    for _, start, dur, _ in notes:
+        a = int((start + skip_ms / 1000) * sr / hop); b = int((start + dur) * sr / hop)
+        if b > a: m[a:min(b, n)] = True
+    return m.to(device)
+def within_note_flux_t(x, notes, sr=48000, n_fft=2048, hop=480):
+    S = torch.stft(x, n_fft, hop, window=torch.hann_window(n_fft, device=x.device), return_complex=True).abs()
+    Ld = 20 * torch.log10(S + 1e-3); flux = (Ld[:, 1:] - Ld[:, :-1]).abs().mean(0)      # 1e-3 floor: the log of empty bins otherwise dominates the gradient
+    lvl = 20 * torch.log10(S.pow(2).sum(0).sqrt() + 1e-6)[1:]; m = _mask_t(len(flux), notes, sr, hop, x.device) & (lvl > lvl.max() - 40)
+    return torch.quantile(flux[m], 0.5) if m.any() else flux.sum() * 0        # not .median(): it leaks driver memory on MPS (5.9 MB per call on a 480k tensor)
+def within_note_tremolo_t(x, notes, sr=48000, win_ms=10, lo=2.0, hi=14.0):
+    win = int(win_ms / 1000 * sr); lvl = 20 * torch.log10(_env_t(x, win) + 1e-6); rate = sr / win
+    m = _mask_t(len(lvl), notes, sr, win, x.device)
+    if m.sum() < 8: return lvl.sum() * 0
+    seg = torch.where(m, lvl, lvl[m].mean()); E = torch.fft.rfft(seg - seg.mean()); f = torch.fft.rfftfreq(len(seg), 1 / rate, device=x.device)
+    mod = torch.fft.irfft(E * ((f >= lo) & (f <= hi)).to(E.dtype), n=len(seg))[m]
+    return torch.quantile(mod, 0.98) - torch.quantile(mod, 0.02)
+def crest_t(x): return 20 * torch.log10(x.abs().max() / (x.pow(2).mean().sqrt() + 1e-9))
+def jump_t(x, sr=48000):
+    d = (x[1:] - x[:-1]).abs(); win = int(0.05 * sr); n = (len(d) // win) * win
+    loc = _env_t(x[:n], win).repeat_interleave(win); return torch.quantile(d[:n] / (loc + 1e-4), 0.999)
+
+def within_note_drops_t(x, notes, sr=48000, win_ms=10, drop_db=6.0):
+    """Differentiable stand-in for the stutter counter: the sum of level falls steeper than drop_db per 10 ms frame
+    wherever the signal is within 45 dB of its peak -- notes AND their tails, which is where a gate bites (the chops
+    the flags found sat in the releases: -46 -> -52 -> -68 dB frame to frame). A natural decay falls < 1 dB a frame."""
+    win = int(win_ms / 1000 * sr); lvl = 20 * torch.log10(_env_t(x, win) + 1e-6)
+    loud = lvl[:-1] > lvl.max() - 45; fall = torch.relu(lvl[:-1] - lvl[1:] - drop_db)
+    return (fall * loud).sum() / 10.0
