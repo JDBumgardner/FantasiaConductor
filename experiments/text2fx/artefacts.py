@@ -8,7 +8,7 @@
   crest     peak / RMS ratio in dB relative to the reference -- negative = squashed, positive = spiky
   stutter   energy drops > 12 dB within a note that recover within 200 ms -- gating / tremolo chops
 All in torch so the differentiable ones (wobble, sweep, crest, jump) can become loss terms; `report()` prints a table."""
-import math, torch
+import math, os, torch
 
 def _env(x, win):
     return torch.nn.functional.avg_pool1d(x[None, None] ** 2, win, win)[0, 0].add(1e-10).sqrt()
@@ -113,7 +113,9 @@ def penalty(fx, dry, notes, sr=48000, thresholds=None):
     t = dict(d_flux=1.0, d_trem=3.0, d_crest=-6.0, d_jump=3.0) if thresholds is None else thresholds     # tighter than the flags: the penalty should engage before a listener does
     dry = dry.detach()                                   # the reference is what the dry render IS, not a second thing to optimise (and no second graph)
     pen0 = PEN_W["d_drop"] * torch.relu(within_note_drops_t(fx, notes, sr) - within_note_drops_t(dry, notes, sr))     # gate chops: sudden falls inside notes
-    pen = PEN_W["d_flux"] * torch.relu(within_note_flux_t(fx, notes, sr) - within_note_flux_t(dry, notes, sr) - t["d_flux"])
+    flux = within_note_flux_t(fx, notes, sr)
+    if os.environ.get("T2_FLUX_NOGRAD") == "1": flux = flux.detach()          # A/B control: the pre-2026-09-20 MPS behaviour (value scored, gradient zero)
+    pen = PEN_W["d_flux"] * torch.relu(flux - within_note_flux_t(dry, notes, sr) - t["d_flux"])
     pen = pen + PEN_W["d_trem"] * torch.relu(within_note_tremolo_t(fx, notes, sr) - within_note_tremolo_t(dry, notes, sr) - t["d_trem"])
     pen = pen + PEN_W["d_crest"] * torch.relu((crest_t(dry) - crest_t(fx)) + t["d_crest"])          # t is -6: penalise crest drops beyond 6 dB
     pen = pen + PEN_W["d_jump"] * torch.relu(jump_t(fx, sr) - jump_t(dry, sr) - t["d_jump"])

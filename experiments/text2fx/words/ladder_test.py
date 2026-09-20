@@ -6,7 +6,7 @@ import torch, soundfile as sf
 import common as C, house_session as H, text2synth as T2, ladder
 from synth import WavetableSynth
 from word_grid import DISPLAY, art
-HERE = os.path.dirname(os.path.abspath(__file__)); OUT = os.path.join(HERE, "ladder"); SR = 48000; L = 10 * SR; DEV = C.DEVICE
+HERE = os.path.dirname(os.path.abspath(__file__)); OUT = os.environ.get("T2_LADDER_OUT") or os.path.join(HERE, "ladder"); SR = 48000; L = 10 * SR; DEV = C.DEVICE
 for cell in CELLS:
     name, word = cell.split(":")
     src, _ = sf.read(os.path.join(HERE, "instruments", f"{name}_ref.wav")); x = torch.tensor(src[:L], dtype=torch.float32, device=DEV); x = torch.nn.functional.pad(x, (0, L - x.numel()))

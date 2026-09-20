@@ -94,10 +94,39 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
   far into the clip — swallowed entirely, so the largest penalty term (0.45)
   never pushed the optimiser on any MPS ladder run; the ladders got clean
   through the tremolo/drop/crest terms and evaluation-time scoring. Fixed
-  (hand pad + `center=False`; penalty grad cos CPU/MPS 1.000). [ ] Re-run a
-  ladder cell with the working flux gradient and compare artefact rates.
-  `jump_t` (0.999 quantile of 480k samples) picks different single samples on
-  CPU and MPS — inherent to a quantile loss, not a bug.
+  (hand pad + `center=False`; penalty grad cos CPU/MPS 1.000). `jump_t`
+  (0.999 quantile of 480k samples) picks different single samples on CPU and
+  MPS — inherent to a quantile loss, not a bug.
+- [x] **Flux-gradient A/B** (`words/flux_ab.py`, results `words/ladder_flux/`,
+  2026-09-20): the same ladder cell with the flux term detached
+  (`T2_FLUX_NOGRAD=1`, the old MPS behaviour) vs live, same seeds, two runs
+  per arm. The hinge (d_flux > 1.0) never engages on the recording route
+  (cello punchy fx: flux 0.42–0.47 at every stop, both arms), so the fix
+  changes nothing there; it only ever engaged on the twin route (Sep 18:
+  cello punchy twin 1.02, e-piano dark twin 1.22–1.44). On **e-piano dark
+  twin**: stops over the hinge 4/12 without the gradient (1.03, 1.16, 1.19,
+  1.27 — parked just past the line, the signature of a penalty that is scored
+  but not backpropagated) vs 1/12 with it (1.00 exactly). With the gradient
+  the constrained stops actually reach their distance targets (1.43–1.54 for
+  1.6/2.5 vs 1.10–1.17 without: steering around the hinge instead of being
+  pruned at it) and the free stop scores 0.378±0.012 vs 0.305±0.019. At
+  matched distance the gain is ≈ +0.03 around d 0.9 and within noise
+  elsewhere. Tremolo/crest at the free stop: 0.13/0.19 vs 2.47/3.27 (first
+  pair). Conclusion: the mechanism works as designed; the score effect is a
+  modest, mostly "goes further cleanly" one.
+- **Ladders are not repeatable on MPS past stop 2.** Two runs of cello punchy
+  fx with identical seeds and code: 0.030/0.030, 0.120/0.122, then 0.169 vs
+  0.194, and free stops **+0.204 vs +0.546** — one run's successive halving
+  kept a candidate that had found the piecewise-tanh saturation route
+  (drive +22.5 dB, threshold 0.01 = hard clipping, which CLAP calls very
+  punchy), the other never did. MPS kernel nondeterminism, amplified by the
+  keep/prune decisions and the half-split continuation. Every single-run
+  comparison in this file is subject to a spread of that order on
+  bifurcating cells (the e-piano twin cell was tamer: ±0.01–0.04). [ ] Repeat
+  runs (n ≥ 3) or a CPU-deterministic mode before concluding x > y from
+  ladders; [ ] the saturation route reads as "punchy" to CLAP — it is
+  clipping; the crest/jump penalties did not stop it (crest +9.8, jump 1.7
+  under the 3.0 threshold). Keep this in view for the judge.
 - **Found by the round trip: our compressor's ballistics were never applied.**
   torchcomp's `compressor_core` takes the update fraction 1−α (we passed α ≈
   0.999) and treats "attack" as the coefficient for a *falling* input (it
