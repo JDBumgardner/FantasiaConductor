@@ -14,7 +14,7 @@ def mp3(wav, name):
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", wav, "-ac", "1", "-b:a", "64k", out], check=True)
     return f"mp3/{name}.mp3"
 def clip(src, role, name, note=""):
-    label = {"ref": "reference", "clone": "twin", "fx": "twin + fx", "vital": "Vital"}[role]
+    label = {"ref": "reference", "clone": "twin", "fx": "twin + fx", "vital": "Vital", "rec": "recording + fx", "app": "app graph"}[role]
     return f'''<div class="clip"><span class="tag {role}">{label}</span><div class="clip-body"><div class="clip-name">{html.escape(name)}</div>{f'<div class="mono">{html.escape(note)}</div>' if note else ''}</div><audio controls preload="none" src="{src}"></audio></div>'''
 def load(folder, name, prompt):
     for f in glob.glob(os.path.join(folder, f"{name}__*{TAG}.json")):
@@ -46,7 +46,7 @@ def heat(v, lo=-0.15, hi=0.45):
     t = max(0.0, min(1.0, (v - lo) / (hi - lo))); return f"background:color-mix(in oklab, var(--accent) {int(t * 55)}%, var(--surface))"
 # ---------------------------------------------------------------------------------------------------------------
 P = []
-P.append(f'''<title>Ten Words, Four Instruments</title>
+P.append(f'''<meta charset="utf-8"><title>Ten Words, Four Instruments</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>{CSS}
 .heat td{{text-align:center;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.8rem;font-variant-numeric:tabular-nums;padding:7px 6px}} .heat td:first-child{{text-align:left;font-family:"Chivo",sans-serif;font-size:.9rem}}
@@ -58,6 +58,8 @@ P.append(f'''<title>Ten Words, Four Instruments</title>
 .pair .clip{{grid-template-columns:1fr;grid-template-areas:"tag" "body" "audio";gap:6px}}
 .axis{{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.72rem;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}}
 .finding{{border-left:3px solid var(--accent);padding:2px 0 2px 14px;margin:18px 0}} .finding b{{font-family:"Chivo",sans-serif}}
+.tag.rec{{background:var(--tint);color:var(--ink)}} .tag.app{{background:var(--ink);color:var(--bg)}}
+.ab td:nth-child(n+2){{text-align:right;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.8rem;font-variant-numeric:tabular-nums}} .ab td.over{{color:var(--accent);font-weight:600}}
 </style>
 <main>
 <h1>Ten Words, Four Instruments</h1>
@@ -186,7 +188,7 @@ if FR:
             if os.path.exists(f): P.append(clip(mp3(f, f"{n}_{w}_{route}_ladder"), "fx", f"{lab} — ladder: the same bar, original then stops 3 → 6", "2.4 s each; hear the direction accumulate"))
         P.append("</div>")
     P.append('''<div class="finding"><b>At matched distance the twin is above the recording route on all three cells</b>, by a lot on the cello: at distance ≈ 0.5 the twin sits at +0.12 (dark) and +0.23 (punchy) where the effects alone sit at −0.01 and +0.05. The recording route saturates — "dark" on the cello never passes −0.01 however loose the leash — because effects can only take away from a recording that has no darkness in it, while the twin can change the source. Identity <em>rises</em> along the recording route (0.31 → 0.43) since the effects that darken also hide the soundfont's artefacts.</div>
-<div class="finding"><b>The musical stops are 3–5, not 6.</b> Cello punchy stop 4 (+0.17 at distance 0.33, identity unchanged) is "the cello, punchier"; stop 6 (+0.28 at 0.66, identity slipping) is on its way to something else. The first ~0.1 of distance buys nothing on any word: the effects have to switch on before the word can move. Adjacent stops are hard to tell apart because they are spaced by the locality weight, not by how different they sound — the tool should place its stops at fixed distances instead (≈ 0.15 / 0.4 / 0.8 / 1.5) and return the ladder; the amount you choose is the stop you liked.</div>
+<div class="finding"><b>The musical stops are 3–5, not 6.</b> Cello punchy stop 4 (+0.17 at distance 0.33, identity unchanged) is "the cello, punchier"; stop 6 (+0.28 at 0.66, identity slipping) is on its way to something else. The first ~0.1 of distance buys nothing on any word: the effects have to switch on before the word can move. Adjacent stops are hard to tell apart because they are spaced by the locality weight, not by how different they sound — the tool should place its stops at fixed distances instead (≈ 0.15 / 0.4 / 0.8 / 1.5) and return the ladder; the amount you choose is the stop you liked. (Done — §09.)</div>
 ''')
 ART = json.load(open(os.path.join(D, "artefacts.json"))) if os.path.exists(os.path.join(D, "artefacts.json")) else []
 P.append('''<h2><span class="num">08</span>Is it a good sound? First layer of a judge</h2>
@@ -198,14 +200,101 @@ if ART:
     for k, f, note in worst:
         if os.path.exists(os.path.join(D, f)): P.append(clip(mp3(os.path.join(D, f), "art_" + k), "fx", f.split("/")[-1].split("_eq-")[0].replace("__", " · "), note))
     P.append("</div>")
-P.append('''<p>What comes next is mechanical once the ear agrees with the flags: the four differentiable ones (flux, tremolo depth, crest change, jumps) become penalties against the dry render so wobble and chops cannot buy score, and the gate's 60 dB range prior comes down to a musical 20–30 dB. A learned aesthetics judge (Audiobox-Aesthetics' production-quality axis) is the second layer, as a reranker of finalists rather than inside the gradient loop.</p>
+P.append('''<p>What comes next is mechanical once the ear agrees with the flags: the four differentiable ones (flux, tremolo depth, crest change, jumps) become penalties against the dry render so wobble and chops cannot buy score, and the gate's 60 dB range prior comes down to a musical 20–30 dB. A learned aesthetics judge (Audiobox-Aesthetics' production-quality axis) was the candidate second layer; §09 has both outcomes.</p>
 <h3>The noise source, and what it did for the flute</h3>
 <p>Every failure in the grid pointed the same way — <em>soft / airy / distant</em> reaching only zero, CLAP not hearing the cello or flute twins as their instruments — so Vital's sample oscillator is now in the twin: measured on the plugin (its default sample is white noise within 0.4 dB; output rms 0.207 × level²; it takes the voice envelope; "FILTER 1" routes it through the filter), calibrated to 3 % including the drive saturation at full level. Recovering it needed a loss the fine STFT terms could not provide — two noise realisations never match sample for sample, which had the twin quietly preferring less noise than the target — so a phase- and realisation-invariant band-energy term went into the recovery. Re-recovered with breath noise, the flute twin goes from 0.13 to <strong>0.20</strong> on “a flute” (the soundfont itself: 0.33) and survives the round trip into Vital; the cello stays at 0.19 — bow noise is pitched and granular, not white at the filter input.</p>
 <div class="pair">''')
 for f, role, name, note in ((os.path.join(D, "instruments", "flute_clone.wav"), "clone", "Flute twin before — no noise source", "“a flute” 0.13"), (os.path.join(D, "noise", "flute_clone.wav"), "clone", "Flute twin after — breath noise 0.31", "“a flute” 0.20; Vital playing the patch 0.18")):
     if os.path.exists(f): P.append(clip(mp3(f, "noise_" + os.path.basename(f)[:-4] + ("_before" if "instruments" in f else "_after")), role, name, note))
 P.append("</div>")
-P.append('''<h2><span class="num">09</span>Method notes</h2>
+# ---- 09 fixed stops with penalties, 10 the app's own graphs, 11 the A/B and the variance
+LAD = {}
+for f in glob.glob(os.path.join(D, "ladder", "*__stops.json")):
+    tag, w = os.path.basename(f)[:-12].split("__"); LAD[(tag, w)] = json.load(open(f))
+P.append('''<h2><span class="num">09</span>Fixed stops, with a judge in the loop</h2>
+<p>The ladders above were spaced by the locality weight; these are spaced by <em>distance</em>. Each stop is a soft constraint at a target band-energy distance (0.15 / 0.4 / 0.8 / 1.5 / 3.0, then unconstrained), continued from the previous stop against two fresh starts, every effect from bypass. And the judge's four differentiable detectors are now penalties in the loss — within-note spectral flux, 2–14 Hz level modulation, crest drop, sample jumps — plus a gate-drop term for the chops the flags kept finding in release tails, all measured against the same render's dry signal. Weights had to triple after the first ladders still bought their last +0.05 with wobble; the gate's range prior came down from 60 to 25 dB. Result: every stop below is clean, and the scores held or improved (cello punchy on the recording: +0.43 with chops → +0.47 without). Clips are loudness-matched — peak matching had made the punchy stops 6–10 dB quieter and read as "fading".</p>
+<div class="tw"><table><tr><th>cell</th><th>route</th><th>start</th><th>s1</th><th>s2</th><th>s3</th><th>s4</th><th>s5</th><th>free</th></tr>''')
+for n, w in (("cello", "dark"), ("cello", "punchy"), ("cello", "soft"), ("epiano", "dark")):
+    for route, lab in (("twin", "twin"), ("fx", "recording")):
+        s = LAD.get((f"{n}_{route}", w))
+        if not s: continue
+        P.append(f'<tr><td>{DISPLAY[n]} {w}</td><td>{lab}</td>' + "".join(f'<td>{st["clap"]:+.2f}<small>{st["dist"]:.2f} · {st["self"]:.2f}</small></td>' for st in s) + "</tr>")
+P.append('''</table></div>
+<p class="axis">each cell: word score, then distance · identity</p>
+<div class="stack">''')
+for n, w, route, role, lab in (("cello", "punchy", "twin", "fx", "cello punchy — twin"), ("cello", "punchy", "fx", "rec", "cello punchy — recording"), ("epiano", "dark", "twin", "fx", "e-piano dark — twin"), ("cello", "dark", "fx", "rec", "cello dark — recording: nothing to darken until the effects switch on")):
+    f = os.path.join(D, "listen_frontier", "ladder_final_loudness_matched", f"{n}_{route}__{w}__LADDER.wav")
+    if os.path.exists(f): P.append(clip(mp3(f, f"{n}_{w}_{route}_fixed_ladder"), role, lab, "the first bar: original, then stops 1 → 6, 2.4 s each, loudness-matched"))
+P.append('''</div>
+<div class="finding"><b>The learned judge was measured and rejected.</b> Audiobox-Aesthetics' production-quality axis, over 168 results against their dry renders: clean results −0.28, pumping −0.43, gate stutter −0.66 — the right order — but chorus/flanger <em>+0.15</em>, and its enjoyment axis rises more for pumping (+0.73) than for clean (+0.39). It reads modulation and pumping as production, not damage, and per file it is too noisy to gate with (a clean control lost 1.36 PQ; the worst chorus offender lost nothing). It stays as an extra signal, not a judge.</div>
+<div class="finding"><b>Still open: the stops are hard to tell apart by ear</b> at the low end, and the far ones drift toward "something else". Parked; the graph work below came first.</div>
+''')
+# 10 the app's own graphs
+RT = (("gain", 149), ("saturator", 156), ("distortion", 159), ("lowpass", 125), ("highpass", 122), ("limiter", 109), ("compressor", 107), ("reverb", 94), ("delay", 87), ("eq", 82), ("gate", 50), ("chorus", 49))
+APP = json.load(open(os.path.join(D, "appgraph", "cello_appgraph__dark__stops.json"))) if os.path.exists(os.path.join(D, "appgraph", "cello_appgraph__dark__stops.json")) else []
+APPLOG = []
+for lf in ("appgraph_exact.log", "appgraph.log"):
+    f = os.path.join(D, "logs", lf)
+    if os.path.exists(f) and "APPGRAPH DONE" in open(f).read():
+        for line in open(f):
+            parts = line.split("|")
+            if len(parts) >= 4 and parts[0].strip().isdigit(): APPLOG.append((int(parts[0]), float(parts[1]), float(parts[2].split()[0]), float(parts[2].split()[1].replace("dB", "")), float(parts[2].split()[3])))
+        break
+P.append('''<h2><span class="num">10</span>Any track graph in the app</h2>
+<p>Everything so far ran on one hand-built chain. The tool has to run on whatever the user has patched: the app's inserts and wires, in any order, with parallel branches, a VST in the middle. So there is now a compiler: it takes a track's <code>FxInsert</code> graph, walks the app's own topological order, sums at merges the way the app's engine does, gives every stock insert a differentiable twin <em>in the app's own parameter units</em>, freezes what it cannot twin (a VST passes through, flagged), starts every search at the user's current settings, and exports app parameters per insert id when it is done. The twins were then calibrated against the app's engine (pedalboard, i.e. JUCE) on the same audio until each one reproduced it sample for sample — which took measuring rather than reading: JUCE's ballistics run on a time constant of <em>ms / 2π</em>, its delay truncates to whole samples, Freeverb sizes its lines by integer division, its chorus LFO drifts by up to 0.1 % because its phase is a float32 accumulator. Two of our own bugs fell out on the way — the compressor twin started fully clamped, and the effects chain's compressor had been 6× too slow.</p>
+<p class="axis">sample snr vs the app engine, per twin: ''' + " · ".join(f"{n} {s} dB" for n, s in RT) + '''<br>whole graphs: serial eq → comp → sat → delay 78 dB · parallel eq ∥ highpass → sat 99 dB · gain → unknown VST (frozen) 152 dB</p>''')
+if APP and APPLOG:
+    P.append('''<p>End to end, on an app graph — EQ → compressor → delay → reverb on the cello recording, the word “dark”, the fixed-distance ladder: the exported parameters, rendered by the <em>app's</em> engine, score what the twin promised.</p>
+<div class="tw"><table class="ab"><tr><th>stop</th><th>target</th><th>distance</th><th>twin score</th><th>app engine, exported params</th><th>envelope corr</th></tr>''')
+    for i, tw, ap, lvl, ec in APPLOG:
+        st = APP[i]; P.append(f'<tr><td>{i}</td><td>{st["target"] if st["target"] is not None else "free"}</td><td>{st["dist"]:.2f}</td><td>{tw:+.3f}</td><td>{ap:+.3f}</td><td>{ec:.3f}</td></tr>')
+    P.append("</table></div><div class=\"stack\">")
+    f = os.path.join(D, "appgraph", "cello_appgraph__dark__LADDER.wav")
+    if os.path.exists(f): P.append(clip(mp3(f, "appgraph_cello_dark_ladder"), "app", "cello dark — the app's own graph, eq → compressor → delay → reverb", "the first bar: original, then stops 1 → 6"))
+    P.append("</div>")
+P.append('''<div class="finding"><b>What this buys:</b> the search no longer lives in a research chain. Point it at a track, it climbs the user's graph from the user's settings and hands back parameters the app already knows how to render — and the round-trip check means a discrepancy is a bug, not a shrug. Left: a Vital instrument as the compiled source (the twin at the head of the graph), pre-rendering a VST that sits first, and wiring it into the app as <code>tune_toward</code>.</div>
+''')
+# 11 the A/B and the variance
+FLUX = {}
+for arm in ("nograd", "nograd_rep", "fixed", "fixed_rep"):
+    f = os.path.join(D, "ladder_flux", arm, "epiano_twin__dark__stops.json")
+    if os.path.exists(f): FLUX[arm] = json.load(open(f))
+CELLO2 = {}
+for arm in ("nograd", "nograd2"):
+    f = os.path.join(D, "ladder_flux", arm, "cello_fx__punchy__stops.json")
+    if os.path.exists(f): CELLO2[arm] = json.load(open(f))
+P.append('''<h2><span class="num">11</span>A penalty that was not pulling, and how much a run moves on its own</h2>
+<p>Checking the new twins' gradients turned up a bug in the judge: the flux penalty — the largest of the four, the one against chorus and pumping — had <em>no gradient at all</em> on the GPU. Its spectrogram used the library's own reflect padding, whose backward pass is broken on Apple's MPS past 65 k samples; a median's gradient is one frame's worth, far into the clip, and it was swallowed whole. The penalty was still <em>scored</em>, so the optimiser could be pruned at the line but never steered away from it. Fixed, then tested the honest way: the same cell twice per arm, same seeds, the flux term detached in one arm (the old behaviour) and live in the other.</p>''')
+if len(FLUX) == 4:
+    P.append('''<div class="tw"><table class="ab"><tr><th>e-piano dark, twin route</th><th colspan="2">without the gradient (two runs)</th><th colspan="2">with it (two runs)</th></tr><tr><th>stop target</th><th>word</th><th>within-note flux vs dry</th><th>word</th><th>within-note flux vs dry</th></tr>''')
+    for i in range(1, 7):
+        row = f'<tr><td>{FLUX["nograd"][i]["target"] if FLUX["nograd"][i]["target"] is not None else "free"}</td>'
+        for a, b in (("nograd", "nograd_rep"), ("fixed", "fixed_rep")):
+            c = (FLUX[a][i]["clap"], FLUX[b][i]["clap"]); fl = (FLUX[a][i]["art"]["d_flux"], FLUX[b][i]["art"]["d_flux"])
+            row += f'<td>{c[0]:+.2f} / {c[1]:+.2f}</td><td>' + " / ".join(f'<span class="{"over" if v > 1.0 else ""}">{v:.2f}</span>' for v in fl) + "</td>"
+        P.append(row + "</tr>")
+    P.append('''</table></div>
+<p class="axis">the penalty's hinge is at 1.0 — values past it are highlighted</p>
+<div class="pair">''')
+    for arm, lab in (("nograd", "without the flux gradient — the old behaviour"), ("fixed", "with it")):
+        f = os.path.join(D, "ladder_flux", arm, "epiano_twin__dark__LADDER.wav")
+        if os.path.exists(f): P.append(clip(mp3(f, f"flux_{arm}_epiano_dark_ladder"), "fx", f"e-piano dark, twin — {lab}", "original, then stops 1 → 6"))
+    P.append('''</div>
+<div class="finding"><b>The mechanism works; the score effect is modest.</b> Without the gradient, four of twelve stops sat just past the hinge (1.03, 1.16, 1.19, 1.27) — parked at the line, which is exactly what a scored-but-not-backpropagated penalty looks like. With it, one of twelve, at 1.00. The constrained stops also reach their distance targets (1.43–1.54 for targets 1.6 / 2.5, against 1.10–1.17 without: steering around the hinge instead of being pruned at it), and the free stop scores 0.378 ± 0.012 against 0.305 ± 0.019. At matched distance the gain is about +0.03 around distance 0.9 and within noise elsewhere. On the recording route the hinge never engages at all (cello punchy: flux 0.42–0.47 at every stop, both arms), so the fix changes nothing there.</div>''')
+if len(CELLO2) == 2:
+    P.append('''<h3>The same run, twice</h3>
+<p>The control arm was also run twice on the cello, identical seeds, identical code. The two agree to three decimals for two stops and then part ways for good:</p>
+<div class="tw"><table class="ab"><tr><th>cello punchy, recording route</th>''' + "".join(f'<th>{st["target"] if st["target"] is not None else "free"}</th>' for st in CELLO2["nograd"][1:]) + "</tr>")
+    for arm, lab in (("nograd", "run 1"), ("nograd2", "run 2")):
+        P.append(f'<tr><td>{lab}</td>' + "".join(f'<td>{st["clap"]:+.3f}<br><small>{st["dist"]:.2f}</small></td>' for st in CELLO2[arm][1:]) + "</tr>")
+    P.append("</table></div><div class=\"pair\">")
+    for arm, lab, note in (("nograd", "run 1 — free stop, +0.20", "drive −6 dB: EQ and transient shaper doing the work"), ("nograd2", "run 2 — free stop, +0.55", "piecewise-tanh drive +22.5 dB, threshold 0.01: hard clipping, which CLAP calls very punchy")):
+        f = os.path.join(D, "ladder_flux", arm, "cello_fx__punchy__stop6_dinf.wav")
+        if os.path.exists(f): P.append(clip(mp3(f, f"bifurcation_{arm}"), "rec", lab, note))
+    P.append('''</div>
+<div class="finding"><b>Ladders are not repeatable on the GPU past the second stop.</b> At stop 3 one run's successive halving kept a candidate that had found the clipping route and the other never did; MPS kernels are not bit-deterministic, and the keep/prune decisions amplify the difference into two different sounds. Two consequences. Every single-run comparison on these pages carries a spread of that order on cells that can bifurcate (the e-piano cell was tamer, ±0.01–0.04): from here, repeats or a deterministic CPU mode before saying one route beats another. And the clipping route got past the judge — crest +9.8 dB and jumps 1.7 sat under the thresholds — so "punchy" still has a cheat available.</div>
+''')
+P.append('''<h2><span class="num">12</span>Method notes</h2>
 <p>Every run now re-renders its saved parameters through a freshly built synth and chain and checks that the score reproduces; a first pass at this analysis mis-read sixteen cells because the re-scoring script built the synth with linear frame interpolation while the cello table is stepped. The twins were recovered with 250-step searches from six starts (correlation to the soundfont: cello 0.81, brass 0.93, e-piano 0.96, flute 0.86). The named-prompt grid reused the same patches. Scores are CLAP cosines with per-note phases fixed; random phases move a score by a standard deviation of 0.006–0.01. Since the grid: every node type is in the chain by default (+0.02 mean on six cells, +10 % time; per-node contribution eq 0.09, delay 0.08, transient shaper 0.05, reverb 0.03, compressor 0.03, gate 0.02, chorus 0.02, drive 0.01); the drive and piecewise-tanh nodes are level-referenced (the absolute-level tanh was never used); every effect initialises at bypass; a retrieval warm start (the nearest earlier prompts on the same instrument) runs 370 steps instead of 700 for equal-or-better results (mean 0.341 vs 0.322, 120 s vs 214 s per prompt); early pruning of the halving was measured over 155 runs and rejected (the runner-up overtakes 37 % of the time). The step is 290 ms: synth 100, chain 90, CLAP 46, locality 17 — the optimiser's cost is not CLAP.</p>
 </main>''')
 open(os.path.join(SITE, "index.html"), "w").write("\n".join(P))

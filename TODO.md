@@ -54,8 +54,15 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       graph exact (99 dB). End to end on eq→comp→delay→reverb for "dark": the
       exported parameters rendered by the app's engine score within ±0.035 of
       the twin at every ladder stop. `ladder.run(..., graph=)` searches any
-      compiled graph. [ ] first-node VST pre-render, Vital instrument as the
-      source through the compiler, hook into the app as `tune_toward`.
+      compiled graph. Re-run with the exact twins (2026-09-20,
+      `words/appgraph/`; the pre-calibration run kept in `appgraph_v1/`): the
+      app engine now scores within 0.015 of the twin at every stop (0.004 at
+      stops 3–6), envelope correlation 1.000. [ ] first-node VST pre-render,
+      Vital instrument as the source through the compiler, hook into the app
+      as `tune_toward`.
+- Pages: *Ten Words, Four Instruments* v6 adds §09 fixed stops + judge, §10
+  the app-graph compiler, §11 the flux A/B and the run-to-run variance
+  (`words/build_page.py`; https://claude.ai/artifact/EWU2qELdDzS8sErFG3pw4N).
 - [x] **Every app twin exact** (2026-09-20, `python roundtrip.py graphs`):
       chorus 49 dB, gate 50, eq 82, delay 87, reverb 94, compressor 107,
       limiter 109, the rest 122–159; serial eq→comp→sat→delay graph 78 dB,
