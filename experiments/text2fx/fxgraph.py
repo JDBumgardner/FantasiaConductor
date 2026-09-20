@@ -101,7 +101,7 @@ class Compressor(torch.nn.Module):
             # (a sample-by-sample waveshaper with a hard knee), and unswapped roles hug the troughs (a 0.5 sine read as
             # 0.16; JUCE reads 0.44). Found by the round trip against pedalboard's compressor.
             ts = (1 - torch.sigmoid(z_alpha)).cpu(); ec = e.cpu()
-            y = _Ballistics.apply(ec, torch.ones(ec.shape[0]), ts[..., 1], ts[..., 0])[0]                 # (release, attack): rising level -> attack coefficient
+            y = _Ballistics.apply(ec, torch.zeros(ec.shape[0]), ts[..., 1], ts[..., 0])[0]                # (release, attack): rising level -> attack coefficient; state starts at 0 like JUCE (1 = start clamped: 28 dB round-trip SNR vs 102)
             return y.to(e.device)
         alpha = torch.sigmoid(z_alpha).clamp(max=1 - 1e-5)
         h = torch.exp(self.arange * torch.log(alpha)); h = h / h.sum(-1, keepdim=True)   # unit-DC truncated one-pole
@@ -109,7 +109,7 @@ class Compressor(torch.nn.Module):
     detector = "rms"
     def forward(self, x, thr_db, log_ratio, log_knee, z_alpha):
         if self.detector == "peak":                                           # JUCE-style: ballistics on |x|, level = 20 log10
-            lvl = 20 * torch.log10(self.smooth(x.abs().mean(-2), z_alpha) + 1e-4)
+            lvl = 20 * torch.log10(self.smooth(x.abs().mean(-2), z_alpha) + 1e-6)
         else:
             e = self.smooth(x.square().mean(-2), z_alpha)                   # (B, L) smoothed energy
             lvl = 10 * torch.log10(e + 1e-8)                                  # RMS dB, floor -80
@@ -392,18 +392,21 @@ def selftest(N=480000, seed=0):
     """Per node: (1) amount 0 returns the input (bypass), (2) CPU-vs-MPS gradient cosine at full length.
     Test (1) is what caught GRAFX's raw dry/wet weight and the one-sample time stretch; run it after any node change."""
     torch.manual_seed(seed); x = torch.randn(1, 1, N) * 0.1
+    x[..., N // 3: 2 * N // 3] *= 8                       # a -2 dB middle third (above the neutral -6 dB threshold): the dynamics nodes must actually act
     devs = ("cpu", "mps") if torch.backends.mps.is_available() else ("cpu",)
     for t in NODES:
         grads, res = {}, None
         for dev in devs:
             ch = Chain([t], N, dev); p = ch.init(seed)
             with torch.no_grad(): y0, _ = ch.render(x.to(dev), ch.scale(p, 0.0), checkpoint=False)
-            res = float((y0.cpu() - x[0, 0]).pow(2).mean().sqrt() / 0.1) if dev == "cpu" else res
+            res = float((y0.cpu() - x[0, 0]).pow(2).mean().sqrt() / x.pow(2).mean().sqrt()) if dev == "cpu" else res
             out, reg = ch.render(x.to(dev), p); ((out ** 2).mean() + 0.01 * reg).backward()
             grads[dev] = torch.cat([v.grad.flatten().cpu() for v in ch.params_flat(p)])
+        gn = float(grads["cpu"].norm())
         cos = float(torch.nn.functional.cosine_similarity(grads["cpu"], grads[devs[-1]], dim=0)) if len(devs) > 1 else float("nan")
-        note = "" if t not in ("dist", "pwtanh") else "  (tanh at 0 dB drive is not an exact identity; 5-10 % expected)"
-        print(f"  {t:10s} bypass residual {res:.1e}   grad cos {cos:+.4f}{note}", flush=True)
+        note = "" if t not in ("dist", "pwtanh") else "  (tanh at 0 dB drive is not an identity: a residual is expected)"
+        if gn == 0: note += "  ** ZERO GRADIENT: the node did nothing on this signal **"
+        print(f"  {t:10s} bypass residual {res:.1e}   grad cos {cos:+.4f}  |grad| {gn:.1e}{note}", flush=True)
 
 if __name__ == "__main__":
     if torch.backends.mps.is_available(): torch.mps.set_per_process_memory_fraction(0.5)

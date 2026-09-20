@@ -54,9 +54,50 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       graph exact (99 dB). End to end on eq→comp→delay→reverb for "dark": the
       exported parameters rendered by the app's engine score within ±0.035 of
       the twin at every ladder stop. `ladder.run(..., graph=)` searches any
-      compiled graph. [ ] chorus (JUCE depth/LFO law), gate (ratio expander),
-      first-node VST pre-render, Vital instrument as the source through the
-      compiler, hook into the app as `tune_toward`.
+      compiled graph. [ ] first-node VST pre-render, Vital instrument as the
+      source through the compiler, hook into the app as `tune_toward`.
+- [x] **Every app twin exact** (2026-09-20, `python roundtrip.py graphs`):
+      chorus 49 dB, gate 50, eq 82, delay 87, reverb 94, compressor 107,
+      limiter 109, the rest 122–159; serial eq→comp→sat→delay graph 78 dB,
+      parallel 99. The pedalboard/JUCE laws, all measured, not read:
+      - **Chorus**: sine LFO, delay = centre − 10 ms·depth·sin(2πft), clamped
+        ≥ 1 ms, identical L/R, linear mix. JUCE's oscillator is a float32
+        phase accumulator: its rate is off by up to 0.1 % (−0.12 % at 0.3 Hz,
+        +0.04 % at 1.5 Hz; over 5 s the twin fell from 38 to 16 dB SNR).
+        Closed form per binade in `juce_lfo_rate`, applied detached.
+      - **Ballistics (gate, compressor, limiter)**: JUCE's `BallisticsFilter`
+        coefficient is exp(−2π·1000/(sr·ms)) — a time constant of **ms/2π**.
+        Our compressor twin (and the 2026-09-20 "ballistics fix") used ms:
+        6× too slow. Also the state starts at 0 (ours started at 1 = fully
+        clamped; that alone was 28 dB vs 102). `z_juce`/`ms_juce` convert.
+      - **Gate**: 1 ms RMS pre-filter (same 2π convention), ballistics on the
+        *level* (attack = rising), then gain_dB = (ratio−1)·min(0, rms_dB −
+        (thr − 3 dB)): a downward expander, ratio 10 → −81 dB at 8 dB under.
+      - **Compressor**: hard knee (ours had 1 dB), floor 1e-6.
+      - **Delay**: `floor(float32(time)·sr)` samples, no interpolation. 0.35 s
+        is 16799 samples, not 16800; 0.3 s is 14400. Only a *linear* time
+        parameter holds the same float32 value the host sees (exp(log(0.35))
+        landed on the other side), so `DelayNode` is linear in time, quantised
+        straight-through, and exports the sample centre (D + ½)/sr.
+      - **Freeverb**: JUCE sizes every line with integer division
+        `(int)sr·tuning/44100`, spread added *before* dividing. `round()` put
+        half the lines a sample out: 13 dB → 94 dB.
+      Also: `SearchGraph` now moves `source_audio` to its device; the
+      `fxgraph.selftest` signal has a −2 dB middle third so the dynamics nodes
+      act (the compressor's old "grad cos +1" came from the wrong initial
+      state; with the right one it was bypassed on the −20 dB noise and had no
+      gradient at all).
+- **The artefact flux penalty had a zero gradient on MPS** (found 2026-09-20
+  while checking the new twins): `within_note_flux_t` used `torch.stft`'s own
+  reflect padding, whose MPS backward is broken past 65k samples (the known
+  bug `common.py` works around). A quantile's gradient is one frame's worth,
+  far into the clip — swallowed entirely, so the largest penalty term (0.45)
+  never pushed the optimiser on any MPS ladder run; the ladders got clean
+  through the tremolo/drop/crest terms and evaluation-time scoring. Fixed
+  (hand pad + `center=False`; penalty grad cos CPU/MPS 1.000). [ ] Re-run a
+  ladder cell with the working flux gradient and compare artefact rates.
+  `jump_t` (0.999 quantile of 480k samples) picks different single samples on
+  CPU and MPS — inherent to a quantile loss, not a bug.
 - **Found by the round trip: our compressor's ballistics were never applied.**
   torchcomp's `compressor_core` takes the update fraction 1−α (we passed α ≈
   0.999) and treats "attack" as the coefficient for a *falling* input (it

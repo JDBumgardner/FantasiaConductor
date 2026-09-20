@@ -6,7 +6,7 @@ scale(raw, a) (a=0 is the current setting, a=1 the result -- the amount knob is 
 Raw tensors are unconstrained: frequencies as log2(Hz), times as log(ms|s), dB as dB, ratios as log(ratio-1),
 mixes as logits. The DSP is fxgraph's / GRAFX's; only the parameterisation is new. Which twins are EXACT copies of
 pedalboard (the app's engine) and which are approximations is stated per node and checked by roundtrip.py."""
-import math, torch
+import math, torch, numpy as np
 from grafx import processors as P
 import fxgraph as FG
 SR = 48000
@@ -50,14 +50,20 @@ class Biquads(torch.nn.Module):
         Bs = torch.stack(Bs)[None, None]; As = torch.stack(As)[None, None]           # (B=1, C=1, K, 3)
         return self.iir(x, Bs, As)
 
+def host_delay_samples(time_s, sr=SR): return math.floor(float(np.float32(time_s)) * sr)
+
 class FeedbackDelay(torch.nn.Module):
     """pedalboard Delay (time, feedback, mix) as a frequency-domain FIR of K echoes: H = sum_k fb^(k-1) e^{-j w k tau};
-    differentiable in tau through the phase. Exact for a feedback delay up to K echoes (fb^K < 1e-3 at fb 0.7, K 24)."""
+    differentiable in tau through the phase (tau quantised to the host's whole-sample truncation, straight-through).
+    Exact for a feedback delay up to K echoes (fb^K < 1e-3 at fb 0.7, K 24)."""
     def __init__(self, N, K=24):
         super().__init__(); self.K, self.N = K, N; self.n = int(2 ** math.ceil(math.log2(N + 2 * SR * 2)))
         self.register_buffer("f", torch.fft.rfftfreq(self.n, 1 / SR))
-    def forward(self, x, log_time, fb_logit, mix_logit):
-        tau = torch.exp(log_time).reshape(()); fb = (sig(fb_logit) * 0.95).reshape(()); k = torch.arange(1, self.K + 1, device=x.device, dtype=torch.float32)
+    def forward(self, x, time, fb_logit, mix_logit):
+        tau = time.reshape(()).clamp(min=1 / SR); fb = (sig(fb_logit) * 0.95).reshape(()); k = torch.arange(1, self.K + 1, device=x.device, dtype=torch.float32)
+        # pedalboard truncates float32(time) * sr to whole samples, no interpolation (0.35 s -> 16799, measured on an impulse).
+        # Quantise the same way, straight-through so the gradient still flows through time; to_app exports the sample centre.
+        tau = tau + (host_delay_samples(float(tau)) / SR - tau).detach()
         phase = torch.remainder(self.f[None, :] * (k[:, None] * tau), 1.0)                   # (K, F) turns, wrapped before the exponential: 1e6 rad is not float32-safe
         H = (torch.pow(fb, k - 1)[:, None] * torch.exp(-2j * math.pi * phase)).sum(0)         # (F,); pedalboard: first echo at full mix, then x fb per echo (measured on an impulse)
         X = torch.fft.rfft(torch.nn.functional.pad(x, (0, self.n - x.shape[-1])))
@@ -115,16 +121,22 @@ class CompressorWithMakeup(torch.nn.Module):
     def __init__(self, N): super().__init__(); self.comp = FG.Compressor(N, ballistics=True); self.comp.detector = "peak"      # JUCE's compressor follows |x|, not x^2
     def forward(self, x, thr_db, log_ratio, log_knee, z_alpha, makeup_db): return self.comp(x, thr_db, log_ratio, log_knee, z_alpha) * torch.pow(10.0, makeup_db / 20)
 
+def z_juce(ms, sr=SR):
+    """One-pole logit for a JUCE BallisticsFilter time: JUCE uses alpha = exp(-2 pi * 1000 / (sr * ms)), i.e. a time constant
+    of ms / 2 pi (measured on pedalboard gate + compressor level steps, 2026-09-20: fitted tau ratio 6.36 ~ 2 pi)."""
+    return FG.z_from_ms(max(float(ms), 0.05) / (2 * math.pi), sr)
+def ms_juce(z, sr=SR): return round(FG.ms_from_z(z, sr) * 2 * math.pi, 2)
+
 class CompressorNode(AppNode):
-    """Our feed-forward RMS compressor with ballistics + makeup. pedalboard's (JUCE) is peak-based with a hard knee --
-    calibrate the mapping by roundtrip; approximate until then."""
-    exact = False
+    """pedalboard/JUCE compressor: peak detector (ballistics on |x|, JUCE time convention, state from 0), hard knee,
+    then makeup. Round-trips at ~100 dB SNR (2026-09-20)."""
+    exact = True
     def make(self, N): return CompressorWithMakeup(N)
     def from_app(self, p):
-        return {"thr_db": _t(p.get("threshold", -16.0))[None, None], "log_ratio": torch.log(_t(max(float(p.get("ratio", 4.0)) - 1, 1e-3)))[None, None], "log_knee": torch.log(_t(1.0))[None, None],
-                "z_alpha": torch.stack([FG.z_from_ms(p.get("attack", 10.0)), FG.z_from_ms(p.get("release", 100.0))])[None], "makeup_db": _t(p.get("makeup", 0.0))[None, None]}
+        return {"thr_db": _t(p.get("threshold", -16.0))[None, None], "log_ratio": torch.log(_t(max(float(p.get("ratio", 4.0)) - 1, 1e-3)))[None, None], "log_knee": torch.log(_t(0.01))[None, None],
+                "z_alpha": torch.stack([z_juce(p.get("attack", 10.0)), z_juce(p.get("release", 100.0))])[None], "makeup_db": _t(p.get("makeup", 0.0))[None, None]}
     def to_app(self, raw):
-        return {"threshold": _f(raw["thr_db"][0, 0]), "ratio": 1 + math.exp(_f(raw["log_ratio"][0, 0])), "attack": FG.ms_from_z(raw["z_alpha"][0, 0]), "release": FG.ms_from_z(raw["z_alpha"][0, 1]), "makeup": _f(raw["makeup_db"][0, 0])}
+        return {"threshold": _f(raw["thr_db"][0, 0]), "ratio": 1 + math.exp(_f(raw["log_ratio"][0, 0])), "attack": ms_juce(raw["z_alpha"][0, 0]), "release": ms_juce(raw["z_alpha"][0, 1]), "makeup": _f(raw["makeup_db"][0, 0])}
     def prior(self, raw):
         thr = raw["thr_db"][0, 0]; z = raw["z_alpha"][0]
         return (torch.relu(-60 - thr) ** 2 + torch.relu(thr) ** 2) / 100 + torch.relu(raw["log_ratio"] - math.log(19.0)).pow(2).sum() + (torch.relu(3.9 - z) ** 2 + torch.relu(z - 9.9) ** 2).sum() + torch.relu(raw["makeup_db"].abs() - 24).pow(2).sum() / 100
@@ -133,21 +145,13 @@ class LimiterNode(CompressorNode):
     def from_app(self, p): return super().from_app({"threshold": p.get("threshold", -1.0), "ratio": 20.0, "attack": 1.0, "release": p.get("release", 100.0), "makeup": 0.0})
     def to_app(self, raw): a = super().to_app(raw); return {"threshold": a["threshold"], "release": a["release"]}
 
-class ChorusNode(AppNode):
-    """Our LFO delay; pedalboard/JUCE Chorus differs in its depth scaling and LFO shape -- calibrate by roundtrip."""
-    exact = False
-    def make(self, N): return FG.Chorus(N)
-    def from_app(self, p):
-        rate, depth, cd, mix = float(p.get("rate", 1.0)), float(p.get("depth", 0.25)), float(p.get("centre_delay", 7.0)), float(p.get("mix", 0.5))
-        return {"z_delay_ms": logit((cd - 1) / 29)[None, None], "z_depth": logit(min(depth, 0.999))[None, None], "z_rate": logit(math.log(rate / 0.05) / math.log(10 / 0.05))[None, None], "drywet_weight": logit(mix)[None, None]}
-    def to_app(self, raw):
-        return {"rate": round(0.05 * math.exp(_f(sig(raw["z_rate"][0, 0])) * math.log(10 / 0.05)), 3), "depth": round(_f(sig(raw["z_depth"][0, 0])), 3), "centre_delay": round(1 + 29 * _f(sig(raw["z_delay_ms"][0, 0])), 2), "mix": round(_f(sig(raw["drywet_weight"][0, 0])), 3)}
-
 class DelayNode(AppNode):
     def make(self, N): return FeedbackDelay(N)
-    def from_app(self, p): return {"log_time": torch.log(_t(p.get("time", 0.25)))[None, None], "fb_logit": logit(float(p.get("feedback", 0.3)) / 0.95)[None, None], "mix_logit": logit(p.get("mix", 0.3))[None, None]}
-    def to_app(self, raw): return {"time": round(math.exp(_f(raw["log_time"][0, 0])), 4), "feedback": round(0.95 * _f(sig(raw["fb_logit"][0, 0])), 3), "mix": round(_f(sig(raw["mix_logit"][0, 0])), 3)}
-    def prior(self, raw): return torch.relu(raw["log_time"] - math.log(2.0)).pow(2).sum() + torch.relu(math.log(0.01) - raw["log_time"]).pow(2).sum()
+    # time is a LINEAR raw parameter: the host truncates float32(time) * sr, and only the very same float32 value lands on the
+    # same sample at round numbers (0.35 s is 16799.9997 samples; exp(log(0.35)) in float32 came out above 16800).
+    def from_app(self, p): return {"time": _t(p.get("time", 0.25))[None, None], "fb_logit": logit(float(p.get("feedback", 0.3)) / 0.95)[None, None], "mix_logit": logit(p.get("mix", 0.3))[None, None]}
+    def to_app(self, raw): return {"time": round((host_delay_samples(_f(raw["time"][0, 0])) + 0.5) / SR, 7), "feedback": round(0.95 * _f(sig(raw["fb_logit"][0, 0])), 3), "mix": round(_f(sig(raw["mix_logit"][0, 0])), 3)}   # mid-sample: truncates to the same sample the twin used
+    def prior(self, raw): return (torch.relu(raw["time"] - 2.0).pow(2).sum() + torch.relu(0.01 - raw["time"]).pow(2).sum()) * 100
 
 class Freeverb(torch.nn.Module):
     """JUCE's Reverb (pedalboard.Reverb) is Freeverb: input gain 0.015 -> 8 parallel damped feedback combs (feedback =
@@ -157,20 +161,23 @@ class Freeverb(torch.nn.Module):
     lines 23 samples longer; the mono output is the channel mean. Differentiable in room, damping, wet, dry, width."""
     COMBS, ALLPASSES, SPREAD, gain = (1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617), (556, 441, 341, 225), 23, 0.015
     def __init__(self, N, sr=SR):
-        super().__init__(); self.n = int(2 ** math.ceil(math.log2(N + 4 * sr))); s = sr / 44100.0
-        self.combs = [round(c * s) for c in self.COMBS]; self.aps = [round(a * s) for a in self.ALLPASSES]; self.spread = round(self.SPREAD * s)
+        super().__init__(); self.n = int(2 ** math.ceil(math.log2(N + 4 * sr))); isr = int(sr)
+        # JUCE sizes every line with integer division of (sr * tuning) / 44100 -- the right channel's +23 is added BEFORE the
+        # division, not after. round() here (and spread added after) put half the lines a sample out: 13 dB round-trip SNR.
+        self.lines = [([isr * c // 44100 for c in self.COMBS], [isr * a // 44100 for a in self.ALLPASSES]),
+                      ([isr * (c + self.SPREAD) // 44100 for c in self.COMBS], [isr * (a + self.SPREAD) // 44100 for a in self.ALLPASSES])]
         self.register_buffer("z1", torch.exp(-2j * math.pi * torch.fft.rfftfreq(self.n, 1.0)))     # z^-1 on the FFT grid
-    def wet_response(self, fb, d, offset):
-        z1 = self.z1; H = 0
-        for D in self.combs:
-            zD = z1 ** (D + offset); H = H + zD / (1 - fb * (1 - d) / (1 - d * z1) * zD)
-        for D in self.aps:
-            zD = z1 ** (D + offset); H = H * (1.5 * zD - 1) / (1 - 0.5 * zD)          # JUCE: temp = x + 0.5 b[n-D]; y = b[n-D] - x
+    def wet_response(self, fb, d, channel):
+        z1 = self.z1; H = 0; combs, aps = self.lines[channel]
+        for D in combs:
+            zD = z1 ** D; H = H + zD / (1 - fb * (1 - d) / (1 - d * z1) * zD)
+        for D in aps:
+            zD = z1 ** D; H = H * (1.5 * zD - 1) / (1 - 0.5 * zD)                     # JUCE: temp = x + 0.5 b[n-D]; y = b[n-D] - x
         return H
     def forward(self, x, room_logit, damp_logit, wet_logit, dry_logit, width_logit):
         room, damping, wet, dry, width = (sig(v).reshape(()) for v in (room_logit, damp_logit, wet_logit, dry_logit, width_logit))
         fb, d = room * 0.28 + 0.7, damping * 0.4; wet_g = wet * 3.0; wet1, wet2 = wet_g * (width * 0.5 + 0.5), wet_g * (1 - width) * 0.5
-        HL, HR = self.wet_response(fb, d, 0), self.wet_response(fb, d, self.spread)
+        HL, HR = self.wet_response(fb, d, 0), self.wet_response(fb, d, 1)
         Hmono = self.gain * 2 * ((wet1 + wet2) * (HL + HR) / 2) + dry * 2.0           # input = (L + R) * gain with L = R = x; mean of L = wet1 HL + wet2 HR + dry x, R = wet1 HR + wet2 HL + dry x
         X = torch.fft.rfft(torch.nn.functional.pad(x, (0, self.n - x.shape[-1])))
         return torch.fft.irfft(X * Hmono, n=self.n)[..., :x.shape[-1]]
@@ -184,14 +191,65 @@ class ReverbNode(AppNode):
     def to_app(self, raw): return {a: round(_f(sig(raw[k][0, 0])), 3) for k, a in (("room_logit", "room_size"), ("damp_logit", "damping"), ("wet_logit", "wet"), ("dry_logit", "dry"), ("width_logit", "width"))}
     def prior(self, raw): return torch.relu(sig(raw["wet_logit"]) - 0.6).pow(2).sum() * 4      # Freeverb's wet is x3 internally: past ~0.6 it swamps the dry
 
-class GateNode(AppNode):
-    """pedalboard NoiseGate is a ratio-based downward expander; ours is a soft expander with a range. Approximate."""
-    exact = False
-    def make(self, N): return FG.Gate(N)
+
+def juce_lfo_rate(rate_hz, sr=SR):
+    """The rate a JUCE dsp::Oscillator actually runs at. Its phase is a float32 accumulator wrapped at 2 pi; within each
+    binade of the phase the increment rounds to a whole number of ulps, so the effective period is a closed-form sum.
+    Off by up to ~0.1 %% (-0.12 %% at 0.3 Hz, +0.04 %% at 1.5 Hz): inaudible, but it is what the round trip hears."""
+    inc = float(np.float32(rate_hz * 2 * math.pi / sr)); steps = 2.0 ** -20 / inc
+    for k in range(-20, 3):
+        a, b = 2.0 ** k, min(2.0 ** (k + 1), 2 * math.pi)
+        if a >= 2 * math.pi: break
+        ulp = 2.0 ** (k - 23); steps += (b - a) / (max(round(inc / ulp), 1) * ulp)
+    return sr / steps
+
+class AppChorus(torch.nn.Module):
+    """pedalboard/JUCE Chorus, measured on a click train: delay(t) = clamp(centre - 10 ms * depth * sin(2 pi rate t), 1 ms),
+    identical on both channels, linear dry/wet mix. Feedback (rare; default 0 in the app) has no differentiable form
+    here and is ignored -- reported by the node."""
+    def __init__(self, N, sr=SR): super().__init__(); self.sr = sr; self.register_buffer("t", torch.arange(N).float() / sr)
+    def forward(self, x, log_rate, depth_logit, log_centre, mix_logit):
+        rate, depth, centre, mix = torch.exp(log_rate).reshape(()), sig(depth_logit).reshape(()), torch.exp(log_centre).reshape(()), sig(mix_logit).reshape(())
+        rate = rate * (juce_lfo_rate(float(rate), self.sr) / float(rate))          # host's float32 LFO drift, detached
+        d_ms = (centre - 10.0 * depth * torch.sin(2 * math.pi * rate * self.t)).clamp(min=1.0)
+        pos = (torch.arange(x.shape[-1], device=x.device).float() - d_ms * self.sr / 1000).clamp(min=0); i0 = pos.floor().long(); frac = pos - i0
+        xb = x[:, 0]; wet = torch.gather(xb, 1, i0[None].expand(xb.shape[0], -1)) * (1 - frac) + torch.gather(xb, 1, (i0 + 1).clamp(max=x.shape[-1] - 1)[None].expand(xb.shape[0], -1)) * frac
+        return ((1 - mix) * xb + mix * wet)[:, None, :]
+
+class ChorusNode(AppNode):
+    """Exact to the measured JUCE law except feedback (ignored)."""
+    exact = True
+    def make(self, N): return AppChorus(N)
     def from_app(self, p):
-        ratio = float(p.get("ratio", 4.0)); return {"thr_db": _t(p.get("threshold", -50.0))[None, None], "log_width": torch.log(_t(6.0))[None, None], "z_alpha": FG.z_from_ms(p.get("release", 100.0))[None, None], "log_range": torch.log(_t(min(60.0, 6.0 * (ratio - 1) + 1e-3)))[None, None]}
-    def to_app(self, raw): return {"threshold": _f(raw["thr_db"][0, 0]), "ratio": round(1 + math.exp(_f(raw["log_range"][0, 0])) / 6.0, 2), "release": FG.ms_from_z(raw["z_alpha"][0, 0]), "attack": 1.0}
-    def prior(self, raw): return torch.relu(torch.exp(raw["log_range"]) - 25).pow(2).sum() / 100
+        self.feedback = float(p.get("feedback", 0.0))
+        return {"log_rate": torch.log(_t(p.get("rate", 1.0)))[None, None], "depth_logit": logit(min(float(p.get("depth", 0.25)), 0.999))[None, None], "log_centre": torch.log(_t(p.get("centre_delay", 7.0)))[None, None], "mix_logit": logit(p.get("mix", 0.5))[None, None]}
+    def to_app(self, raw): return {"rate": round(math.exp(_f(raw["log_rate"][0, 0])), 3), "depth": round(_f(sig(raw["depth_logit"][0, 0])), 3), "centre_delay": round(math.exp(_f(raw["log_centre"][0, 0])), 2), "mix": round(_f(sig(raw["mix_logit"][0, 0])), 3), "feedback": getattr(self, "feedback", 0.0)}
+    def prior(self, raw): return torch.relu(raw["log_rate"] - math.log(8.0)).pow(2).sum() + torch.relu(math.log(0.1) - raw["log_rate"]).pow(2).sum() + torch.relu(raw["log_centre"] - math.log(30.0)).pow(2).sum() + torch.relu(math.log(1.0) - raw["log_centre"]).pow(2).sum()
+
+class AppGate(torch.nn.Module):
+    """pedalboard/JUCE NoiseGate: a 1 ms RMS level, attack/release ballistics on that level (peak type: attack when it
+    rises), then static gain (ratio - 1) * (level_dB - thr_dB) below the threshold -- a downward expander. Measured on tone
+    bursts 2026-09-20 (the rms/peak 3 dB is a sine's, so JUCE compares rms to the threshold directly). torchcomp's core
+    smooths a gain and its 'attack' coefficient applies to a falling input, so the roles are swapped here."""
+    def __init__(self, N, sr=SR):
+        super().__init__(); from grafx.processors.core.convolution import FIRConvolution
+        self.sr = sr; self.register_buffer("arange", torch.arange(4096)[None, :].float()); self.conv = FIRConvolution(mode="causal", flashfftconv=False, max_input_len=N)
+    def forward(self, x, thr_db, log_ratio, z_attack, z_release):
+        alpha = math.exp(-2 * math.pi / (0.001 * self.sr)); h = torch.exp(self.arange * math.log(alpha)); h = h / h.sum()   # JUCE's 1 ms RMS pre-filter
+        rms = torch.sqrt(torch.relu(self.conv(x.square().mean(-2), h)) + 1e-12)
+        ts = (1 - torch.sigmoid(torch.cat([z_attack, z_release], -1))).cpu(); rc = rms.cpu()
+        env = FG._Ballistics.apply(rc, torch.zeros(rc.shape[0]), ts[..., 1], ts[..., 0])[0].to(x.device)   # (falling=release, rising=attack)
+        lvl = 20 * torch.log10(env + 1e-6); ratio = 1 + torch.exp(log_ratio)
+        gain_db = (ratio - 1) * torch.clamp(lvl - (thr_db - 3.0), max=0.0)
+        return x * torch.pow(10.0, gain_db / 20)[:, None, :]
+
+class GateNode(AppNode):
+    exact = True
+    def make(self, N): return AppGate(N)
+    def from_app(self, p):
+        return {"thr_db": _t(p.get("threshold", -50.0))[None, None], "log_ratio": torch.log(_t(max(float(p.get("ratio", 4.0)) - 1, 1e-3)))[None, None], "z_attack": z_juce(p.get("attack", 1.0))[None, None], "z_release": z_juce(p.get("release", 100.0))[None, None]}
+    def to_app(self, raw): return {"threshold": round(_f(raw["thr_db"][0, 0]), 2), "ratio": round(1 + math.exp(_f(raw["log_ratio"][0, 0])), 2), "attack": ms_juce(raw["z_attack"][0, 0]), "release": ms_juce(raw["z_release"][0, 0])}
+    def prior(self, raw): return (torch.relu(-80 - raw["thr_db"]) ** 2 + torch.relu(raw["thr_db"]) ** 2).sum() / 100 + torch.relu(raw["log_ratio"] - math.log(19.0)).pow(2).sum()
 
 class Identity(torch.nn.Module):
     def forward(self, x): return x

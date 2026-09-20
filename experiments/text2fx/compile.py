@@ -15,7 +15,7 @@ class SearchGraph:
         self.specs = [as_dict(s) for s in inserts]; self.by_id = {insert_id(s) or s.get("type"): s for s in self.specs}
         self.wires = effective_wires(inserts, wires or []); self.order = topo_order(inserts, wires or [])
         self.N, self.device, self.checkpoint = N, device, checkpoint
-        self.source_audio, self.synth, self.notes = source_audio, synth, notes
+        self.source_audio, self.synth, self.notes = (None if source_audio is None else torch.as_tensor(source_audio, dtype=torch.float32).to(device)), synth, notes
         self.twins = {nid: AN.twin_for(self.by_id[nid]) for nid in self.order if self.by_id[nid].get("type") != "mix"}
         self.procs = torch.nn.ModuleDict({nid: tw.make(N) for nid, tw in self.twins.items()}).to(device)
         self.frozen = [nid for nid, tw in self.twins.items() if isinstance(tw, AN.FrozenNode)]
