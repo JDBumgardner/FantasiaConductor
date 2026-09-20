@@ -40,9 +40,30 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       `NoiseGate` shares the compressor's gain-law problem).
 - [ ] **Stereo** — the twin is mono; a mono judge cannot hear *wide*. Needs a
       stereo chain and a stereo-aware loss (GRAFX has mid/side tools).
-- [~] **Graph compiler** — the registry is the seed; still to do: app FX DAG →
-      node list, one twin per app node TYPE, frozen pass-through where none
-      exists, and DAG (non-serial) rendering through `render_grafx`.
+- [x] **Graph compiler v1** (`text2fx/compile.py`, `appnodes.py`, `roundtrip.py`,
+      2026-09-20): `compile_track(inserts, wires, source) → SearchGraph` walks
+      the app's own `topo_order`/`effective_wires`, sums at merges like
+      `FxHost`, handles `mix` nodes, freezes inserts without a twin (`vst`),
+      starts at the user's current settings and `export()`s app-unit params per
+      insert id. Twins in app units, round-tripped against pedalboard on the
+      same audio: gain / saturator / distortion / lowpass / highpass / eq /
+      delay **exact** (SNR 82–159 dB), **reverb exact** (Freeverb evaluated in
+      the frequency domain: 8 damped combs, 4 JUCE 'allpasses', stereo spread,
+      input gain 0.015·(L+R), wet ×3 / dry ×2), compressor & limiter within
+      0.2 dB / env corr 0.93–0.99, chorus and gate approximate. Whole parallel
+      graph exact (99 dB). End to end on eq→comp→delay→reverb for "dark": the
+      exported parameters rendered by the app's engine score within ±0.035 of
+      the twin at every ladder stop. `ladder.run(..., graph=)` searches any
+      compiled graph. [ ] chorus (JUCE depth/LFO law), gate (ratio expander),
+      first-node VST pre-render, Vital instrument as the source through the
+      compiler, hook into the app as `tune_toward`.
+- **Found by the round trip: our compressor's ballistics were never applied.**
+  torchcomp's `compressor_core` takes the update fraction 1−α (we passed α ≈
+  0.999) and treats "attack" as the coefficient for a *falling* input (it
+  smooths gains). Fed a level, attack and release were effectively
+  instantaneous — a sample-by-sample waveshaper with a hard knee — in every run
+  before 2026-09-20 (the HF splatter, the pumping flags, the appetite for 8:1).
+  Fixed (1−α, roles swapped); a 0.5 sine now reads 0.44 as JUCE does.
 - **Four upstream bugs found on the way (three GRAFX, one torchcomp), all fixed
   in `fxgraph.py`, the first three affecting every result before 2026-09-15:**
   1. `DryWet` documents mix = sigmoid(z) but uses z raw: "reverb mix 0.5" in the

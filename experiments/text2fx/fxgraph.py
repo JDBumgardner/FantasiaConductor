@@ -95,15 +95,24 @@ class Compressor(torch.nn.Module):
         self.ballistics = ballistics
     def smooth(self, e, z_alpha):
         if self.ballistics:
-            ts = torch.sigmoid(z_alpha).cpu(); ec = e.cpu()
-            y = _Ballistics.apply(ec, torch.ones(ec.shape[0]), ts[..., 0], ts[..., 1])[0]
+            # torchcomp's compressor_core smooths a GAIN: its coefficient is the update fraction 1 - alpha (ms2coef =
+            # 1 - exp(-2200/ms/sr)), and "attack" is the coefficient for a FALLING input. Fed a level, both conventions
+            # were wrong here until 2026-09-20: alpha (~0.999) as the fraction made the ballistics near-instantaneous
+            # (a sample-by-sample waveshaper with a hard knee), and unswapped roles hug the troughs (a 0.5 sine read as
+            # 0.16; JUCE reads 0.44). Found by the round trip against pedalboard's compressor.
+            ts = (1 - torch.sigmoid(z_alpha)).cpu(); ec = e.cpu()
+            y = _Ballistics.apply(ec, torch.ones(ec.shape[0]), ts[..., 1], ts[..., 0])[0]                 # (release, attack): rising level -> attack coefficient
             return y.to(e.device)
         alpha = torch.sigmoid(z_alpha).clamp(max=1 - 1e-5)
         h = torch.exp(self.arange * torch.log(alpha)); h = h / h.sum(-1, keepdim=True)   # unit-DC truncated one-pole
         return torch.relu(self.conv(e, h))
+    detector = "rms"
     def forward(self, x, thr_db, log_ratio, log_knee, z_alpha):
-        e = self.smooth(x.square().mean(-2), z_alpha)                       # (B, L) smoothed energy
-        lvl = 10 * torch.log10(e + 1e-8)                                      # RMS dB, floor -80
+        if self.detector == "peak":                                           # JUCE-style: ballistics on |x|, level = 20 log10
+            lvl = 20 * torch.log10(self.smooth(x.abs().mean(-2), z_alpha) + 1e-4)
+        else:
+            e = self.smooth(x.square().mean(-2), z_alpha)                   # (B, L) smoothed energy
+            lvl = 10 * torch.log10(e + 1e-8)                                  # RMS dB, floor -80
         s, W = 1 / (1 + torch.exp(log_ratio)), torch.exp(log_knee)            # slope 1/ratio, knee width dB
         over = lvl - thr_db
         mid = (s - 1) * (over + W / 2).clamp(min=0) ** 2 / (2 * W)
@@ -399,3 +408,9 @@ def selftest(N=480000, seed=0):
 if __name__ == "__main__":
     if torch.backends.mps.is_available(): torch.mps.set_per_process_memory_fraction(0.5)
     selftest()
+
+def z_from_ms(ms, sr=SR):
+    """One-pole coefficient logit for a time constant in ms (alpha = exp(-1/(tau*sr)), z = logit(alpha))."""
+    alpha = math.exp(-1.0 / (max(float(ms), 0.05) / 1000 * sr)); return torch.tensor(math.log(alpha / (1 - alpha)))
+def ms_from_z(z, sr=SR):
+    alpha = 1 / (1 + math.exp(-float(z))); return round(-1000 / (sr * math.log(min(alpha, 0.999999))), 2)
