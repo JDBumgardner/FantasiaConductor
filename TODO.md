@@ -72,18 +72,28 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       model (osc 2/3, filter models, Vital's own FX, LFO modulations, unison
       voice count) — the hook should fall back to the recording route (bounce
       the track, search the inserts) when that list is non-empty.
-- [ ] **The app hook, `tune_toward(track, text, stops)`**: the agent tools
-      already carry the plumbing — `list_fx`/`get_fx_routing` (inserts +
-      wires), `plugin_params` (Vital raw state), `get_clip_notes` (the notes),
-      `set_plugin_param`/`set_eq_band`/`add_fx` params (applying a stop),
-      `save_plugin_preset` (undo point). Design: run the search in a
-      subprocess (torch + CLAP do not belong in the app's process on 8 GB;
-      one process per graph, MPS cap 0.5), stream stop-by-stop progress,
-      return the ladder (word score, distance, identity, flags, exported
-      params, a rendered preview per stop), apply nothing — the user or agent
-      picks a stop. First-node VST pre-render for non-Vital instruments and
-      GM tracks: bounce the dry track through midi_render/plugin_render and
-      take the recording route.
+- [x] **The app hook** (2026-09-21): three agent tools. `tune_toward(track_id,
+      text, anchor?, stops?)` gathers the track on the UI thread (inserts +
+      wires via `as_dict`, the notes of its MIDI clips relative to the first,
+      a DRY bounce with the inserts bypassed, and on a Vital track the
+      plugin's raw parameters + preset JSON + wavetable name), then
+      `fantasia_core.tune.start` spawns `experiments/text2fx/tune.py` in its
+      own process (torch + CLAP stay out of the app on 8 GB), which picks the
+      route — the twin when `vital_coverage` is empty and the wavetable has an
+      extracted table, else the bounced audio with the patch left alone —
+      and streams one JSON event per stop. `tune_status(job_id)` returns
+      progress and, when done, the ladder (word, distance, identity, flags,
+      preview wav per stop). `apply_tune(job_id, stop)` merges the exported
+      insert params into the track's FX as one undoable `SetTrackFxCommand`
+      and, on the Vital route, snapshots the plugin's patch as a preset and
+      sets the exported Vital parameters (clips re-render). Nothing is
+      applied by the search. Tested through the manager on both routes (a
+      frozen VST in the chain left untouched): recording 330 s, Vital 480 s.
+      [ ] Try it from the app's agent (restart the app first — it holds
+      fantasia_core in memory); [ ] previews are wav paths for now — a
+      "play stop N" affordance in the agent panel; [ ] the `anchor` guess is
+      "a ⟨track name⟩" — use the instrument/plugin preset name; [ ] bounce
+      length: the runner takes the first 10 s from the first note.
 - Pages: *Ten Words, Four Instruments* v6 adds §09 fixed stops + judge, §10
   the app-graph compiler, §11 the flux A/B and the run-to-run variance
   (`words/build_page.py`; https://claude.ai/artifact/EWU2qELdDzS8sErFG3pw4N).
@@ -265,6 +275,18 @@ closed-loop recovery.
       adjective than the named sentence, less than the plain word, and it throws
       the identity away (brass 0.41 → 0.05–0.28). Three objectives, three
       failure modes.
+- [ ] **Directional objective, Text2FX's** (github.com/anniejchu/text2fx,
+      `__main__.py` `directional_loss`, read 2026-09-21): align the CHANGE in
+      audio embedding, a_fx − a_dry, with the text direction
+      emb("this sound is X") − emb("this sound is not X"). The source's identity
+      cancels out of the difference and the optimiser moves in the word's
+      direction rather than toward its absolute position — the mathematical
+      form of "darker, not pure darkness"; cleaner than the contrast objective
+      (which subtracted the instrument and lost it). Run it as a ladder
+      objective option against cosine on the e-piano/cello cells. Their other
+      choices are where our early cheats came from: one Adam run, lr 0.01,
+      600 steps, no loudness normalisation before CLAP, no regularisation;
+      MS-CLAP is their default model — try it as the second judge (below).
 - [ ] **Hinge objective** — cos("a soft cello") + λ·min(0, cos("a cello") − cos₀):
       hold identity, don't trade against it.
 - [x] **Text → FX on the recording itself** (`words/source/`, 2026-09-17): works on
@@ -409,7 +431,8 @@ amount, airy 0.188 → −0.004.
       tiny pitch shift before CLAP each step.
 - [ ] **Preference head** on CLAP embeddings trained from the listening protocol's
       A/B choices (a few hundred pairs).
-- [ ] **Ensemble** a second text–audio embedding model.
+- [ ] **Ensemble** a second text–audio embedding model — MS-CLAP (Text2FX's
+      default) is the candidate; score the existing ladders with it first.
 - [ ] **Audio-LM reranker** over the 3 finalists (not in the gradient loop).
 - [ ] **Zero-shot sanity gate**: rank the result against ~50 adjectives; flag a
       cheat if the prompt's word isn't near the top.

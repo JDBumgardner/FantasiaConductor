@@ -342,6 +342,27 @@ class AgentTools:
              "input_schema": {"type": "object", "required": ["plugin", "path"], "properties": {
                  "plugin": {"type": "string", "description": "Vital instance name or path, as used on the track"},
                  "path": {"type": "string", "description": "path to a .vital file, e.g. ~/Music/Vital/Afro/Presets/Kick Drum 1.vital"}}}},
+            {"name": "tune_toward", "description": (
+                "Push a track's sound toward a description — 'darker', 'punchy', 'a warmer electric piano' — by searching "
+                "the track's own FX inserts (and, on a Vital track the twin can model, the patch itself) with CLAP as the ear. "
+                "Runs in the background (about 4–8 minutes) and returns a job_id; poll tune_status. The result is a LADDER of "
+                "stops at increasing distance from the original, each with its word score, distance, identity score and "
+                "artefact flags — nothing is applied. Listen/compare, then apply_tune(job_id, stop). Stops 2–4 are usually the "
+                "musical ones; the last stop is unconstrained. On tracks with no Vital (or a Vital patch outside the twin's "
+                "palette: several oscillators, LFOs, Vital's own FX) the dry track is bounced and only the inserts are searched."),
+             "input_schema": {"type": "object", "required": ["track_id", "text"], "properties": {
+                 "track_id": {"type": "string"},
+                 "text": {"type": "string", "description": "the word or short phrase, e.g. 'dark', 'punchy', 'a warmer electric piano'"},
+                 "anchor": {"type": "string", "description": "what the sound is, for the identity score, e.g. 'an electric piano' (default: guessed from the track)"},
+                 "stops": {"type": "array", "items": {"type": "number"}, "description": "distance targets for the stops (default 0.3, 0.6, 1.0, 1.6, 2.5, then unconstrained)"}}}},
+            {"name": "tune_status", "description": "Progress and result of a tune_toward job: status, stops done so far, and when done the ladder (per stop: word score, distance, identity, flags, preview wav path).",
+             "input_schema": {"type": "object", "required": ["job_id"], "properties": {"job_id": {"type": "string"}}}},
+            {"name": "apply_tune", "description": (
+                "Apply one stop of a finished tune_toward job to its track: the inserts' parameters become an undoable FX edit, and "
+                "on the Vital route the patch parameters are set on the plugin (clips re-render). Undo reverts the FX edit; the plugin "
+                "patch is snapshotted as a preset first so it can be recalled."),
+             "input_schema": {"type": "object", "required": ["job_id", "stop"], "properties": {
+                 "job_id": {"type": "string"}, "stop": {"type": "integer", "description": "1-based stop index from tune_status"}}}},
             {"name": "save_project", "description": "Save the project to a .fcp file. With no path, saves over the file it was opened from. This is the ONLY way to persist work: the document lives in memory and closing the app discards it.",
              "input_schema": {"type": "object", "properties": {
                  "path": {"type": "string", "description": "where to write it; omit to save over the current file"}}}},
@@ -448,7 +469,7 @@ class AgentTools:
         args = args or {}
         result = self._dispatch(name, args)
         _READS = ("get_project", "list_tracks", "list_clips", "get_clip_notes",
-                  "find_sound", "get_eq", "list_fx")
+                  "find_sound", "get_eq", "list_fx", "tune_status")
         if name not in _READS and self._refresh:
             self._refresh()
         return result
@@ -734,8 +755,16 @@ class AgentTools:
                                  "bytes": r.bytes, "note": r.note} for r in rows]}
         if name in ("plugin_params", "set_plugin_param",
                     "save_plugin_preset", "load_plugin_preset",
-                    "load_vital_preset", "save_project", "open_project"):
+                    "load_vital_preset", "save_project", "open_project",
+                    "tune_toward", "apply_tune"):
             return {"error": f"{name} must be run off the UI thread"}
+        if name == "tune_status":
+            from fantasia_core import tune
+
+            job = tune.get(str(a.get("job_id", "")))
+            if job is None:
+                return {"error": f"no tune job {a.get('job_id')!r}"}
+            return job.summary()
         if name == "list_voicebanks":
             from fantasia_core import svs
 

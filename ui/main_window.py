@@ -12,6 +12,7 @@ import math
 import base64
 import inspect
 import os
+import time
 import pathlib
 import sys
 import threading
@@ -1482,6 +1483,9 @@ class _AgentWorker(QThread):
             return self._marshal(f"_plugin_{name}", args)
         if name in ("stretch_clip", "stretch_clip_to_bars"):
             return self._stretch(name, args)
+        if name in ("tune_toward", "apply_tune"):
+            # Reads the plugin's state / sets its knobs (UI thread); the search itself is a subprocess.
+            return self._marshal(f"_tune_{name}", args)
         return self._marshal(name, args)
 
     def _stretch(self, name: str, args: dict):
@@ -4235,6 +4239,10 @@ class MainWindow(QMainWindow):
                 holder["result"] = self._agent_prep_vocalfx(args)
             elif name == "_apply_vocalfx_result":
                 holder["result"] = self._agent_apply_vocalfx(args)
+            elif name == "_tune_tune_toward":
+                holder["result"] = self._agent_tune_toward(args)
+            elif name == "_tune_apply_tune":
+                holder["result"] = self._agent_apply_tune(args)
             elif name == "_prep_stretch":
                 holder["result"] = self._agent_prep_stretch(args)
             elif name == "_apply_stretch":
@@ -4650,6 +4658,134 @@ class MainWindow(QMainWindow):
                     "tracks_rerendered": touched}
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
+
+    # ---- tune_toward -------------------------------------------------------
+    def _agent_tune_toward(self, args: dict) -> dict:
+        """UI thread: gather the track (inserts, wires, instrument, notes), bounce it dry, start the search job."""
+        import base64
+        import json as _json
+        import tempfile
+
+        from fantasia_core import plugins as plg
+        from fantasia_core import tune
+        from fantasia_core.document.fx_insert import as_dict
+        from fantasia_core.engine.bounce import bounce_track_to_file
+        from fantasia_core.presets import JSON_START
+
+        t = self.project.track_by_id(str(args.get("track_id", "")))
+        if t is None:
+            return {"error": "track not found"}
+        text = str(args.get("text", "")).strip()
+        if not text:
+            return {"error": "give the word or phrase to move toward"}
+        inserts = [as_dict(e) for e in (t.fx or [])]
+        wires = [{"src": w.src, "dst": w.dst} for w in (getattr(t, "fx_wires", None) or [])]
+        # the notes the track plays, relative to the first one (the twin renders up to 10 s from there)
+        notes = []
+        for c in t.clips:
+            for n in getattr(c, "notes", None) or []:
+                notes.append((int(n.pitch), float(c.start + n.start), float(n.duration), int(n.velocity)))
+        notes.sort(key=lambda n: n[1])
+        t0 = notes[0][1] if notes else 0.0
+        notes = [(p_, s - t0, d, v) for p_, s, d, v in notes if s - t0 < 9.5]
+        out_dir = os.path.join(tempfile.gettempdir(), "fantasia_tune", f"{t.id}_{int(time.time())}")
+        os.makedirs(out_dir, exist_ok=True)
+        # the dry track (inserts bypassed) is the recording route's source and the Vital route's fallback
+        saved_fx = t.fx
+        try:
+            t.fx = [type(e)(**{**as_dict(e), "bypassed": True}) if not isinstance(e, dict) else {**e, "bypassed": True} for e in (t.fx or [])]
+            dry = os.path.join(out_dir, "dry.wav")
+            bounce_track_to_file(self.project, self.pool, self.project.sample_rate, dry, t.id,
+                                 midi_renderer=self.midi, synth_renderer=self.synth_engine, plugin_renderer=self.plugin_renderer)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"could not bounce the track: {exc}"}
+        finally:
+            t.fx = saved_fx
+        source = {"kind": "audio", "path": dry}
+        plugin_name = getattr(t, "plugin", "") or ""
+        if "vital" in plugin_name.lower() and notes:
+            try:
+                plugin, slot = plg.instance_for(plugin_name, t.id)
+                blob = getattr(t, "plugin_state", "") or ""
+                if blob and slot == plg.RENDER_OWNER:
+                    plg.restore_preset(plugin, base64.b64decode(blob))
+                    self.plugin_renderer._states[(plugin_name, slot)] = blob
+                raw = {k: float(getattr(p_, "raw_value", 0.0)) for k, p_ in plg._params(plugin).items()}
+                preset = None
+                try:
+                    data = base64.b64decode(blob) if blob else (plg.preset_bytes(plugin) or b"")
+                    preset, _ = _json.JSONDecoder().raw_decode(data[JSON_START:].decode("utf-8", "replace"))
+                except Exception:  # noqa: BLE001
+                    preset = None
+                wavetable = ""
+                try:
+                    wavetable = preset["settings"]["wavetables"][0]["name"]
+                except Exception:  # noqa: BLE001
+                    pass
+                source = {"kind": "vital", "params": raw, "notes": notes, "wavetable": wavetable, "preset": preset,
+                          "voices": int(round(raw.get("oscillator_1_unison_voices", 0.0) * 15)) + 1, "fallback_audio": dry}
+            except Exception as exc:  # noqa: BLE001
+                source = {"kind": "audio", "path": dry, "note": f"Vital state unreadable ({exc}); searching the inserts only"}
+        anchor = str(args.get("anchor") or "").strip() or ("a " + (t.name or "sound").lower())
+        spec = {"track_id": t.id, "text": text, "anchor": anchor, "inserts": inserts, "wires": wires, "source": source,
+                "notes": notes or None, "out_dir": out_dir}
+        if args.get("stops"):
+            spec["stops"] = [float(x) for x in args["stops"]]
+        job = tune.start(spec)
+        out = job.summary()
+        out["note"] = ("searching the Vital patch and the inserts together" if source["kind"] == "vital"
+                       else "searching the inserts on the bounced track") + "; poll tune_status, then apply_tune"
+        if source.get("note"):
+            out["note"] = source["note"]
+        return out
+
+    def _agent_apply_tune(self, args: dict) -> dict:
+        """UI thread: one stop's exported parameters -> an undoable FX edit, plus the Vital knobs when the patch was searched."""
+        from fantasia_core import plugins as plg
+        from fantasia_core import presets as pre
+        from fantasia_core import tune
+        from fantasia_core.document.fx_insert import FxInsert, as_dict
+
+        job = tune.get(str(args.get("job_id", "")))
+        if job is None:
+            return {"error": f"no tune job {args.get('job_id')!r}"}
+        if job.status != "done":
+            return {"error": f"job is {job.status}" + (f": {job.error}" if job.error else "")}
+        export = tune.stop_export(job.id, int(args.get("stop", 0)))
+        if not export:
+            return {"error": f"no stop {args.get('stop')} in this job (1..{len(job.result['stops']) - 1})"}
+        t = self.project.track_by_id(str(job.spec.get("track_id", "")))
+        if t is None:
+            return {"error": "the job's track is gone"}
+        changed = []
+        fx = []
+        for e in (t.fx or []):
+            d = as_dict(e)
+            if d["id"] in export:
+                d = {**d, "params": {**d.get("params", {}), **export[d["id"]]}}
+                changed.append(d["id"])
+            fx.append(FxInsert(id=d["id"], type=d["type"], params=d["params"], bypassed=d.get("bypassed", False),
+                               x=float(d.get("x", 0.0)), y=float(d.get("y", 0.0))))
+        label = f"tune toward '{job.spec.get('text')}' stop {args.get('stop')}"
+        if changed:
+            self.bus.dispatch(SetTrackFxCommand(t.id, fx, label=label))
+        out = {"ok": True, "inserts_changed": changed, "label": label}
+        vital = export.get("vital")
+        plugin_name = getattr(t, "plugin", "") or ""
+        if vital and "vital" in plugin_name.lower():
+            try:
+                plugin, _slot = plg.instance_for(plugin_name, t.id)
+                data = plg.preset_bytes(plugin)
+                if data:
+                    saved = pre.save(plugin_name, f"before {label}", data, note="snapshot taken by apply_tune")
+                    out["snapshot_preset"] = saved.slug
+                for k, v in vital.items():
+                    plg.set_param(plugin, k, float(v))
+                out["vital_params_set"] = len(vital)
+                out["tracks_rerendered"] = self._resync_plugin_tracks(plugin_name, t.id)
+            except Exception as exc:  # noqa: BLE001
+                out["vital_error"] = str(exc)
+        return out
 
     def _agent_prep_vocalfx(self, args: dict) -> dict:
         """UI thread: pull a clip's audio segment for the vocal-fx worker."""
