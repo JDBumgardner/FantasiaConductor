@@ -57,6 +57,7 @@ ROUNDS = tuple(tuple(int(x) for x in r.split(":")) for r in os.environ.get("T2_R
 def run(prompt):
     """-> (score, ps, pf, synth, dry (L,), wet (L,), extra). The synth is shared by all candidates (it holds no state
     but the table and phases), so a candidate is just its parameter dicts."""
+    torch.manual_seed(0)                                   # seeded phase/noise draws: a run repeats bit for bit (see ladder.run)
     T = C.text_emb(prompt); s_ = WavetableSynth(TABLE, SR, voices=1, bounds=B, interpolation=1).to(DEV)
     def loss_of(ps, pf):
         y = s_.render(ps, notes, L); out, gs = render_fx(y, pf); w = loudness_norm(out)

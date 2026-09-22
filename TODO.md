@@ -121,19 +121,40 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
   elsewhere. Tremolo/crest at the free stop: 0.13/0.19 vs 2.47/3.27 (first
   pair). Conclusion: the mechanism works as designed; the score effect is a
   modest, mostly "goes further cleanly" one.
-- **Ladders are not repeatable on MPS past stop 2.** Two runs of cello punchy
-  fx with identical seeds and code: 0.030/0.030, 0.120/0.122, then 0.169 vs
-  0.194, and free stops **+0.204 vs +0.546** — one run's successive halving
-  kept a candidate that had found the piecewise-tanh saturation route
-  (drive +22.5 dB, threshold 0.01 = hard clipping, which CLAP calls very
-  punchy), the other never did. MPS kernel nondeterminism, amplified by the
-  keep/prune decisions and the half-split continuation. Every single-run
-  comparison in this file is subject to a spread of that order on
-  bifurcating cells (the e-piano twin cell was tamer: ±0.01–0.04). [ ] Repeat
-  runs (n ≥ 3) or a CPU-deterministic mode before concluding x > y from
-  ladders; [ ] the saturation route reads as "punchy" to CLAP — it is
-  clipping; the crest/jump penalties did not stop it (crest +9.8, jump 1.7
-  under the 3.0 threshold). Keep this in view for the judge.
+- **Ladders were not repeatable on MPS past stop 2 — fixed 2026-09-21.** Two
+  runs of cello punchy fx with identical seeds and code: 0.030/0.030,
+  0.120/0.122, then 0.169 vs 0.194, and free stops **+0.204 vs +0.546** — one
+  run's successive halving kept a candidate that had found the piecewise-tanh
+  saturation route (drive +22.5 dB, threshold 0.01 = hard clipping, which
+  CLAP calls very punchy), the other never did. Every single-run comparison
+  made before this date carries a spread of that order on bifurcating cells
+  (the e-piano twin cell was tamer: ±0.01–0.04). [ ] The saturation route
+  reads as "punchy" to CLAP — it is clipping; the crest/jump penalties did
+  not stop it (crest +9.8, jump 1.7 under the 3.0 threshold). For the judge.
+  **Why it was not deterministic:** the forward pass was; four *backward*
+  kernels accumulate colliding writes with atomics on MPS, so the gradients
+  differed at the last bits run to run, and the keep/prune decisions
+  amplified that into different sounds (bisected with bit-for-bit repeats of
+  each component; `torch.use_deterministic_algorithms` flags only two of the
+  four). Each is now gone: (1) `torch.stft`'s framing backward (overlap-add
+  of frame gradients; ~1e-5 raw, 2e-7 through CLAP) — `common.Frame`, a
+  framing whose backward is G = ceil(n_fft/hop) non-overlapping slice copies
+  summed with G additions; every STFT in the losses and CLAP's mel front end
+  go through `common.stft_det` (forward bit-equal to torch.stft, backward to
+  1e-14 in float64; CLAP score unchanged to 5 dp; +3 ms). (2) CLAP's bicubic
+  1001→1024 time stretch in `reshape_mel2img` (nondeterministic on MPS *and*
+  CPU) — applied as a precomputed matrix (`common._make_deterministic`).
+  (3) The chorus's fractional-delay gather (scatter-add backward) — gathered
+  on the CPU, ~1 ms. (4) The synth's wavetable read `table[i0]`: ~10M reads
+  into 2048 bins, a colliding scatter in the backward that even the CPU
+  parallelises (2e-4 run to run, 2e-3 relative error in float32). Since the
+  frames are constants and only the morph weight is learned, the read is now
+  `(1−w)·T_lo[i0] + w·T_hi[i0]` on the two constant neighbouring frames'
+  waveforms — no scatter at all, same speed, render bit-identical to the old
+  code. Plus the per-note phase/noise draws came from the unseeded global
+  RNG; `ladder.run`, `prompt_on` and `text2synth.run` now seed it. A full
+  step is bit-identical twice on every route; `python selftest.py` checks
+  that, the judge's gradients (non-zero, CPU = MPS) and the node tests.
 - **Found by the round trip: our compressor's ballistics were never applied.**
   torchcomp's `compressor_core` takes the update fraction 1−α (we passed α ≈
   0.999) and treats "attack" as the coefficient for a *falling* input (it

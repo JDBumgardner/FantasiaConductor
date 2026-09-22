@@ -50,6 +50,30 @@ def kalimba(path=os.path.join(HERE, "G_kalimba_gm.wav")) -> np.ndarray:
 def reflect_pad(x, p):
     return torch.cat([x[..., 1:p + 1].flip(-1), x, x[..., -p - 1:-1].flip(-1)], dim=-1)
 
+# torch.stft's backward is an overlap-add of the frames' gradients; on MPS that accumulates with atomics, so the
+# gradient differs run to run (~1e-5 raw, 2e-7 through CLAP) and the ladder's keep/prune decisions turned that into
+# +0.20 vs +0.55 for identical seeds (2026-09-21). `Frame` does the overlap-add without any accumulation into shared
+# memory: frames G = ceil(n_fft / hop) apart never overlap, so each of the G groups is a plain slice copy and the
+# groups are summed with G ordinary additions. Every STFT in the losses (and CLAP's mel front end) goes through it.
+class Frame(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, n_fft, hop):
+        ctx.n_fft, ctx.hop, ctx.L = n_fft, hop, x.shape[-1]; return x.unfold(-1, n_fft, hop)          # (..., T, n_fft), a view
+    @staticmethod
+    def backward(ctx, g):
+        n_fft, hop, L = ctx.n_fft, ctx.hop, ctx.L; T = g.shape[-2]; G = -(-n_fft // hop); lead = g.shape[:-2]
+        out = torch.zeros(*lead, L, dtype=g.dtype, device=g.device)
+        for k in range(G):
+            gk = g[..., k::G, :]; Tk = gk.shape[-2]                                                     # frames k, k+G, ...: non-overlapping
+            if Tk == 0: continue
+            blk = torch.zeros(*lead, Tk, G * hop, dtype=g.dtype, device=g.device); blk[..., :n_fft] = gk   # each frame in its own G*hop slot
+            flat = blk.reshape(*lead, Tk * G * hop); start = k * hop; end = min(L, start + flat.shape[-1])
+            out[..., start:end] = out[..., start:end] + flat[..., :end - start]
+        return out, None, None
+def stft_det(x, n_fft, hop, window):
+    """|STFT| with a deterministic backward (see Frame); x already padded, center=False semantics, hann `window`."""
+    return torch.fft.rfft(Frame.apply(x, n_fft, hop) * window, dim=-1).transpose(-1, -2)                  # (..., n_fft//2+1, T) like torch.stft
+
 # ---- CLAP, differentiable ---------------------------------------------------
 _model = _proc = _mel = _todb = None
 def _load():
@@ -66,7 +90,33 @@ def _load():
             f_max=fe.frequency_max, power=2.0, center=False,       # padded by hand, see reflect_pad
             norm="slaney", mel_scale="slaney").to(DEVICE)
         _todb = torchaudio.transforms.AmplitudeToDB(stype="power", top_db=None).to(DEVICE)
+        _make_deterministic(_model)
     return _model, _proc
+
+# ---- determinism. CLAP's encoder time-stretches the 1001-frame mel to 1024 with F.interpolate(mode="bicubic"), whose
+# backward accumulates with atomics: the gradient w.r.t. the audio differs run to run at ~2e-7 on MPS (and on the CPU),
+# and the ladder's keep/prune decisions turned that into +0.20 vs +0.55 for the same seeds (2026-09-21). The stretch is a
+# fixed linear map, so it is applied as a matrix (built once by pushing identity columns through the original op): same
+# forward to float precision, deterministic backward.
+_INTERP = {}
+def _interp_matrix(n_in, n_out, device):
+    k = (n_in, n_out, str(device))
+    if k not in _INTERP:
+        eye = torch.eye(n_in, dtype=torch.float64)[None, None]
+        _INTERP[k] = torch.nn.functional.interpolate(eye, size=(n_out, n_in), mode="bicubic", align_corners=True)[0, 0].float().to(device)   # (n_out, n_in)
+    return _INTERP[k]
+def _make_deterministic(model):
+    import types
+    enc = model.audio_model.audio_encoder
+    def reshape_mel2img(self, f):
+        _, _, T, Fq = f.shape; W = int(self.spec_size * self.freq_ratio); Hh = self.spec_size // self.freq_ratio
+        if T > W or Fq > Hh: raise ValueError("the wav size should be less than or equal to the swin input size")
+        if T < W: f = torch.matmul(_interp_matrix(T, W, f.device)[None, None], f)
+        if Fq < Hh: f = torch.matmul(f, _interp_matrix(Fq, Hh, f.device).T[None, None])
+        b, c, t, fr = f.shape
+        f = f.reshape(b, c * self.freq_ratio, t // self.freq_ratio, fr).permute(0, 1, 3, 2).contiguous()
+        return f.reshape(b, c, fr * self.freq_ratio, t // self.freq_ratio)
+    enc.reshape_mel2img = types.MethodType(reshape_mel2img, enc)
 
 _un = lambda o: o.pooler_output if hasattr(o, "pooler_output") else o
 _nrm = lambda e: e / e.norm(dim=-1, keepdim=True)
@@ -78,7 +128,8 @@ def embed(w: torch.Tensor) -> torch.Tensor:
     if w.ndim == 1: w = w[None, :]
     w = torch.nn.functional.pad(w, (0, max(0, n - w.shape[-1])))[:, :n]
     w = reflect_pad(w, p.feature_extractor.fft_window_size // 2)
-    f = _todb(_mel(w)).transpose(1, 2)[:, None, :1001, :]          # (B,1,frames,mels)
+    pw = stft_det(w, _mel.n_fft, _mel.hop_length, _mel.spectrogram.window).abs() ** 2     # torchaudio's MelSpectrogram, with the deterministic framing
+    f = _todb(torch.matmul(_mel.mel_scale.fb.T, pw)).transpose(1, 2)[:, None, :1001, :]   # (B,1,frames,mels)
     lon = torch.zeros(w.shape[0], 1, dtype=torch.bool, device=DEVICE)
     return _nrm(_un(m.get_audio_features(input_features=f, is_longer=lon)))
 
@@ -109,7 +160,7 @@ def level_match(w, ref):
     lr = loudness(ref)
     return w * (lr / (loudness(w) + 1e-3 * lr))
 
-def _mag(x, n): return torch.stft(reflect_pad(x, n // 2), n, n // 4, window=torch.hann_window(n, device=x.device), center=False, return_complex=True).abs()
+def _mag(x, n): return stft_det(reflect_pad(x, n // 2), n, n // 4, torch.hann_window(n, device=x.device)).abs()
 
 class SpectralAnchor:
     """A fixed reference for mrstft: its magnitudes are computed once. In a locality term the anchor is the same
@@ -201,8 +252,8 @@ def mrstft_lin(a, b, ffts=(128, 512, 1024, 2048), log_weight=0.1):
     tot = 0.0
     for n in ffts:
         win = torch.hann_window(n, device=a.device)
-        A = torch.stft(reflect_pad(a, n // 2), n, n // 4, window=win, center=False, return_complex=True).abs()
-        B = torch.stft(reflect_pad(b, n // 2), n, n // 4, window=win, center=False, return_complex=True).abs()
+        A = stft_det(reflect_pad(a, n // 2), n, n // 4, win).abs()
+        B = stft_det(reflect_pad(b, n // 2), n, n // 4, win).abs()
         sc = (A - B).flatten(-2).norm(dim=-1) / (A.flatten(-2).norm(dim=-1) + 1e-8)
         lm = (torch.log(A + 1e-5) - torch.log(B + 1e-5)).abs().flatten(-2).mean(-1)
         tot = tot + sc + log_weight * lm
@@ -273,6 +324,6 @@ def band_energy_loss(a, b, n_fft=2048, hop=480, n_bands=32, f_lo=60.0, smooth=8,
         _BANDS[key] = torch.stack(rows).to(a.device)
     M = _BANDS[key]; win = torch.hann_window(n_fft, device=a.device)
     def P(x):
-        S = M @ torch.stft(reflect_pad(x, n_fft // 2), n_fft, hop, window=win, center=False, return_complex=True).abs() ** 2
+        S = M @ stft_det(reflect_pad(x, n_fft // 2), n_fft, hop, win).abs() ** 2
         return torch.nn.functional.avg_pool1d(S[None], smooth, stride=smooth // 2)[0]
     return (torch.log10(P(a) + 1e-9) - torch.log10(P(b) + 1e-9)).abs().mean()

@@ -133,7 +133,7 @@ def _reflect_pad(x, p): return torch.cat([x[..., 1:p + 1].flip(-1), x, x[..., -p
 def within_note_flux_t(x, notes, sr=48000, n_fft=2048, hop=480):
     # padded by hand + center=False: torch.stft's own reflect pad has a broken MPS backward past 65k samples (see common.py).
     # Here it silently ZEROED this penalty's gradient (one frame's worth, far into the clip) on every MPS ladder run before 2026-09-20.
-    S = torch.stft(_reflect_pad(x, n_fft // 2), n_fft, hop, window=torch.hann_window(n_fft, device=x.device), center=False, return_complex=True).abs()
+    import common as C_; S = C_.stft_det(_reflect_pad(x, n_fft // 2), n_fft, hop, torch.hann_window(n_fft, device=x.device)).abs()   # deterministic framing (common.Frame)
     Ld = 20 * torch.log10(S + 1e-3); flux = (Ld[:, 1:] - Ld[:, :-1]).abs().mean(0)      # 1e-3 floor: the log of empty bins otherwise dominates the gradient
     lvl = 20 * torch.log10(S.pow(2).sum(0).sqrt() + 1e-6)[1:]; m = _mask_t(len(flux), notes, sr, hop, x.device) & (lvl > lvl.max() - 40)
     return torch.quantile(flux[m], 0.5) if m.any() else flux.sum() * 0        # not .median(): it leaks driver memory on MPS (5.9 MB per call on a 480k tensor)

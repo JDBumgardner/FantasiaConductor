@@ -170,10 +170,13 @@ class WavetableSynth(nn.Module):
 
     def harmonics(self, frame):
         """Continuous frame position -> (K,) signed harmonic amplitudes."""
-        if self.interpolation == 0:                      # stepped: no gradient to frame, the sweep finds it
-            frame = torch.floor(frame.detach())
-        lo = torch.clamp(torch.floor(frame), 0, self.F - 2); w = frame - lo; lo = lo.long()
+        lo, w = self.frame_parts(frame)                  # stepped tables (interpolation 0): no gradient to frame, the sweep finds it
         return (1 - w) * self.table[lo] + w * self.table[lo + 1]
+
+    def frame_parts(self, frame):
+        """Continuous frame -> (integer frame below, morph weight). The table is a constant; the weight carries the gradient."""
+        if self.interpolation == 0: frame = torch.floor(frame.detach())
+        lo = torch.clamp(torch.floor(frame), 0, self.F - 2); return lo.long(), frame - lo
 
     @staticmethod
     def power_curve(x, p):
@@ -276,7 +279,7 @@ class WavetableSynth(nn.Module):
         i0 = torch.floor(pos).long() % self.W; frac = pos - torch.floor(pos)
         return table[i0] * (1 - frac) + table[(i0 + 1) % self.W] * frac
 
-    def _chunk(self, t, f0, dur, vel, tables, detune, blend, level, attack, decay, sustain, release, filt=None, extra=None, ph0=None, white=None):
+    def _chunk(self, t, f0, dur, vel, tables, ws, detune, blend, level, attack, decay, sustain, release, filt=None, extra=None, ph0=None, white=None):
         """B notes sharing one duration and one mip table. t: (T,), f0/vel: (B,). -> (B, T).
         filt: dict(cutoff_raw, resonance, fenv_amount, fattack, fdecay, fsustain, frelease) or None."""
         ph = dict(attack=attack, decay=decay, sustain=sustain, release=release, attack_power=extra["attack_power"],
@@ -290,7 +293,10 @@ class WavetableSynth(nn.Module):
             fv = f0 * 2 ** (self.voice_offset[v] * detune / 12)
             # phase in turns, wrapped: float32 at 1e6 rad loses ~0.1 rad and devices differ
             turns = torch.remainder(fv[:, None] * t[None, :] + ph0[v][:, None], 1.0)
-            wave = self.lookup(tables[v], turns)                                                # per-voice table (frame spread)
+            # per-voice table (frame spread), read as a morph of the two CONSTANT neighbouring frames' waveforms: the gathers
+            # touch no learnable tensor, so the backward has no 10M-way scatter (nondeterministic on MPS and CPU alike, and
+            # 2e-3 off in float32) -- the frame's gradient arrives through the dense morph weight instead (2026-09-21)
+            wave = (1 - ws[v]) * self.lookup(tables[v][0], turns) + ws[v] * self.lookup(tables[v][1], turns)
             centre = self.voices == 1 or abs(float(self.voice_offset[v])) < 1e-6
             # Measured on Vital (mono sum): EVERY outer voice has the same weight relative to
             # the centre, r(b) = 0.503 b + 0.202 b^2 (fits 0/0.25/0.5/0.75/1 within 0.01),
@@ -345,7 +351,9 @@ class WavetableSynth(nn.Module):
         # one table set per voice: with unison frame spread, outer voices play frame + offset * spread
         frames = [ph["frame"] + (self.voice_offset[v] * spread if spread is not None else 0.0) for v in range(self.voices)]
         frames = [torch.clamp(f, 0, self.F - 1) for f in frames]
-        tables = [self.frame_tables(self.harmonics(f), cuts) for f in frames]                  # [voice][cut]
+        parts = [self.frame_parts(f) for f in frames]                                          # [voice] -> (lo, w)
+        with torch.no_grad(): tables = [tuple(self.frame_tables(self.table[lo + d], cuts) for d in (0, 1)) for lo, _ in parts]   # [voice] -> (below, above)[cut], constants
+        ws = [w for _, w in parts]
         # tail after note-off: Vital's release segment reaches zero at exactly `release` seconds, so render
         # that long (plus a margin) and no longer — a fixed 1 s tail both truncated long releases mid-curve
         # (a click) and wasted most of the render on silence for short ones. The length is a shape, so it is
@@ -365,12 +373,14 @@ class WavetableSynth(nn.Module):
                 white = self.draw_noise(len(g), T, dev) if "noise" in extra else None
                 if self.checkpoint and torch.is_grad_enabled():
                     fk, fv_ = (list(filt.keys()), list(filt.values())) if filt is not None else ([], []); ek, ev = list(extra.keys()), list(extra.values())
-                    def fn(t, f0, vel, ph0, white, *flat, tables=[tb[cut] for tb in tables], nf=len(fv_), fk=fk, ek=ek):
-                        a = flat[:len(args)]; fl = dict(zip(fk, flat[len(args):len(args) + nf])) if fk else None; ex = dict(zip(ek, flat[len(args) + nf:]))
-                        return self._chunk(t, f0, dur, vel, tables, *a, filt=fl, extra=ex, ph0=ph0, white=white)
-                    sig = torch.utils.checkpoint.checkpoint(fn, t, f0, vel, ph0, white, *args, *fv_, *ev, use_reentrant=False, preserve_rng_state=False)
+                    nw = len(ws)
+                    def fn(t, f0, vel, ph0, white, *flat, tables=[(tb[0][cut], tb[1][cut]) for tb in tables], nf=len(fv_), fk=fk, ek=ek):
+                        w_ = flat[:nw]; rest = flat[nw:]
+                        a = rest[:len(args)]; fl = dict(zip(fk, rest[len(args):len(args) + nf])) if fk else None; ex = dict(zip(ek, rest[len(args) + nf:]))
+                        return self._chunk(t, f0, dur, vel, tables, w_, *a, filt=fl, extra=ex, ph0=ph0, white=white)
+                    sig = torch.utils.checkpoint.checkpoint(fn, t, f0, vel, ph0, white, *ws, *args, *fv_, *ev, use_reentrant=False, preserve_rng_state=False)
                 else:
-                    sig = self._chunk(t, f0, dur, vel, [tb[cut] for tb in tables], *args, filt=filt, extra=extra, ph0=ph0, white=white)
+                    sig = self._chunk(t, f0, dur, vel, [(tb[0][cut], tb[1][cut]) for tb in tables], ws, *args, filt=filt, extra=extra, ph0=ph0, white=white)
                 if fade is not None: sig = torch.cat([sig[:, :-len(fade)], sig[:, -len(fade):] * fade], -1)
                 for row, (_, start, _) in zip(sig, g):
                     n0 = int(start * self.sr); n1 = min(L, n0 + T)

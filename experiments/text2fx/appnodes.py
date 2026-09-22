@@ -213,7 +213,8 @@ class AppChorus(torch.nn.Module):
         rate = rate * (juce_lfo_rate(float(rate), self.sr) / float(rate))          # host's float32 LFO drift, detached
         d_ms = (centre - 10.0 * depth * torch.sin(2 * math.pi * rate * self.t)).clamp(min=1.0)
         pos = (torch.arange(x.shape[-1], device=x.device).float() - d_ms * self.sr / 1000).clamp(min=0); i0 = pos.floor().long(); frac = pos - i0
-        xb = x[:, 0]; wet = torch.gather(xb, 1, i0[None].expand(xb.shape[0], -1)) * (1 - frac) + torch.gather(xb, 1, (i0 + 1).clamp(max=x.shape[-1] - 1)[None].expand(xb.shape[0], -1)) * frac
+        xb = x[:, 0]; xc = xb.cpu(); i0c = i0.cpu()[None].expand(xb.shape[0], -1); fc = frac.cpu()      # CPU gather: deterministic backward (see fxgraph.Chorus)
+        wet = (torch.gather(xc, 1, i0c) * (1 - fc) + torch.gather(xc, 1, (i0c + 1).clamp(max=x.shape[-1] - 1)) * fc).to(xb.device)
         return ((1 - mix) * xb + mix * wet)[:, None, :]
 
 class ChorusNode(AppNode):

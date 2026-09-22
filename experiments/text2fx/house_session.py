@@ -63,6 +63,7 @@ ROUNDS_WARM = tuple(tuple(int(x) for x in r.split(":")) for r in os.environ.get(
 OBJ = os.environ.get("T2_OBJ", "sim")                          # "sim": CLAP cosine to the prompt; "contrast": cosine(prompt) - cosine(anchor text), e.g. "a dark cello" minus "a cello"
 
 def prompt_on(name, p_inst, prompt, lam_loc=None, steps=300, restarts=3, anchor_text=None):
+    torch.manual_seed(0)                                   # seeded phase/noise draws: a run repeats bit for bit (see ladder.run)
     lam_loc = LOC_DRY if lam_loc is None else lam_loc
     slug = "".join(ch if ch.isalnum() else "_" for ch in prompt)[:28].strip("_")
     T_named = C.text_emb("this sound is " + prompt); best = None

@@ -222,7 +222,10 @@ class Chorus(torch.nn.Module):
         pos = (self.n - d).clamp(min=0); i0 = pos.floor(); frac = pos - i0; i0 = i0.long()
         i1 = (i0 + 1).clamp(max=x.shape[-1] - 1)
         xb = x[:, 0]                                             # mono (B, L)
-        wet = torch.gather(xb, 1, i0) * (1 - frac) + torch.gather(xb, 1, i1) * frac
+        # the gathers run on the CPU: gather's backward is a scatter-add, deterministic there and atomics (run-to-run
+        # noise) on MPS; a 480k gather costs ~1 ms and the ladder needs bit-identical repeats (2026-09-21)
+        xc, i0c, i1c, fc = xb.cpu(), i0.cpu(), i1.cpu(), frac.cpu()
+        wet = (torch.gather(xc, 1, i0c) * (1 - fc) + torch.gather(xc, 1, i1c) * fc).to(xb.device)
         m = torch.sigmoid(drywet_weight)
         return ((1 - m) * xb + m * wet)[:, None, :]
 
