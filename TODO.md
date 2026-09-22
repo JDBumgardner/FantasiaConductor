@@ -297,8 +297,18 @@ closed-loop recovery.
       equal or slightly better (soft twin 0.31–0.36 vs 0.25–0.29), no flags
       either way; past its range the direction collapses (recording route
       d ≥ 1.6: direction → 0, word falls) where cosine keeps climbing its own
-      score. Each objective wins its own metric; the ear decides — AB clips
-      original → cosine → directional at d≈0.6 and 1.0 per cell. [ ] listen.
+      score. Each objective wins its own metric; the ear decided (2026-09-22,
+      AB clips original → cosine → directional at d≈0.6 and 1.0 per cell):
+      **"the directional is better — at least for these samples."** So the
+      plain CLAP score is not the thing to trust, and every ranking on the
+      pages (§07 twin-vs-recording, §11) was made on it. **Now the default**
+      (`ladder.OBJ = "dir"`, two-sided stops 0.3/0.6/1.0/1.6, no unconstrained
+      stop; `tune.py` reports a direction score and a `past_range` flag per
+      stop; `tune_status` suggests the usable middle stops; `T2_LADDER_OBJ=cos`
+      to compare). [ ] Widen the listening: more words (bright, warm, metallic,
+      airy) and the brass/flute through `words/listen_obj.py` before treating
+      it as settled; [ ] re-run the page's §07 and §11 comparisons with the
+      directional objective and report both scores.
       Their other choices are where our early cheats came from: one Adam run,
       lr 0.01, 600 steps, no loudness normalisation before CLAP, no
       regularisation; MS-CLAP is their default model (below).

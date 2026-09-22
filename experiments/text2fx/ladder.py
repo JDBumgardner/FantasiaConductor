@@ -13,6 +13,7 @@ import common as C, text2synth as T2, artefacts as A
 from optim import Candidate, successive_halving
 SR = 48000; L = 10 * SR; DEV = C.DEVICE
 DISTS = (0.3, 0.6, 1.0, 1.6, 2.5, None)                       # None = unconstrained. 0.3 (~3 dB average band deviation) is the first stop a listener can tell from the original
+DISTS_DIR = (0.3, 0.6, 1.0, 1.6)                              # for the directional objective: no unconstrained stop (a direction has an extent; past it the change stops pointing anywhere)
 MU, ART_W = 5.0, float(os.environ.get("T2_ART_W", "1.0"))
 # The objective the climb follows (evaluation always reports the plain word score for comparison):
 #   cos     -cos(e, T)                         T = "this sound is X"                         -- the default, an absolute target
@@ -20,11 +21,15 @@ MU, ART_W = 5.0, float(os.environ.get("T2_ART_W", "1.0"))
 #           the CHANGE in embedding must point the word's way; how far is the stop's business, and the source's identity
 #           cancels out of the difference. Near e = e0 the direction is noise, so the first steps are rough by construction.
 #   dirdot  -(e . (T - T_not))                 the unnormalised form: cosine toward the word AND away from its negation
-OBJ = os.environ.get("T2_LADDER_OBJ", "cos")
+# Default `dir` since 2026-09-22: at matched distance the listener preferred the directional stops to cosine's on all
+# four cells of words/listen_obj (e-piano dark, cello punchy/soft, both routes) -- "at least for these samples". Cosine
+# scores higher on its own metric there and on "soft" had moved against the word's axis. T2_LADDER_OBJ=cos to compare.
+OBJ = os.environ.get("T2_LADDER_OBJ", "dir")
 # T2_LADDER_EQ=1: each stop's distance constraint is two-sided, mu (dist - d*)^2 -- the stop SETS the amount instead of
 # capping it. A scale-free objective (dir) needs it: from a near-identity start it is satisfied by a tiny change that
 # merely points the right way (cello punchy: free stop at distance 0.10, word unmoved, 2026-09-21).
-EQ = os.environ.get("T2_LADDER_EQ", "0") == "1"
+EQ = os.environ.get("T2_LADDER_EQ", "1" if OBJ == "dir" else "0") == "1"
+def dists_for(obj=None): return DISTS_DIR if (obj or OBJ) == "dir" else DISTS
 ROUNDS_FIRST, ROUNDS_NEXT, ROUNDS_LAST = ((20, 4), (40, 2), (100, 1)), ((80, 1),), ((150, 1),)
 
 def level_match(y, ref, peak=0.89):
@@ -81,8 +86,9 @@ def run(word, source, notes, out_dir, tag, anchor_text, synth=None, p_inst=None,
         return Candidate(ps, pf, label=f"c{r}")
     cands = [cand(r) for r in range(n_start)]; t0 = time.time(); wavs = []
     from optim import free_cache
-    for i, d in enumerate(DISTS):
-        state["d"] = d; rounds = ROUNDS_FIRST if i == 0 else (ROUNDS_LAST if d is None else ROUNDS_NEXT)
+    dists = dists_for()
+    for i, d in enumerate(dists):
+        state["d"] = d; rounds = ROUNDS_FIRST if i == 0 else (ROUNDS_LAST if (d is None or i == len(dists) - 1) else ROUNDS_NEXT)
         if i > 0: cands = cands + [cand(100 * i + r) for r in range(2)]; rounds = ((rounds[0][0] // 2, 1), (rounds[0][0] - rounds[0][0] // 2, 1))   # continue the last optimum against two fresh starts: a tight stop is a poor init for a loose one
         for attempt in (0, 1):
             try: frontier, _ = successive_halving(cands, loss_of, lambda c: evaluate(c)[0], rounds=rounds, polish=False, log=lambda *a: None); break
