@@ -275,18 +275,33 @@ closed-loop recovery.
       adjective than the named sentence, less than the plain word, and it throws
       the identity away (brass 0.41 → 0.05–0.28). Three objectives, three
       failure modes.
-- [ ] **Directional objective, Text2FX's** (github.com/anniejchu/text2fx,
-      `__main__.py` `directional_loss`, read 2026-09-21): align the CHANGE in
-      audio embedding, a_fx − a_dry, with the text direction
-      emb("this sound is X") − emb("this sound is not X"). The source's identity
-      cancels out of the difference and the optimiser moves in the word's
-      direction rather than toward its absolute position — the mathematical
-      form of "darker, not pure darkness"; cleaner than the contrast objective
-      (which subtracted the instrument and lost it). Run it as a ladder
-      objective option against cosine on the e-piano/cello cells. Their other
-      choices are where our early cheats came from: one Adam run, lr 0.01,
-      600 steps, no loudness normalisation before CLAP, no regularisation;
-      MS-CLAP is their default model — try it as the second judge (below).
+- [x] **Directional objective, Text2FX's** (github.com/anniejchu/text2fx
+      `directional_loss`; run 2026-09-21/22, `T2_LADDER_OBJ=dir`,
+      `words/ladder_obj/`, listening set `words/listen_obj/`): align the
+      CHANGE in audio embedding, e − e_src, with emb("this sound is X") −
+      emb("this sound is not X"). Two facts first: the negation difference
+      keeps only a third of the absolute word vector (cos 0.33) — the other
+      two thirds of "this sound is X" is template and generic sound-ness; and
+      **cosine on "soft" moves AGAINST that axis** (direction cosine −0.12 to
+      −0.15 at every stop on the recording, −0.02 to −0.09 on the twin) while
+      its plain word score rises −0.07 → 0.00: the gain on the failing words
+      was the template, not the word. For dark/punchy cosine's direction
+      cosine is +0.10 to +0.16. Results: (1) one-sided stops — degenerate: a
+      scale-free objective from a near-identity start is satisfied by a tiny
+      change that points the right way (recording route: distance 0.05–0.10
+      at every stop, word unmoved, direction +0.45 to +0.58); Text2FX avoids
+      this only because it starts from random parameters. (2) two-sided stops
+      (`T2_LADDER_EQ=1`, the stop SETS the amount) — travels to target; at
+      matched distance the plain word score is 0.02–0.18 BELOW cosine's on
+      every cell, the direction cosine 0.2–0.35 vs ≈0 or negative, identity
+      equal or slightly better (soft twin 0.31–0.36 vs 0.25–0.29), no flags
+      either way; past its range the direction collapses (recording route
+      d ≥ 1.6: direction → 0, word falls) where cosine keeps climbing its own
+      score. Each objective wins its own metric; the ear decides — AB clips
+      original → cosine → directional at d≈0.6 and 1.0 per cell. [ ] listen.
+      Their other choices are where our early cheats came from: one Adam run,
+      lr 0.01, 600 steps, no loudness normalisation before CLAP, no
+      regularisation; MS-CLAP is their default model (below).
 - [ ] **Hinge objective** — cos("a soft cello") + λ·min(0, cos("a cello") − cos₀):
       hold identity, don't trade against it.
 - [x] **Text → FX on the recording itself** (`words/source/`, 2026-09-17): works on

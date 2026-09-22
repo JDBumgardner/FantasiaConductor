@@ -14,6 +14,17 @@ from optim import Candidate, successive_halving
 SR = 48000; L = 10 * SR; DEV = C.DEVICE
 DISTS = (0.3, 0.6, 1.0, 1.6, 2.5, None)                       # None = unconstrained. 0.3 (~3 dB average band deviation) is the first stop a listener can tell from the original
 MU, ART_W = 5.0, float(os.environ.get("T2_ART_W", "1.0"))
+# The objective the climb follows (evaluation always reports the plain word score for comparison):
+#   cos     -cos(e, T)                         T = "this sound is X"                         -- the default, an absolute target
+#   dir     -cos(e - e0, T - T_not)            T_not = "this sound is not X", e0 = the untouched source (Text2FX's directional_loss):
+#           the CHANGE in embedding must point the word's way; how far is the stop's business, and the source's identity
+#           cancels out of the difference. Near e = e0 the direction is noise, so the first steps are rough by construction.
+#   dirdot  -(e . (T - T_not))                 the unnormalised form: cosine toward the word AND away from its negation
+OBJ = os.environ.get("T2_LADDER_OBJ", "cos")
+# T2_LADDER_EQ=1: each stop's distance constraint is two-sided, mu (dist - d*)^2 -- the stop SETS the amount instead of
+# capping it. A scale-free objective (dir) needs it: from a near-identity start it is satisfied by a tiny change that
+# merely points the right way (cello punchy: free stop at distance 0.10, word unmoved, 2026-09-21).
+EQ = os.environ.get("T2_LADDER_EQ", "0") == "1"
 ROUNDS_FIRST, ROUNDS_NEXT, ROUNDS_LAST = ((20, 4), (40, 2), (100, 1)), ((80, 1),), ((150, 1),)
 
 def level_match(y, ref, peak=0.89):
@@ -31,7 +42,13 @@ def run(word, source, notes, out_dir, tag, anchor_text, synth=None, p_inst=None,
     torch.manual_seed(0)                                   # the synth's per-note phase and noise draws come from the global RNG: seeded, a run repeats bit for bit (2026-09-21)
     os.makedirs(out_dir, exist_ok=True)
     T = C.text_emb("this sound is " + word); T_self = C.text_emb("this sound is " + anchor_text)
+    T_dir = C.text_emb("this sound is " + word) - C.text_emb("this sound is not " + word); T_dir = T_dir / T_dir.norm()
     src_n = T2.loudness_norm(source); x = source[None, None]
+    with torch.no_grad(): e_src = C.embed(src_n)
+    def word_term(e):                                                   # the term the climb minimises, per OBJ
+        if OBJ == "dir": d = e - e_src; return -(d @ T_dir.T).squeeze() / (d.norm() + 1e-3)
+        if OBJ == "dirdot": return -(e @ T_dir.T).squeeze()
+        return -(e @ T.T).squeeze()
     if graph is not None: synth = graph.synth
     def render(c):
         if graph is not None:
@@ -42,18 +59,19 @@ def run(word, source, notes, out_dir, tag, anchor_text, synth=None, p_inst=None,
     state = dict(d=DISTS[0])
     def loss_of(c):
         y, out, gs = render(c); w = T2.loudness_norm(out); dist = C.band_energy_loss(w, src_n)
-        con = MU * torch.relu(dist - state["d"]) ** 2 if state["d"] is not None else 0.0
+        con = (MU * (dist - state["d"]) ** 2 if EQ else MU * torch.relu(dist - state["d"]) ** 2) if state["d"] is not None else 0.0
         pri = graph.prior(c.pf) if graph is not None else T2.fx_prior(c.pf)
-        return -(C.embed(w) @ T.T).squeeze() + T2.LAM_PRI * pri + T2.LAM_GS * gs + con + ART_W * A.penalty(out, y, notes)
+        return word_term(C.embed(w)) + T2.LAM_PRI * pri + T2.LAM_GS * gs + con + ART_W * A.penalty(out, y, notes)
     def evaluate(c):
         with torch.no_grad():
             if synth is not None: synth.random_phase = False
             y, out, gs = render(c); w = T2.loudness_norm(out); e = C.embed(w)
             if synth is not None: synth.random_phase = True
-            clap = float((e @ T.T).squeeze()); dist = float(C.band_energy_loss(w, src_n)); con = MU * max(0.0, dist - state["d"]) ** 2 if state["d"] is not None else 0.0
+            clap = float((e @ T.T).squeeze()); dist = float(C.band_energy_loss(w, src_n)); con = (MU * (dist - state["d"]) ** 2 if EQ else MU * max(0.0, dist - state["d"]) ** 2) if state["d"] is not None else 0.0
             art = A.measure_notes(out.cpu(), y.cpu(), notes)
-            return dict(score=clap - con - ART_W * float(A.penalty(out, y, notes)), clap=clap, dist=dist, self=float((e @ T_self.T).squeeze()), flags=A.flags_notes(art), art={k: round(v, 3) for k, v in art.items()}), out
-    with torch.no_grad(): e0 = C.embed(src_n); stops = [dict(clap=float((e0 @ T.T).squeeze()), dist=0.0, self=float((e0 @ T_self.T).squeeze()), flags=[], target=0.0)]
+            d = e - e_src; direc = float((d @ T_dir.T).squeeze() / (d.norm() + 1e-3))      # cosine of the change with the word's direction, reported for every objective
+            return dict(score=-float(word_term(e)) - con - ART_W * float(A.penalty(out, y, notes)), clap=clap, dir=direc, dist=dist, self=float((e @ T_self.T).squeeze()), flags=A.flags_notes(art), art={k: round(v, 3) for k, v in art.items()}), out
+    e0 = e_src; stops = [dict(clap=float((e0 @ T.T).squeeze()), dir=0.0, dist=0.0, self=float((e0 @ T_self.T).squeeze()), flags=[], target=0.0, objective=OBJ, two_sided=EQ)]
     def cand(r):
         pf = graph.init(r, jitter=0.0 if r == 0 else jitter) if graph is not None else T2.init_fx(r)
         if synth is None: return Candidate({}, pf, label=f"c{r}")
@@ -77,7 +95,7 @@ def run(word, source, notes, out_dir, tag, anchor_text, synth=None, p_inst=None,
         json.dump({"word": word, "tag": tag, "target": d, **{k: v for k, v in ev.items() if k != "score"}, "describe": desc, **({"export": graph.export(c.pf, c.ps if synth is not None else None), "frozen": graph.frozen} if graph is not None else {}),
                    **({"raw": {k: float(v) for k, v in c.ps.items()}} if synth is not None else {}),
                    "fx_raw": {t: {k: v.detach().cpu().tolist() for k, v in dd.items()} for t, dd in c.pf.items()}}, open(f[:-4] + ".json", "w"), indent=1)
-        log(f"    stop {i+1} (target {d}): word {ev['clap']:+.3f} dist {ev['dist']:.2f} '{anchor_text}' {ev['self']:+.2f} flags {ev['flags'] or '-'}   [{time.time()-t0:.0f}s]")
+        log(f"    stop {i+1} (target {d}): word {ev['clap']:+.3f} dir {ev['dir']:+.2f} dist {ev['dist']:.2f} '{anchor_text}' {ev['self']:+.2f} flags {ev['flags'] or '-'}   [{time.time()-t0:.0f}s]")
         cands = [Candidate({k: v.detach().clone().requires_grad_(v.requires_grad) for k, v in c.ps.items()}, {t: {k: v.detach().clone().requires_grad_(True) for k, v in dd.items()} for t, dd in c.pf.items()}, label=f"d{d}")]
     # the listening ladder: first bar of the original, then every stop -- all at the ORIGINAL's loudness (peak-normalising made the punchier stops sound quieter)
     seg, fade, gap = int(2.4 * SR), int(0.01 * SR), np.zeros(int(0.25 * SR), dtype=np.float32)
