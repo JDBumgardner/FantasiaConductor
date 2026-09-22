@@ -260,8 +260,7 @@ closed-loop recovery.
       different melody? If not, the feature doesn't either.
 - [ ] **Reference + text together** — magnitude from the clip, direction from words.
 - [ ] **Listening protocol** — ten pairs, forced choice, written down.
-- [ ] **Reranking judge** — CLAP for gradients; an audio-LM or Audealize's
-      word→EQ data (magnitude prior for adjectives) to pick finalists.
+- [ ] **Reranking judge** — CLAP for gradients; an audio-LM to pick finalists.
 - [~] **Speed** — done: the synth renders each note's tail only as long as its
       release (quantised to 0.25 s, capped at 2 s with a fade; the old fixed 1 s
       tail also chopped long releases mid-curve) and runs the short-frame onset
@@ -510,8 +509,7 @@ memory notes.
 - [ ] Report the five-prompt guitar test (underwater / woody / church bells /
       african dance on fire / folkish) — running as of this commit.
 - [ ] If any prompt family works: text supplies *shape*, expose an *amount*
-      knob; never auto-apply. If none do: Audealize lookup for its 294 words,
-      CLAP only to *find* references.
+      knob; never auto-apply. If none do: CLAP only to *find* references.
 - [ ] Guard: `level_match` floors the normaliser so silence cannot score 0.27.
       Audit the other losses for the same hole.
 
