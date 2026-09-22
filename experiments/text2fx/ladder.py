@@ -74,7 +74,7 @@ def run(word, source, notes, out_dir, tag, anchor_text, synth=None, p_inst=None,
         ev, c = frontier[0]; ev, out = evaluate(c); ev["target"] = d; stops.append(ev)
         f = os.path.join(out_dir, f"{tag}__{word}__stop{i+1}_d{d if d is not None else 'inf'}.wav"); sf.write(f, level_match(out, source).cpu().numpy(), SR); wavs.append(f)
         desc = graph.describe(c.pf) if graph is not None else T2.CHAIN.describe(c.pf)
-        json.dump({"word": word, "tag": tag, "target": d, **{k: v for k, v in ev.items() if k != "score"}, "describe": desc, **({"export": graph.export(c.pf), "frozen": graph.frozen} if graph is not None else {}),
+        json.dump({"word": word, "tag": tag, "target": d, **{k: v for k, v in ev.items() if k != "score"}, "describe": desc, **({"export": graph.export(c.pf, c.ps if synth is not None else None), "frozen": graph.frozen} if graph is not None else {}),
                    **({"raw": {k: float(v) for k, v in c.ps.items()}} if synth is not None else {}),
                    "fx_raw": {t: {k: v.detach().cpu().tolist() for k, v in dd.items()} for t, dd in c.pf.items()}}, open(f[:-4] + ".json", "w"), indent=1)
         log(f"    stop {i+1} (target {d}): word {ev['clap']:+.3f} dist {ev['dist']:.2f} '{anchor_text}' {ev['self']:+.2f} flags {ev['flags'] or '-'}   [{time.time()-t0:.0f}s]")

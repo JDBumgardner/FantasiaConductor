@@ -30,9 +30,12 @@ class SearchGraph:
     def flat(self, params): return [v for d in params.values() for v in d.values()]
     def prior(self, params): return sum((tw.prior(params[nid]) for nid, tw in self.twins.items()), torch.zeros((), device=self.device))
     def describe(self, params): return {nid: tw.describe({k: v.detach() for k, v in params[nid].items()}) for nid, tw in self.twins.items()}
-    def export(self, params):
-        """{insert_id: app params} for every insert that has a twin, in the app's units. Frozen inserts are untouched."""
-        return {nid: tw.to_app({k: v.detach().cpu() for k, v in params[nid].items()}) for nid, tw in self.twins.items() if not isinstance(tw, AN.FrozenNode)}
+    def export(self, params, ps=None):
+        """{insert_id: app params} for every insert that has a twin, in the app's units; frozen inserts are untouched.
+        With a synth source and its parameters `ps`, also "vital": the Vital raw parameters of the searched patch."""
+        out = {nid: tw.to_app({k: v.detach().cpu() for k, v in params[nid].items()}) for nid, tw in self.twins.items() if not isinstance(tw, AN.FrozenNode)}
+        if self.synth is not None and ps is not None: out["vital"] = self.synth.vital_params({k: v.detach().cpu() for k, v in ps.items()})
+        return out
     def scale(self, params, a): return {nid: self.twins[nid].scale(params[nid], self.raw0[nid], a) for nid in params}
     # ---- rendering
     def source(self, ps=None):
@@ -64,4 +67,7 @@ class SearchGraph:
         return acc if acc is not None else torch.zeros_like(x)
 
 def compile_track(inserts, wires=None, source_audio=None, synth=None, notes=None, N=480000, device="cpu"):
+    """A track's insert graph as a searchable twin. Source: `source_audio` (a recording, fixed) or `synth` + `notes` (a
+    Vital instrument as its twin: build the WavetableSynth, load the patch with synth.raw_from_vital, check
+    synth.vital_coverage; the search then moves patch and inserts together and export() returns both)."""
     return SearchGraph(inserts, wires, N, device, source_audio=source_audio, synth=synth, notes=notes)

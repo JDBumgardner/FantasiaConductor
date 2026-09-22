@@ -410,6 +410,47 @@ def init_raw(synth, noise=0.2, seed=0):
                 release=synth._t_inv("release", e["release_s"]))
     return {k: logit(x) + noise * torch.randn((), generator=g) for k, x in base.items()}
 
+# Vital raw (0-1) -> twin raw (unbounded), the inverse of WavetableSynth.vital_params for the parameters the twin models.
+# `keys` restricts the search space (default: everything the preset provides that the twin has a parameter for).
+TWIN_ASSUMES = {"oscillator_2_switch": 0, "oscillator_3_switch": 0, "filter_2_switch": 0, "filter_1_switch": 1, "filter_1_model": 0.0,
+                "chorus_switch": 0, "reverb_switch": 0, "delay_switch": 0, "distortion_switch": 0, "compressor_switch": 0, "eq_switch": 0,
+                "flanger_switch": 0, "phaser_switch": 0, "filter_fx_switch": 0, "oscillator_1_frequency_morph_type": 0.0,
+                "oscillator_1_distortion_type": 0.0, "portamento_force": 0.0}
+def raw_from_vital(synth, vp, keys=None):
+    """vp: {vital parameter name: raw 0-1}. -> twin raw dict (tensors, no grad). Missing Vital parameters fall back to
+    Vital's defaults for the twin's parameters (frame 0, detune 0.4472, blend 0.8, level 0.7071, sustain 1, ...)."""
+    inv = lambda x: torch.logit(torch.tensor(float(x)).clamp(1e-4, 1 - 1e-4))
+    secs = lambda raw: 32.0 * float(raw) ** 4                               # Vital: time = 32 * raw^4
+    t_raw = lambda key, raw: inv(synth._t_inv(key, secs(raw)))
+    g = lambda name, default: vp.get(name, default)
+    out = {"frame": inv(g("oscillator_1_wave_frame", 0.0)), "detune": inv(g("oscillator_1_unison_detune", 0.4472)), "blend": inv(g("oscillator_1_blend", 0.8)),
+           "level": inv(g("oscillator_1_level", 0.7071)), "sustain": inv(g("envelope_1_sustain", 1.0)),
+           "attack": t_raw("attack", g("envelope_1_attack", 0.0005 ** 0.25 / 32 ** 0.25)), "decay": t_raw("decay", g("envelope_1_decay", (1.0 / 32) ** 0.25)), "release": t_raw("release", g("envelope_1_release", (0.09 / 32) ** 0.25))}
+    for k, name in (("apow", "envelope_1_attack_power"), ("dpow", "envelope_1_decay_power"), ("rpow", "envelope_1_release_power"), ("fapow", "envelope_2_attack_power"),
+                    ("fdpow", "envelope_2_decay_power"), ("frpow", "envelope_2_release_power"), ("keytrack", "filter_1_key_track"), ("frame_spread", "oscillator_1_unison_frame_spread"),
+                    ("fblend", "filter_1_blend"), ("fdrive", "filter_1_drive")):
+        if name in vp: out[k] = inv(vp[name])
+    if "filter_1_cutoff" in vp:
+        amt = 2 * float(g("modulation_1_amount", 0.5)) - 1                      # raw = (amount + 1) / 2
+        out.update(cutoff=inv(vp["filter_1_cutoff"]), resonance=inv(g("filter_1_resonance", 0.5)), fenv_amount=inv((amt + 1) / 2 if synth.bipolar_fenv else max(amt, 0.0)),
+                   fattack=t_raw("attack", g("envelope_2_attack", 0.0005 ** 0.25 / 32 ** 0.25)), fdecay=t_raw("decay", g("envelope_2_decay", (1.0 / 32) ** 0.25)),
+                   fsustain=inv(g("envelope_2_sustain", 1.0)), frelease=t_raw("release", g("envelope_2_release", (0.09 / 32) ** 0.25)))
+    if float(g("sample_switch", 0.0)) > 0.5: out["noise"] = inv(float(g("sample_level", 0.0)) ** 2)   # sample_level = sqrt(amplitude fraction)
+    return {k: v for k, v in out.items() if keys is None or k in keys}
+
+def vital_coverage(vp, preset=None):
+    """What the twin does NOT model in this patch, as human-readable notes (empty = the twin can stand in for it)."""
+    notes = []
+    for name, want in TWIN_ASSUMES.items():
+        if name in vp and abs(float(vp[name]) - float(want)) > 1e-3: notes.append(f"{name} = {float(vp[name]):.2f} (twin assumes {want})")
+    v = int(round(float(vp.get("oscillator_1_unison_voices", 0.0)) * 15)) + 1
+    if v > 1: notes.append(f"unison {v} voices: build the twin with voices={v}")
+    if preset is not None:
+        mods = [m for m in preset.get("settings", {}).get("modulations", []) if m.get("source") and m.get("destination")]
+        other = [f"{m['source']} -> {m['destination']}" for m in mods if not (m["source"] == "env_2" and m["destination"] == "filter_1_cutoff")]
+        if other: notes.append("modulations the twin has no model for: " + ", ".join(other))
+    return notes
+
 def raw_from_physical(synth, **phys):
     """Inverse map for building test targets: physical -> unbounded raw."""
     inv = lambda x: torch.logit(torch.tensor(float(x)).clamp(1e-4, 1 - 1e-4))
