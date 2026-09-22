@@ -57,9 +57,33 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       compiled graph. Re-run with the exact twins (2026-09-20,
       `words/appgraph/`; the pre-calibration run kept in `appgraph_v1/`): the
       app engine now scores within 0.015 of the twin at every stop (0.004 at
-      stops 3–6), envelope correlation 1.000. [ ] first-node VST pre-render,
-      Vital instrument as the source through the compiler, hook into the app
-      as `tune_toward`.
+      stops 3–6), envelope correlation 1.000.
+- [x] **Vital instrument as the compiled source** (2026-09-21,
+      `synth.raw_from_vital` / `vital_coverage`, `SearchGraph.export(pf, ps)`
+      returns `"vital"` alongside the insert params, `words/vital_graph_test.py`).
+      The e-piano twin patch → Vital raw params → back into the twin (all
+      four instruments round-trip to ≤ 3.5e-4, no coverage notes), then the
+      ladder on eq → compressor → reverb with the synth searched too, "dark".
+      Closed loop: the exported Vital parameters played by **real Vital**
+      (pedalboard) through **FxHost** with the exported inserts score within
+      **±0.023** of the twin at every stop (start: twin dry +0.155, Vital
+      +0.160, env corr 0.997). The twin's fidelity is now the limit, not the
+      FX. `vital_coverage` lists what a preset has that the twin does not
+      model (osc 2/3, filter models, Vital's own FX, LFO modulations, unison
+      voice count) — the hook should fall back to the recording route (bounce
+      the track, search the inserts) when that list is non-empty.
+- [ ] **The app hook, `tune_toward(track, text, stops)`**: the agent tools
+      already carry the plumbing — `list_fx`/`get_fx_routing` (inserts +
+      wires), `plugin_params` (Vital raw state), `get_clip_notes` (the notes),
+      `set_plugin_param`/`set_eq_band`/`add_fx` params (applying a stop),
+      `save_plugin_preset` (undo point). Design: run the search in a
+      subprocess (torch + CLAP do not belong in the app's process on 8 GB;
+      one process per graph, MPS cap 0.5), stream stop-by-stop progress,
+      return the ladder (word score, distance, identity, flags, exported
+      params, a rendered preview per stop), apply nothing — the user or agent
+      picks a stop. First-node VST pre-render for non-Vital instruments and
+      GM tracks: bounce the dry track through midi_render/plugin_render and
+      take the recording route.
 - Pages: *Ten Words, Four Instruments* v6 adds §09 fixed stops + judge, §10
   the app-graph compiler, §11 the flux A/B and the run-to-run variance
   (`words/build_page.py`; https://claude.ai/artifact/EWU2qELdDzS8sErFG3pw4N).
