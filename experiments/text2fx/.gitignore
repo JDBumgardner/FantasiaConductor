@@ -1,12 +1,11 @@
 # Experiment results are not committed (2026-09-21): code, scripts, hand-written docs and inputs are.
-# Inputs: wavetables (tables/), measured laws (res_law_2d.json), recovered instrument patches (*_patch.json).
+# Inputs kept: wavetables (tables/) and the measured resonance law (res_law_2d.json). Recovered patches are results too.
 *.wav
 *.mp3
 *.log
 __pycache__/
 *.json
 !tables/res_law_2d.json
-!**/*_patch.json
 words/**/RESULTS.md
 words/site/
 words/logs/
