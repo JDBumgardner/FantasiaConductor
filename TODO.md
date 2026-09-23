@@ -100,8 +100,15 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       module to exactly what `band_as_fx` bakes (gain 0, or a cut parked at
       20 Hz / 20 kHz) so jitter and gradients cannot revive a band the user
       switched off, and `to_app` writes it back untouched. Real Pads bands
-      round-trip at 93 dB. [ ] previews are wav paths for now — a
-      "play stop N" affordance in the agent panel; [ ] the `anchor` guess is
+      round-trip at 93 dB.
+      **One attempt is the default** (2026-09-22, ~2 min): one search at one
+      amount (0.3 subtle / 0.6 / 1.0 strong), `ladder: true` for the old set of
+      four. **In the interface**: track header → right-click → "Tune toward…"
+      asks for the words and the amount, runs in the background with a
+      status-bar count, then a result dialog plays Original vs Tuned
+      (sounddevice), lists what moved, shows the scores and any artefact flag,
+      and applies as one undoable edit or discards.
+      [ ] the `anchor` guess is
       "a ⟨track name⟩" — use the instrument/plugin preset name; [ ] bounce
       length: the runner takes the first 10 s from the first note.
 - Pages: *Ten Words, Four Instruments* v6 adds §09 fixed stops + judge, §10
