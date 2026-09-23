@@ -109,7 +109,19 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       result dialog plays Original vs Tuned
       (sounddevice), lists what moved, shows the scores and any artefact flag,
       and applies as one undoable edit or discards.
-      [ ] the `anchor` guess is
+      **Which devices are in play** (2026-09-22): a track carries only what
+      someone put there, so `use` restricts which inserts may move (the rest
+      are rendered exactly as they are — a hand-tuned EQ is not the search's
+      to touch) and `add` brings in an effect the word needs (reverb/delay for
+      "distant", chorus for "wide", saturator for "warm"). An added effect
+      starts at a setting you cannot hear and is dropped from the proposal
+      unless it earns its place; `_audible` per type decides. The neutral
+      wet/mix is **0.015, not 0**: exactly zero sits at the clamp of the logit
+      the twin searches, where the gradient vanishes — with 0 the "distant"
+      test reached distance 0.09 of a 0.6 target and dropped both added
+      effects; with 0.015 it reaches 0.61 and keeps them. In the dialog:
+      "May change" (a tick per insert, VST/mix disabled — no twin) and
+      "May add". [ ] the `anchor` guess is
       "a ⟨track name⟩" — use the instrument/plugin preset name; [ ] bounce
       length: the runner takes the first 10 s from the first note.
 - Pages: *Ten Words, Four Instruments* v6 adds §09 fixed stops + judge, §10

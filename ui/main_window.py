@@ -426,8 +426,9 @@ class _TuneDialog(QDialog):
     """Ask what the track should sound like. One attempt at the chosen amount; the result is a proposal, not an edit."""
 
     AMOUNTS = [("Subtle", 0.3), ("Noticeable", 0.6), ("Strong", 1.0)]
+    MAY_ADD = ["eq", "reverb", "delay", "chorus", "compressor", "saturator"]
 
-    def __init__(self, track_name: str, parent=None) -> None:
+    def __init__(self, track_name: str, inserts=None, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Tune “{track_name}” toward…")
         form = QFormLayout(self)
@@ -443,9 +444,36 @@ class _TuneDialog(QDialog):
         self.quality.addItem("Thorough — 8 starts, about 2 min", "thorough")
         self.quality.addItem("Quick — 4 starts, about 1 min", "quick")
         form.addRow("Search", self.quality)
-        note = QLabel("Searches this track's own effects for a setting that moves the sound that way.\n"
-                      "Several starts are tried because the good settings sit in separate basins — quick looks at "
-                      "half as many, so it sometimes misses the better one. Nothing changes until you accept it.", self)
+
+        from fantasia_core.tune import FX_LABELS
+        from fantasia_core.document.fx_insert import as_dict
+
+        self._use_boxes = []
+        have = QVBoxLayout()
+        for e in (inserts or []):
+            d = as_dict(e); kind = d.get("type", "")
+            cb = QCheckBox(FX_LABELS.get(kind, kind.title()), self)
+            cb.setChecked(True)
+            if kind in ("vst", "mix"):
+                cb.setChecked(False); cb.setEnabled(False); cb.setToolTip("No differentiable twin — held at its current setting")
+            cb.setProperty("insert_id", d.get("id")); have.addWidget(cb); self._use_boxes.append(cb)
+        if self._use_boxes:
+            w = QWidget(self); w.setLayout(have); form.addRow("May change", w)
+
+        self._add_boxes = []
+        present = {as_dict(e).get("type") for e in (inserts or [])}
+        addrow = QHBoxLayout()
+        for kind in self.MAY_ADD:
+            if kind in present: continue
+            cb = QCheckBox(FX_LABELS.get(kind, kind.title()), self); cb.setProperty("fx_kind", kind)
+            addrow.addWidget(cb); self._add_boxes.append(cb)
+        if self._add_boxes:
+            w2 = QWidget(self); w2.setLayout(addrow); w2.setToolTip("Added at a setting you cannot hear; it is only kept if it earns its place")
+            form.addRow("May add", w2)
+        note = QLabel("Searches the ticked effects for a setting that moves the sound that way; unticked ones are left "
+                      "exactly as they are. Several starts are tried because the good settings sit in separate basins — "
+                      "quick looks at half as many, so it sometimes misses the better one. Nothing changes until you "
+                      "accept it.", self)
         note.setWordWrap(True); note.setStyleSheet("color: palette(mid);")
         form.addRow(note)
         box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
@@ -454,7 +482,10 @@ class _TuneDialog(QDialog):
         self.text.setFocus()
 
     def values(self) -> tuple:
-        return self.text.text().strip(), float(self.amount.currentData()), str(self.quality.currentData())
+        use = [cb.property("insert_id") for cb in self._use_boxes if cb.isChecked()]
+        add = [cb.property("fx_kind") for cb in self._add_boxes if cb.isChecked()]
+        return (self.text.text().strip(), float(self.amount.currentData()), str(self.quality.currentData()),
+                (use if len(use) != len(self._use_boxes) else None), add)
 
 
 class _TuneResultDialog(QDialog):
@@ -475,6 +506,11 @@ class _TuneResultDialog(QDialog):
         if bits:
             what = QLabel("<br>".join(bits[:4]), self); what.setWordWrap(True); what.setStyleSheet("color: palette(mid); font-size: 11px;")
             lay.addWidget(what)
+        extra = []
+        for nid in (stop.get("_added") or []): extra.append(f"added {nid.split('_', 1)[-1]}")
+        for nid in (stop.get("_held") or []): extra.append(f"left {nid} alone")
+        if extra:
+            lab = QLabel(" · ".join(extra), self); lab.setStyleSheet("color: palette(mid); font-size: 11px;"); lay.addWidget(lab)
         flags = stop.get("flags") or []
         scores = QLabel(f"word {stop.get('word', 0):+.3f} · direction {stop.get('direction', 0):+.2f} · "
                         f"still sounds like itself {stop.get('identity', 0):.2f}" + (f" · ⚠ {', '.join(flags)}" if flags else ""), self)
@@ -4841,17 +4877,23 @@ class MainWindow(QMainWindow):
         track = self.project.track_by_id(track_id)
         if track is None:
             return
-        dlg = _TuneDialog(track.name, self)
+        dlg = _TuneDialog(track.name, track.fx or [], self)
         if dlg.exec() != QDialog.Accepted:
             return
-        text, amount, quality = dlg.values()
+        text, amount, quality, use, add = dlg.values()
         if not text:
             self.statusBar().showMessage("Tune toward — nothing to aim at", 4000)
             return
         self.statusBar().showMessage(f"Tuning “{track.name}” toward “{text}” — bouncing…")
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            started = self._agent_tune_toward({"track_id": track_id, "text": text, "amount": amount, "quality": quality})
+            req = {"track_id": track_id, "text": text, "amount": amount, "quality": quality}
+            if use is not None: req["use"] = use
+            if add: req["add"] = add
+            if use is not None and not use and not add:
+                QApplication.restoreOverrideCursor()
+                self.statusBar().showMessage("Tune toward — nothing selected to change", 5000); return
+            started = self._agent_tune_toward(req)
         finally:
             QApplication.restoreOverrideCursor()
         if started.get("error"):
@@ -4883,7 +4925,9 @@ class MainWindow(QMainWindow):
         stops = [s for s in job.result["stops"] if s["stop"] > 0]
         if not stops:
             self.statusBar().showMessage("Tune toward produced nothing", 6000); return
-        stop = stops[0]
+        stop = dict(stops[0])
+        stop["_added"] = [n for n in (job.result.get("added") or []) if n in (stop.get("export") or {})]
+        stop["_held"] = job.result.get("held") or []
         track = self.project.track_by_id(info.get("track_id", ""))
         dry = os.path.join(job.out_dir, "dry.wav")
         res = _TuneResultDialog(track.name if track else "track", info.get("text", ""), stop, dry, self)
@@ -4915,15 +4959,18 @@ class MainWindow(QMainWindow):
         t = self.project.track_by_id(str(job.spec.get("track_id", "")))
         if t is None:
             return {"error": "the job's track is gone"}
-        changed = []
-        fx = []
+        changed, fx, seen = [], [], set()
         for e in (t.fx or []):
-            d = as_dict(e)
+            d = as_dict(e); seen.add(d["id"])
             if d["id"] in export:
                 d = {**d, "params": {**d.get("params", {}), **export[d["id"]]}}
                 changed.append(d["id"])
             fx.append(FxInsert(id=d["id"], type=d["type"], params=d["params"], bypassed=d.get("bypassed", False),
                                x=float(d.get("x", 0.0)), y=float(d.get("y", 0.0))))
+        for nid in (job.result.get("added") or []):          # effects the search brought in become real inserts
+            if nid in seen or nid not in export: continue
+            kind = nid.split("_", 1)[1].rstrip("0123456789") or "eq"
+            fx.append(FxInsert(id=nid, type=kind, params=export[nid])); changed.append(nid + " (added)")
         label = f"tune toward '{job.spec.get('text')}' stop {args.get('stop')}"
         if changed:
             self.bus.dispatch(SetTrackFxCommand(t.id, fx, label=label))

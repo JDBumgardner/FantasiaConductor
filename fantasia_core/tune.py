@@ -20,6 +20,35 @@ import uuid
 from typing import Dict, Optional
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+# Effects the search may ADD to a chain, each starting at a setting you cannot hear, so an added effect only survives
+# if it earns its place. (A track rarely carries every device; the caller picks which ones are in play.)
+# The wet/mix amounts start at 0.015 rather than 0: a mix of exactly zero sits at the clamp of the logit the twin
+# searches in, where the gradient vanishes and the effect can never be moved at all (measured 2026-09-22 — a "distant"
+# run with an added reverb and delay reached distance 0.09 of a 0.6 target and dropped both).
+ADDABLE_FX: dict = {
+    "eq": {},                       # filled with the stock flat 8-band layout
+    "reverb": {"room_size": 0.5, "damping": 0.5, "wet": 0.015, "dry": 1.0, "width": 1.0},
+    "delay": {"time": 0.25, "feedback": 0.2, "mix": 0.015},
+    "chorus": {"rate": 1.0, "depth": 0.25, "centre_delay": 7.0, "feedback": 0.0, "mix": 0.015},
+    "compressor": {"threshold": -6.0, "ratio": 1.05, "attack": 20.0, "release": 150.0, "makeup": 0.0},
+    "saturator": {"drive": 0.0, "output": 0.0},
+    "distortion": {"drive": 0.0},
+    "gate": {"threshold": -80.0, "ratio": 1.5, "attack": 5.0, "release": 100.0},
+    "lowpass": {"cutoff": 20000.0},
+    "highpass": {"cutoff": 20.0},
+    "gain": {"gain": 0.0},
+}
+FX_LABELS = {"eq": "EQ", "reverb": "Reverb", "delay": "Delay", "chorus": "Chorus", "compressor": "Compressor",
+             "saturator": "Saturator", "distortion": "Distortion", "gate": "Gate", "lowpass": "Low pass",
+             "highpass": "High pass", "gain": "Gain", "limiter": "Limiter", "mix": "Mix", "vst": "Plugin"}
+
+def neutral_params(kind: str) -> dict:
+    """Starting parameters for an effect the search is allowed to add: audibly nothing."""
+    if kind == "eq":
+        from fantasia_core.engine.eq import default_bands
+        return {"bands": default_bands()}
+    return dict(ADDABLE_FX.get(kind) or {})
 RUNNER = ROOT / "experiments" / "text2fx" / "tune.py"
 
 
