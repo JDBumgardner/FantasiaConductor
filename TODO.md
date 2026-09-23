@@ -104,8 +104,9 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       **One attempt is the default** (2026-09-22, ~2 min): one search at one
       amount (0.3 subtle / 0.6 / 1.0 strong), `ladder: true` for the old set of
       four. **In the interface**: track header → right-click → "Tune toward…"
-      asks for the words and the amount, runs in the background with a
-      status-bar count, then a result dialog plays Original vs Tuned
+      asks for the words, the amount and Quick (4 starts, ~75 s) or Thorough
+      (8, ~130 s), runs in the background with a status-bar count, then a
+      result dialog plays Original vs Tuned
       (sounddevice), lists what moved, shows the scores and any artefact flag,
       and applies as one undoable edit or discards.
       [ ] the `anchor` guess is
@@ -378,6 +379,10 @@ closed-loop recovery.
       5 s excerpts; the compressor's CPU ballistics round trip forces a sync.
 
 ### The optimiser
+- **The halving schedule now follows `n_start`** (`ladder.rounds_for`, 2026-09-22).
+  It was hard-coded for 8 starts — ((20,4),(40,2),(100,1)) — so a 4-start run
+  kept all four survivors at stage 1 and pruned nothing, costing more than it
+  bought. Now 8 → 520 candidate-steps, 4 → 280, 2 → 170, 1 → 140.
 Today (`optim.py`, default in `text2synth` and `house_session`, `T2_OPT=adam`
 for the old path): **successive halving** over 8 inits (30 steps × 8 → 60 × 4 →
 220 × 1, cosine decay in the last stage), an **L-BFGS polish** with the synth's

@@ -12,7 +12,9 @@ job.json (written by fantasia_core.tune.start):
                "preset": {...vital JSON...} (optional, for the coverage report), "voices": 1}
   objective   "dir" (default: the change in embedding aligned with X minus not-X, two-sided stops) or "cos"
   amount      one attempt at this distance (default 0.6: audible, still the same sound). "ladder": true walks the
-              full set of stops instead; "stops": [...] names them. n_start (8); device
+              full set of stops instead; "stops": [...] names them
+  quality     "thorough" (8 starts, default) or "quick" (4): the surface is multimodal -- the leader after the first
+              stage is overtaken 37 %% of the time -- so starts are the search's only diversity. n_start overrides; device
 Progress goes to stdout, one JSON per line: {"event": "start"|"route"|"stop"|"done"|"error", ...}. The result file lists
 every stop with its scores, flags, exported app parameters and preview path. A Vital source the twin cannot model
 (see synth.vital_coverage; unknown wavetable) is reported and, when the job carries a "fallback_audio", taken as a
@@ -67,7 +69,9 @@ def main(job_path):
     def log(s):
         if "stop" in s: emit(event="progress", message=s.strip())
     t0 = time.time()
-    stops = ladder.run(text, source, notes, out_dir, "tune", anchor, synth=synth, p_inst=p_inst, n_start=int(job.get("n_start", 8)), log=log, graph=graph)
+    n_start = int(job.get("n_start") or {"quick": 4, "thorough": 8}.get(str(job.get("quality", "thorough")), 8))
+    emit(event="note", message=f"{n_start} starts ({'quick' if n_start < 8 else 'thorough'})")
+    stops = ladder.run(text, source, notes, out_dir, "tune", anchor, synth=synth, p_inst=p_inst, n_start=n_start, log=log, graph=graph)
     result = {"text": text, "anchor": anchor, "route": route, "objective": ladder.OBJ, "coverage": coverage, "frozen": graph.frozen, "seconds": round(time.time() - t0), "stops": []}
     best_dir = 0.0
     for i, st in enumerate(stops):

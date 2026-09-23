@@ -32,6 +32,15 @@ EQ = os.environ.get("T2_LADDER_EQ", "1" if OBJ == "dir" else "0") == "1"
 def dists_for(obj=None): return DISTS_DIR if (obj or OBJ) == "dir" else DISTS
 ROUNDS_FIRST, ROUNDS_NEXT, ROUNDS_LAST = ((20, 4), (40, 2), (100, 1)), ((80, 1),), ((150, 1),)
 
+def rounds_for(n_start):
+    """The halving schedule for n starts: cheap steps on everything, then halve, then depth on the winner.
+    (steps, survivors) per stage -- the survivor counts must follow n_start or nothing is pruned (n=4 against the
+    8-start schedule kept all four and cost more than it bought)."""
+    if n_start >= 8: return ROUNDS_FIRST                                   # 8x20 + 4x40 + 2x100 = 520 candidate-steps
+    if n_start >= 4: return ((20, 2), (100, 1))                            # 4x20 + 2x100 = 280
+    if n_start >= 2: return ((30, 1), (110, 1))                            # 2x30 + 110 = 170
+    return ((140, 1),)
+
 def level_match(y, ref, peak=0.89):
     """y at the K-weighted loudness of ref, then the whole clip scaled down if it would clip (never up): the sounds
     are compared at the loudness the optimiser judged them at, and a punchier stop is not quieter for its peaks."""
@@ -88,7 +97,7 @@ def run(word, source, notes, out_dir, tag, anchor_text, synth=None, p_inst=None,
     from optim import free_cache
     dists = dists_for()
     for i, d in enumerate(dists):
-        state["d"] = d; rounds = ROUNDS_FIRST if i == 0 else (ROUNDS_LAST if (d is None or i == len(dists) - 1) else ROUNDS_NEXT)
+        state["d"] = d; rounds = rounds_for(n_start) if i == 0 else (ROUNDS_LAST if (d is None or i == len(dists) - 1) else ROUNDS_NEXT)
         if i > 0: cands = cands + [cand(100 * i + r) for r in range(2)]; rounds = ((rounds[0][0] // 2, 1), (rounds[0][0] - rounds[0][0] // 2, 1))   # continue the last optimum against two fresh starts: a tight stop is a poor init for a loose one
         for attempt in (0, 1):
             try: frontier, _ = successive_halving(cands, loss_of, lambda c: evaluate(c)[0], rounds=rounds, polish=False, log=lambda *a: None); break

@@ -357,6 +357,7 @@ class AgentTools:
                  "anchor": {"type": "string", "description": "what the sound is, for the identity score, e.g. 'an electric piano' (default: guessed from the track)"},
                  "amount": {"type": "number", "description": "how far to move: 0.3 subtle, 0.6 default, 1.0 strong"},
                  "ladder": {"type": "boolean", "description": "return four proposals at increasing amounts instead of one"},
+                 "quality": {"type": "string", "enum": ["quick", "thorough"], "description": "quick = 4 starts (~1 min), thorough = 8 (~2 min). The surface is multimodal, so more starts find better solutions, not just the same one twice."},
                  "stops": {"type": "array", "items": {"type": "number"}, "description": "explicit distance targets"}}}},
             {"name": "tune_status", "description": "Progress and result of a tune_toward job: status, stops done so far, and when done the ladder (per stop: word score, distance, identity, flags, preview wav path).",
              "input_schema": {"type": "object", "required": ["job_id"], "properties": {"job_id": {"type": "string"}}}},

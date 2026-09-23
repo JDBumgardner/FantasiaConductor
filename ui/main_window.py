@@ -439,8 +439,13 @@ class _TuneDialog(QDialog):
             self.amount.addItem(label, val)
         self.amount.setCurrentIndex(1)
         form.addRow("Amount", self.amount)
+        self.quality = QComboBox(self)
+        self.quality.addItem("Thorough — 8 starts, about 2 min", "thorough")
+        self.quality.addItem("Quick — 4 starts, about 1 min", "quick")
+        form.addRow("Search", self.quality)
         note = QLabel("Searches this track's own effects for a setting that moves the sound that way.\n"
-                      "Takes about two minutes and changes nothing until you accept it.", self)
+                      "Several starts are tried because the good settings sit in separate basins — quick looks at "
+                      "half as many, so it sometimes misses the better one. Nothing changes until you accept it.", self)
         note.setWordWrap(True); note.setStyleSheet("color: palette(mid);")
         form.addRow(note)
         box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
@@ -449,7 +454,7 @@ class _TuneDialog(QDialog):
         self.text.setFocus()
 
     def values(self) -> tuple:
-        return self.text.text().strip(), float(self.amount.currentData())
+        return self.text.text().strip(), float(self.amount.currentData()), str(self.quality.currentData())
 
 
 class _TuneResultDialog(QDialog):
@@ -4821,7 +4826,7 @@ class MainWindow(QMainWindow):
         anchor = str(args.get("anchor") or "").strip() or ("a " + (t.name or "sound").lower())
         spec = {"track_id": t.id, "text": text, "anchor": anchor, "inserts": inserts, "wires": wires, "source": source,
                 "notes": notes or None, "out_dir": out_dir}
-        for k, cast in (("stops", lambda v: [float(x) for x in v]), ("amount", float), ("ladder", bool), ("objective", str)):
+        for k, cast in (("stops", lambda v: [float(x) for x in v]), ("amount", float), ("ladder", bool), ("objective", str), ("quality", str), ("n_start", int)):
             if args.get(k) is not None: spec[k] = cast(args[k])
         job = tune.start(spec)
         out = job.summary()
@@ -4839,14 +4844,14 @@ class MainWindow(QMainWindow):
         dlg = _TuneDialog(track.name, self)
         if dlg.exec() != QDialog.Accepted:
             return
-        text, amount = dlg.values()
+        text, amount, quality = dlg.values()
         if not text:
             self.statusBar().showMessage("Tune toward — nothing to aim at", 4000)
             return
         self.statusBar().showMessage(f"Tuning “{track.name}” toward “{text}” — bouncing…")
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            started = self._agent_tune_toward({"track_id": track_id, "text": text, "amount": amount})
+            started = self._agent_tune_toward({"track_id": track_id, "text": text, "amount": amount, "quality": quality})
         finally:
             QApplication.restoreOverrideCursor()
         if started.get("error"):
@@ -4854,7 +4859,8 @@ class MainWindow(QMainWindow):
             return
         job_id = started["job_id"]
         self._tune_jobs = getattr(self, "_tune_jobs", {})
-        self._tune_jobs[job_id] = {"track_id": track_id, "text": text, "t0": time.time()}
+        self._tune_jobs[job_id] = {"track_id": track_id, "text": text, "t0": time.time(),
+                                   "eta": 60 if quality == "quick" else 130}
         timer = QTimer(self); timer.setInterval(2000)
         timer.timeout.connect(lambda: self._tune_poll(job_id, timer))
         timer.start()
@@ -4867,8 +4873,9 @@ class MainWindow(QMainWindow):
         if job is None:
             timer.stop(); return
         if job.status in ("starting", "running"):
-            self.statusBar().showMessage(f"Tuning “{info.get('text')}” — {round(time.time() - info.get('t0', time.time()))}s "
-                                         f"(about two minutes; the app stays usable)")
+            el = round(time.time() - info.get("t0", time.time()))
+            self.statusBar().showMessage(f"Tuning “{info.get('text')}” — {el}s of about {info.get('eta', 130)}s "
+                                         f"(the app stays usable)")
             return
         timer.stop()
         if job.status != "done" or not job.result:
