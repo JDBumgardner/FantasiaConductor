@@ -227,6 +227,15 @@ QDialog QLineEdit, QDialog QSpinBox, QDialog QDoubleSpinBox, QInputDialog QLineE
     border-radius: 4px; padding: 5px; selection-background-color: {theme.ACCENT};
     selection-color: #12030c; }}
 QDialogButtonBox QPushButton {{ min-width: 68px; padding: 5px 12px; }}
+/* Checkboxes: unstyled, Qt draws a dark indicator on the dark panel — invisible. */
+QCheckBox {{ color: {theme.FG}; spacing: 7px; }}
+QCheckBox:disabled {{ color: {theme.FG_DIM}; }}
+QCheckBox::indicator {{ width: 15px; height: 15px; border-radius: 4px;
+    border: 1px solid {theme.BORDER}; background: {theme.BG_ELEVATED}; }}
+QCheckBox::indicator:hover {{ border-color: {theme.PURPLE}; }}
+QCheckBox::indicator:checked {{ background: {theme.ACCENT}; border-color: {theme.ACCENT}; }}
+QCheckBox::indicator:checked:disabled {{ background: {theme.BORDER}; border-color: {theme.BORDER}; }}
+QCheckBox::indicator:disabled {{ background: {theme.BG_PANEL}; border-color: {theme.BORDER_SOFT}; }}
 
 /* Drag handles. The defaults are ~4px and invisible on a dark theme, which
    makes panels feel unresizable — give them width and a hover highlight. */
@@ -474,7 +483,7 @@ class _TuneDialog(QDialog):
                       "exactly as they are. Several starts are tried because the good settings sit in separate basins — "
                       "quick looks at half as many, so it sometimes misses the better one. Nothing changes until you "
                       "accept it.", self)
-        note.setWordWrap(True); note.setStyleSheet("color: palette(mid);")
+        note.setWordWrap(True); note.setStyleSheet(f"color:{theme.FG_DIM}; font-size:11px;")
         form.addRow(note)
         box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
         box.accepted.connect(self.accept); box.rejected.connect(self.reject)
@@ -504,17 +513,17 @@ class _TuneResultDialog(QDialog):
             if isinstance(params, dict):
                 bits.append(f"<b>{nid}</b>: " + ", ".join(f"{k} {v}" for k, v in list(params.items())[:4] if not isinstance(v, (list, dict))))
         if bits:
-            what = QLabel("<br>".join(bits[:4]), self); what.setWordWrap(True); what.setStyleSheet("color: palette(mid); font-size: 11px;")
+            what = QLabel("<br>".join(bits[:4]), self); what.setWordWrap(True); what.setStyleSheet(f"color:{theme.FG_DIM}; font-size:11px;")
             lay.addWidget(what)
         extra = []
         for nid in (stop.get("_added") or []): extra.append(f"added {nid.split('_', 1)[-1]}")
         for nid in (stop.get("_held") or []): extra.append(f"left {nid} alone")
         if extra:
-            lab = QLabel(" · ".join(extra), self); lab.setStyleSheet("color: palette(mid); font-size: 11px;"); lay.addWidget(lab)
+            lab = QLabel(" · ".join(extra), self); lab.setStyleSheet(f"color:{theme.FG_DIM}; font-size:11px;"); lay.addWidget(lab)
         flags = stop.get("flags") or []
         scores = QLabel(f"word {stop.get('word', 0):+.3f} · direction {stop.get('direction', 0):+.2f} · "
                         f"still sounds like itself {stop.get('identity', 0):.2f}" + (f" · ⚠ {', '.join(flags)}" if flags else ""), self)
-        scores.setStyleSheet("color: palette(mid); font-size: 11px;"); lay.addWidget(scores)
+        scores.setStyleSheet(f"color:{theme.FG_DIM}; font-size:11px;"); lay.addWidget(scores)
         row = QHBoxLayout()
         b_dry = QPushButton("▶ Original", self); b_wet = QPushButton("▶ Tuned", self)
         b_dry.clicked.connect(lambda: self._play(self._dry)); b_wet.clicked.connect(lambda: self._play(self._preview))
