@@ -437,13 +437,17 @@ class _TuneDialog(QDialog):
     AMOUNTS = [("Subtle", 0.3), ("Noticeable", 0.6), ("Strong", 1.0)]
     MAY_ADD = ["eq", "reverb", "delay", "chorus", "compressor", "saturator"]
 
-    def __init__(self, track_name: str, inserts=None, parent=None) -> None:
+    def __init__(self, track_name: str, inserts=None, sources=None, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Tune “{track_name}” toward…")
         form = QFormLayout(self)
         self.text = QLineEdit(self)
         self.text.setPlaceholderText("warmer, darker, punchier, more distant…")
         form.addRow("Sound", self.text)
+        self.source = QComboBox(self)
+        for label, val in (sources or [("The start of this track's material", {"from": "start"})]):
+            self.source.addItem(label, val)
+        form.addRow("Listen to", self.source)
         self.amount = QComboBox(self)
         for label, val in self.AMOUNTS:
             self.amount.addItem(label, val)
@@ -494,7 +498,7 @@ class _TuneDialog(QDialog):
         use = [cb.property("insert_id") for cb in self._use_boxes if cb.isChecked()]
         add = [cb.property("fx_kind") for cb in self._add_boxes if cb.isChecked()]
         return (self.text.text().strip(), float(self.amount.currentData()), str(self.quality.currentData()),
-                (use if len(use) != len(self._use_boxes) else None), add)
+                (use if len(use) != len(self._use_boxes) else None), add, dict(self.source.currentData() or {}))
 
 
 class _TuneResultDialog(QDialog):
@@ -507,6 +511,9 @@ class _TuneResultDialog(QDialog):
         lay = QVBoxLayout(self)
         head = QLabel(f"<b>{text}</b> · moved {stop.get('distance', 0):.2f} from the original", self)
         lay.addWidget(head)
+        if stop.get("_heard"):
+            heard = QLabel("heard " + str(stop["_heard"]), self); heard.setStyleSheet(f"color:{theme.FG_DIM}; font-size:11px;")
+            lay.addWidget(heard)
         bits = []
         d = stop.get("describe") or {}
         for nid, params in (d.items() if isinstance(d, dict) else []):
@@ -4815,16 +4822,36 @@ class MainWindow(QMainWindow):
             return {"error": "give the word or phrase to move toward"}
         inserts = [as_dict(e) for e in (t.fx or [])]
         wires = [{"src": w.src, "dst": w.dst} for w in (getattr(t, "fx_wires", None) or [])]
-        # the notes the track plays, relative to the first one (the twin renders up to 10 s from there)
         notes = []
         for c in t.clips:
             for n in getattr(c, "notes", None) or []:
                 notes.append((int(n.pitch), float(c.start + n.start), float(n.duration), int(n.velocity)))
         notes.sort(key=lambda n: n[1])
-        # the search hears 10 s; take them from where this track's content starts, not from the timeline's zero
-        starts = [float(c.start) for c in t.clips] + [n[1] for n in notes]
-        t0 = min(starts) if starts else 0.0
-        notes = [(p_, s - t0, d, v) for p_, s, d, v in notes if s - t0 < 9.5]
+        # WHICH audio the search listens to. A track's material changes across a song, so the caller says where:
+        # a clip, the loop region, the playhead, an explicit time — otherwise where this track's content starts.
+        seconds = max(2.0, min(float(args.get("seconds") or 10.0), 10.0))
+        t0, span_note = None, "from the start of this track's material"
+        if args.get("clip_id"):
+            _tr, c = self.project.find_clip(str(args["clip_id"]))
+            if c is None:
+                return {"error": f"no clip {args['clip_id']!r}"}
+            t0 = float(c.start); seconds = max(2.0, min(float(c.duration), seconds)); span_note = f"clip “{c.name or c.id}”"
+        elif args.get("start") is not None:
+            t0 = max(0.0, float(args["start"])); span_note = f"from {t0:.1f}s"
+        elif str(args.get("from") or "") == "loop" and getattr(self.project, "loop_end", 0) > getattr(self.project, "loop_start", 0):
+            t0 = float(self.project.loop_start)
+            seconds = max(2.0, min(float(self.project.loop_end - self.project.loop_start), seconds)); span_note = "the loop region"
+        elif str(args.get("from") or "") == "playhead":
+            t0 = float(getattr(self.engine, "playhead", 0.0) or 0.0); span_note = f"from the playhead ({t0:.1f}s)"
+        elif str(args.get("from") or "") == "selection":
+            cid = self.timeline.selected_clip_id() if hasattr(self.timeline, "selected_clip_id") else None
+            _tr, c = self.project.find_clip(cid) if cid else (None, None)
+            if c is not None:
+                t0 = float(c.start); seconds = max(2.0, min(float(c.duration), seconds)); span_note = f"the selected clip “{c.name or c.id}”"
+        if t0 is None:
+            starts = [float(c.start) for c in t.clips] + [n[1] for n in notes]
+            t0 = min(starts) if starts else 0.0
+        notes = [(p_, s - t0, d, v) for p_, s, d, v in notes if 0 <= s - t0 < seconds - 0.5]
         out_dir = os.path.join(tempfile.gettempdir(), "fantasia_tune", f"{t.id}_{int(time.time())}")
         os.makedirs(out_dir, exist_ok=True)
         # the dry track (inserts bypassed) is the recording route's source and the Vital route's fallback
@@ -4834,11 +4861,13 @@ class MainWindow(QMainWindow):
             dry = os.path.join(out_dir, "dry.wav")
             bounce_track_to_file(self.project, self.pool, self.project.sample_rate, dry, t.id,
                                  midi_renderer=self.midi, synth_renderer=self.synth_engine, plugin_renderer=self.plugin_renderer)
-            import soundfile as _sf                          # keep only the 10 s the search uses, from this track's first content
-            _y, _sr = _sf.read(dry, dtype="float32"); _a = int(t0 * _sr)
-            _sf.write(dry, _y[_a:_a + 10 * _sr], _sr)
-            if not len(_y[_a:_a + 10 * _sr]) or float(abs(_y[_a:_a + 10 * _sr]).max()) < 1e-4:
-                return {"error": "the track's first 10 seconds bounced silent — is it muted, or its clips empty?"}
+            import soundfile as _sf                          # keep only the window the search listens to
+            _y, _sr = _sf.read(dry, dtype="float32"); _a = int(t0 * _sr); _b = _a + int(seconds * _sr)
+            _seg = _y[_a:_b]
+            _sf.write(dry, _seg, _sr)
+            if not len(_seg) or float(abs(_seg).max()) < 1e-4:
+                return {"error": f"that stretch of the track bounced silent ({span_note}, {seconds:.0f}s from {t0:.1f}s) — "
+                                 f"is the track muted, or is there nothing there?"}
         except Exception as exc:  # noqa: BLE001
             return {"error": f"could not bounce the track: {exc}"}
         finally:
@@ -4875,10 +4904,28 @@ class MainWindow(QMainWindow):
             if args.get(k) is not None: spec[k] = cast(args[k])
         job = tune.start(spec)
         out = job.summary()
+        out["listening_to"] = f"{span_note}, {seconds:.0f}s from {t0:.1f}s"
         out["note"] = ("searching the Vital patch and the inserts together" if source["kind"] == "vital"
-                       else "searching the inserts on the bounced track") + "; poll tune_status, then apply_tune"
+                       else "searching the inserts on the bounced track") + f", listening to {span_note}; poll tune_status, then apply_tune"
         if source.get("note"):
             out["note"] = source["note"]
+        return out
+
+    def _tune_sources(self, track) -> list:
+        """What the search could listen to, most specific first: the selected clip, the loop, the playhead, each clip."""
+        out = []
+        cid = self.timeline.selected_clip_id() if hasattr(self.timeline, "selected_clip_id") else None
+        _tr, sel = self.project.find_clip(cid) if cid else (None, None)
+        if sel is not None and any(c.id == sel.id for c in track.clips):
+            out.append((f"Selected clip — {sel.name or sel.id} ({sel.start:.1f}s)", {"clip_id": sel.id}))
+        if getattr(self.project, "loop_end", 0) > getattr(self.project, "loop_start", 0):
+            out.append((f"Loop region ({self.project.loop_start:.1f}–{self.project.loop_end:.1f}s)", {"from": "loop"}))
+        pos = float(getattr(self.engine, "playhead", 0.0) or 0.0)
+        if pos > 0.05:
+            out.append((f"From the playhead ({pos:.1f}s)", {"from": "playhead"}))
+        for c in sorted(track.clips, key=lambda c: c.start)[:8]:
+            out.append((f"Clip — {c.name or c.id} ({c.start:.1f}s, {c.duration:.1f}s)", {"clip_id": c.id}))
+        out.append(("The start of this track's material", {"from": "start"}))
         return out
 
     def _tune_toward_ui(self, track_id: str) -> None:
@@ -4886,17 +4933,17 @@ class MainWindow(QMainWindow):
         track = self.project.track_by_id(track_id)
         if track is None:
             return
-        dlg = _TuneDialog(track.name, track.fx or [], self)
+        dlg = _TuneDialog(track.name, track.fx or [], self._tune_sources(track), self)
         if dlg.exec() != QDialog.Accepted:
             return
-        text, amount, quality, use, add = dlg.values()
+        text, amount, quality, use, add, where = dlg.values()
         if not text:
             self.statusBar().showMessage("Tune toward — nothing to aim at", 4000)
             return
         self.statusBar().showMessage(f"Tuning “{track.name}” toward “{text}” — bouncing…")
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            req = {"track_id": track_id, "text": text, "amount": amount, "quality": quality}
+            req = {"track_id": track_id, "text": text, "amount": amount, "quality": quality, **where}
             if use is not None: req["use"] = use
             if add: req["add"] = add
             if use is not None and not use and not add:
@@ -4911,7 +4958,7 @@ class MainWindow(QMainWindow):
         job_id = started["job_id"]
         self._tune_jobs = getattr(self, "_tune_jobs", {})
         self._tune_jobs[job_id] = {"track_id": track_id, "text": text, "t0": time.time(),
-                                   "eta": 60 if quality == "quick" else 130}
+                                   "eta": 60 if quality == "quick" else 130, "listening_to": started.get("listening_to", "")}
         timer = QTimer(self); timer.setInterval(2000)
         timer.timeout.connect(lambda: self._tune_poll(job_id, timer))
         timer.start()
@@ -4937,6 +4984,7 @@ class MainWindow(QMainWindow):
         stop = dict(stops[0])
         stop["_added"] = [n for n in (job.result.get("added") or []) if n in (stop.get("export") or {})]
         stop["_held"] = job.result.get("held") or []
+        stop["_heard"] = info.get("listening_to", "")
         track = self.project.track_by_id(info.get("track_id", ""))
         dry = os.path.join(job.out_dir, "dry.wav")
         res = _TuneResultDialog(track.name if track else "track", info.get("text", ""), stop, dry, self)

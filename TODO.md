@@ -121,7 +121,14 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       test reached distance 0.09 of a 0.6 target and dropped both added
       effects; with 0.015 it reaches 0.61 and keeps them. In the dialog:
       "May change" (a tick per insert, VST/mix disabled — no twin) and
-      "May add". [ ] the `anchor` guess is
+      "May add".
+      **Which audio it listens to** (2026-09-22): a track's material changes
+      across a song, so the caller says where — `clip_id`, `start`, or
+      `from` = selection / loop / playhead / start (default: where the track's
+      material begins), and `seconds` 2–10. The dialog's "Listen to" row
+      offers the selected clip, the loop region, the playhead and each clip by
+      name; the result dialog says what it heard. A silent window is refused
+      with the span in the message rather than searched. [ ] the `anchor` guess is
       "a ⟨track name⟩" — use the instrument/plugin preset name; [ ] bounce
       length: the runner takes the first 10 s from the first note.
 - Pages: *Ten Words, Four Instruments* v6 adds §09 fixed stops + judge, §10

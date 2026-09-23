@@ -352,7 +352,9 @@ class AgentTools:
                 "tracks with no Vital (or a Vital patch outside the twin's palette: several oscillators, LFOs, Vital's own FX) "
                 "the dry track is bounced and only the inserts are searched. A track carries only the devices someone put "
                 "there: pass `use` to restrict which of them may move, and `add` to bring in an effect the word needs — "
-                "reverb or delay for 'distant', chorus for 'wide', saturator for 'warm' or 'gritty'."),
+                "reverb or delay for 'distant', chorus for 'wide', saturator for 'warm' or 'gritty'. It listens to ten "
+                "seconds of the track — say which ten with from/clip_id/start, since a part that changes across the song "
+                "should be tuned on the bit that matters."),
              "input_schema": {"type": "object", "required": ["track_id", "text"], "properties": {
                  "track_id": {"type": "string"},
                  "text": {"type": "string", "description": "the word or short phrase, e.g. 'dark', 'punchy', 'a warmer electric piano'"},
@@ -360,6 +362,10 @@ class AgentTools:
                  "amount": {"type": "number", "description": "how far to move: 0.3 subtle, 0.6 default, 1.0 strong"},
                  "ladder": {"type": "boolean", "description": "return four proposals at increasing amounts instead of one"},
                  "quality": {"type": "string", "enum": ["quick", "thorough"], "description": "quick = 4 starts (~1 min), thorough = 8 (~2 min). The surface is multimodal, so more starts find better solutions, not just the same one twice."},
+                 "from": {"type": "string", "enum": ["selection", "loop", "playhead", "start"], "description": "which stretch of the track to listen to: the selected clip, the loop region, from the playhead, or where the track's material starts (default)."},
+                 "clip_id": {"type": "string", "description": "listen to this clip specifically"},
+                 "start": {"type": "number", "description": "listen from this position on the timeline, in seconds"},
+                 "seconds": {"type": "number", "description": "how much audio to listen to, 2-10 (default 10). Shorter is faster but hears less of the part."},
                  "use": {"type": "array", "items": {"type": "string"}, "description": "insert ids (or types) on the track that may change; everything else is rendered exactly as it is. Default: all of them. Use this to protect a device the user tuned by hand."},
                  "add": {"type": "array", "items": {"type": "string"}, "description": "effect types to bring in for this search — eq, reverb, delay, chorus, compressor, saturator, distortion, gate, lowpass, highpass, gain. Each starts at a setting you cannot hear and is kept only if it earns its place; applying adds it to the chain."},
                  "stops": {"type": "array", "items": {"type": "number"}, "description": "explicit distance targets"}}}},
