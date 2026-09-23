@@ -736,6 +736,8 @@ class TrackHeader(QWidget):
             mapping[space.addAction(label)] = name
 
         menu.addSeparator()
+        mapping[menu.addAction("Tune toward…  (describe the sound you want)")] = "tune_toward"
+        menu.addSeparator()
         mapping[menu.addAction("Clear FX")] = "clear_fx"
         if not self._is_master:
             menu.addSeparator()

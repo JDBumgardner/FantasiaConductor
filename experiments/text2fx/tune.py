@@ -11,7 +11,8 @@ job.json (written by fantasia_core.tune.start):
               {"kind": "vital", "params": {vital raw 0-1}, "notes": [[pitch, start, dur, vel]], "wavetable": name,
                "preset": {...vital JSON...} (optional, for the coverage report), "voices": 1}
   objective   "dir" (default: the change in embedding aligned with X minus not-X, two-sided stops) or "cos"
-  stops       distance targets (default 0.3/0.6/1.0/1.6 for dir; 0.3/0.6/1.0/1.6/2.5 + unconstrained for cos); n_start (8); device
+  amount      one attempt at this distance (default 0.6: audible, still the same sound). "ladder": true walks the
+              full set of stops instead; "stops": [...] names them. n_start (8); device
 Progress goes to stdout, one JSON per line: {"event": "start"|"route"|"stop"|"done"|"error", ...}. The result file lists
 every stop with its scores, flags, exported app parameters and preview path. A Vital source the twin cannot model
 (see synth.vital_coverage; unknown wavetable) is reported and, when the job carries a "fallback_audio", taken as a
@@ -30,9 +31,10 @@ def main(job_path):
     from fantasia_core.document.fx_insert import FxInsert, FxWire
     SR = 48000; DEV = job.get("device") or C.DEVICE; text = job["text"]; anchor = job.get("anchor") or "this sound"
     ladder.OBJ = job.get("objective") or ladder.OBJ; ladder.EQ = bool(job.get("two_sided", ladder.OBJ == "dir"))
-    if job.get("stops"):
-        if ladder.OBJ == "dir": ladder.DISTS_DIR = tuple(job["stops"])
-        else: ladder.DISTS = tuple(job["stops"]) + (None,)
+    stops = tuple(job["stops"]) if job.get("stops") else (None if job.get("ladder") else (float(job.get("amount", 0.6)),))
+    if stops:                                                  # one attempt by default: a single distance, ~2 min
+        if ladder.OBJ == "dir": ladder.DISTS_DIR = stops
+        else: ladder.DISTS = stops if len(stops) > 1 else stops
     emit(event="start", text=text, device=DEV)
     inserts = [FxInsert(id=i["id"], type=i["type"], params=i.get("params") or {}, bypassed=bool(i.get("bypassed", False))) for i in job["inserts"]]
     wires = [FxWire(w["src"], w["dst"]) for w in job.get("wires") or []]

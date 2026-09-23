@@ -345,17 +345,19 @@ class AgentTools:
             {"name": "tune_toward", "description": (
                 "Push a track's sound toward a description — 'darker', 'punchy', 'a warmer electric piano' — by searching "
                 "the track's own FX inserts (and, on a Vital track the twin can model, the patch itself) with CLAP as the ear. "
-                "Runs in the background (about 4–8 minutes) and returns a job_id; poll tune_status. The result is a LADDER of four "
-                "stops at increasing distance from the original (the stop sets the amount; the text sets the direction), each with "
-                "its word score, direction score, distance, identity score, artefact flags and a past_range flag — nothing is "
-                "applied. Listen/compare, then apply_tune(job_id, stop); tune_status suggests the stops in the usable middle. On "
+                "One attempt by default (about 2 minutes): it searches at one amount and returns a single proposal with its "
+                "word score, direction score, distance, identity score and artefact flags — nothing is applied. Runs in the "
+                "background and returns a job_id; poll tune_status, then apply_tune(job_id, 1) to take it (undoable). Pass "
+                "amount (0.3 subtle / 0.6 default / 1.0 strong) or ladder:true for four proposals at increasing amounts. On "
                 "tracks with no Vital (or a Vital patch outside the twin's palette: several oscillators, LFOs, Vital's own FX) "
                 "the dry track is bounced and only the inserts are searched."),
              "input_schema": {"type": "object", "required": ["track_id", "text"], "properties": {
                  "track_id": {"type": "string"},
                  "text": {"type": "string", "description": "the word or short phrase, e.g. 'dark', 'punchy', 'a warmer electric piano'"},
                  "anchor": {"type": "string", "description": "what the sound is, for the identity score, e.g. 'an electric piano' (default: guessed from the track)"},
-                 "stops": {"type": "array", "items": {"type": "number"}, "description": "distance targets for the stops (default 0.3, 0.6, 1.0, 1.6)"}}}},
+                 "amount": {"type": "number", "description": "how far to move: 0.3 subtle, 0.6 default, 1.0 strong"},
+                 "ladder": {"type": "boolean", "description": "return four proposals at increasing amounts instead of one"},
+                 "stops": {"type": "array", "items": {"type": "number"}, "description": "explicit distance targets"}}}},
             {"name": "tune_status", "description": "Progress and result of a tune_toward job: status, stops done so far, and when done the ladder (per stop: word score, distance, identity, flags, preview wav path).",
              "input_schema": {"type": "object", "required": ["job_id"], "properties": {"job_id": {"type": "string"}}}},
             {"name": "apply_tune", "description": (

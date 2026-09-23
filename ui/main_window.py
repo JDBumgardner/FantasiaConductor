@@ -422,6 +422,91 @@ _FX_PRESETS_EXTRA = {
 }
 
 
+class _TuneDialog(QDialog):
+    """Ask what the track should sound like. One attempt at the chosen amount; the result is a proposal, not an edit."""
+
+    AMOUNTS = [("Subtle", 0.3), ("Noticeable", 0.6), ("Strong", 1.0)]
+
+    def __init__(self, track_name: str, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"Tune “{track_name}” toward…")
+        form = QFormLayout(self)
+        self.text = QLineEdit(self)
+        self.text.setPlaceholderText("warmer, darker, punchier, more distant…")
+        form.addRow("Sound", self.text)
+        self.amount = QComboBox(self)
+        for label, val in self.AMOUNTS:
+            self.amount.addItem(label, val)
+        self.amount.setCurrentIndex(1)
+        form.addRow("Amount", self.amount)
+        note = QLabel("Searches this track's own effects for a setting that moves the sound that way.\n"
+                      "Takes about two minutes and changes nothing until you accept it.", self)
+        note.setWordWrap(True); note.setStyleSheet("color: palette(mid);")
+        form.addRow(note)
+        box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
+        box.accepted.connect(self.accept); box.rejected.connect(self.reject)
+        form.addRow(box)
+        self.text.setFocus()
+
+    def values(self) -> tuple:
+        return self.text.text().strip(), float(self.amount.currentData())
+
+
+class _TuneResultDialog(QDialog):
+    """One proposal: what it did, how it scored, play it against the original, take it or leave it."""
+
+    def __init__(self, track_name: str, text: str, stop: dict, dry_path: str, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"“{text}” — {track_name}")
+        self._preview = stop.get("preview"); self._dry = dry_path
+        lay = QVBoxLayout(self)
+        head = QLabel(f"<b>{text}</b> · moved {stop.get('distance', 0):.2f} from the original", self)
+        lay.addWidget(head)
+        bits = []
+        d = stop.get("describe") or {}
+        for nid, params in (d.items() if isinstance(d, dict) else []):
+            if isinstance(params, dict):
+                bits.append(f"<b>{nid}</b>: " + ", ".join(f"{k} {v}" for k, v in list(params.items())[:4] if not isinstance(v, (list, dict))))
+        if bits:
+            what = QLabel("<br>".join(bits[:4]), self); what.setWordWrap(True); what.setStyleSheet("color: palette(mid); font-size: 11px;")
+            lay.addWidget(what)
+        flags = stop.get("flags") or []
+        scores = QLabel(f"word {stop.get('word', 0):+.3f} · direction {stop.get('direction', 0):+.2f} · "
+                        f"still sounds like itself {stop.get('identity', 0):.2f}" + (f" · ⚠ {', '.join(flags)}" if flags else ""), self)
+        scores.setStyleSheet("color: palette(mid); font-size: 11px;"); lay.addWidget(scores)
+        row = QHBoxLayout()
+        b_dry = QPushButton("▶ Original", self); b_wet = QPushButton("▶ Tuned", self)
+        b_dry.clicked.connect(lambda: self._play(self._dry)); b_wet.clicked.connect(lambda: self._play(self._preview))
+        row.addWidget(b_dry); row.addWidget(b_wet); row.addStretch(1); lay.addLayout(row)
+        box = QDialogButtonBox(self)
+        box.addButton("Apply to track", QDialogButtonBox.AcceptRole)
+        box.addButton("Discard", QDialogButtonBox.RejectRole)
+        box.accepted.connect(self.accept); box.rejected.connect(self.reject)
+        lay.addWidget(box)
+
+    def _play(self, path) -> None:
+        try:
+            import sounddevice as sd
+            import soundfile as sf
+
+            sd.stop()
+            if not path or not os.path.exists(path):
+                return
+            y, sr = sf.read(path, dtype="float32")
+            sd.play(y, sr)
+        except Exception:  # noqa: BLE001 — a failed audition should never break the dialog
+            pass
+
+    def closeEvent(self, ev) -> None:  # noqa: N802
+        try:
+            import sounddevice as sd
+
+            sd.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        super().closeEvent(ev)
+
+
 class _MidiImportDialog(QDialog):
     """How to bring a .mid in — as-is, or translated into a real strum."""
 
@@ -4736,8 +4821,8 @@ class MainWindow(QMainWindow):
         anchor = str(args.get("anchor") or "").strip() or ("a " + (t.name or "sound").lower())
         spec = {"track_id": t.id, "text": text, "anchor": anchor, "inserts": inserts, "wires": wires, "source": source,
                 "notes": notes or None, "out_dir": out_dir}
-        if args.get("stops"):
-            spec["stops"] = [float(x) for x in args["stops"]]
+        for k, cast in (("stops", lambda v: [float(x) for x in v]), ("amount", float), ("ladder", bool), ("objective", str)):
+            if args.get(k) is not None: spec[k] = cast(args[k])
         job = tune.start(spec)
         out = job.summary()
         out["note"] = ("searching the Vital patch and the inserts together" if source["kind"] == "vital"
@@ -4745,6 +4830,65 @@ class MainWindow(QMainWindow):
         if source.get("note"):
             out["note"] = source["note"]
         return out
+
+    def _tune_toward_ui(self, track_id: str) -> None:
+        """Menu → ask → run in the background → one proposal to audition and accept."""
+        track = self.project.track_by_id(track_id)
+        if track is None:
+            return
+        dlg = _TuneDialog(track.name, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        text, amount = dlg.values()
+        if not text:
+            self.statusBar().showMessage("Tune toward — nothing to aim at", 4000)
+            return
+        self.statusBar().showMessage(f"Tuning “{track.name}” toward “{text}” — bouncing…")
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            started = self._agent_tune_toward({"track_id": track_id, "text": text, "amount": amount})
+        finally:
+            QApplication.restoreOverrideCursor()
+        if started.get("error"):
+            self.statusBar().showMessage(f"Tune toward — {started['error']}", 8000)
+            return
+        job_id = started["job_id"]
+        self._tune_jobs = getattr(self, "_tune_jobs", {})
+        self._tune_jobs[job_id] = {"track_id": track_id, "text": text, "t0": time.time()}
+        timer = QTimer(self); timer.setInterval(2000)
+        timer.timeout.connect(lambda: self._tune_poll(job_id, timer))
+        timer.start()
+
+    def _tune_poll(self, job_id: str, timer) -> None:
+        from fantasia_core import tune
+
+        job = tune.get(job_id)
+        info = getattr(self, "_tune_jobs", {}).get(job_id) or {}
+        if job is None:
+            timer.stop(); return
+        if job.status in ("starting", "running"):
+            self.statusBar().showMessage(f"Tuning “{info.get('text')}” — {round(time.time() - info.get('t0', time.time()))}s "
+                                         f"(about two minutes; the app stays usable)")
+            return
+        timer.stop()
+        if job.status != "done" or not job.result:
+            self.statusBar().showMessage(f"Tune toward failed — {job.error}", 10000); return
+        stops = [s for s in job.result["stops"] if s["stop"] > 0]
+        if not stops:
+            self.statusBar().showMessage("Tune toward produced nothing", 6000); return
+        stop = stops[0]
+        track = self.project.track_by_id(info.get("track_id", ""))
+        dry = os.path.join(job.out_dir, "dry.wav")
+        res = _TuneResultDialog(track.name if track else "track", info.get("text", ""), stop, dry, self)
+        if res.exec() == QDialog.Accepted:
+            out = self._agent_apply_tune({"job_id": job_id, "stop": stop["stop"]})
+            if out.get("error"):
+                self.statusBar().showMessage(f"Could not apply — {out['error']}", 8000)
+            else:
+                self._rebuild_all()
+                self.statusBar().showMessage(f"Applied “{info.get('text')}” to {track.name if track else 'the track'} — Undo (Cmd+Z) to revert", 10000)
+        else:
+            self.statusBar().showMessage("Tune toward — discarded", 4000)
 
     def _agent_apply_tune(self, args: dict) -> dict:
         """UI thread: one stop's exported parameters -> an undoable FX edit, plus the Vital knobs when the patch was searched."""
@@ -5087,6 +5231,9 @@ class MainWindow(QMainWindow):
     def _on_fx_action(self, track_id: str, action: str) -> None:
         track = self.project.track_by_id(track_id)
         if track is None:
+            return
+        if action == "tune_toward":
+            self._tune_toward_ui(track_id)
             return
         if action == "remove_track":
             self.bus.dispatch(RemoveTrackCommand(track_id))  # undoable (Cmd+Z restores it)
