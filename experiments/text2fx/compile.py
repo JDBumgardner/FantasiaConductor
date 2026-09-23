@@ -21,7 +21,10 @@ class SearchGraph:
         self.frozen = [nid for nid, tw in self.twins.items() if isinstance(tw, AN.FrozenNode)]
         # Inserts the caller did not pick are rendered at their current settings but never moved: a track carries
         # devices the user tuned by hand, and "make it warmer" is no licence to touch them.
-        self.searchable = {nid for nid in self.twins if (search_ids is None or nid in set(search_ids)) and nid not in self.frozen}
+        # A bypassed insert is skipped in the render, so searching it optimises nothing and its export would write
+        # parameters onto a device the user switched off.
+        self.searchable = {nid for nid in self.twins if (search_ids is None or nid in set(search_ids))
+                           and nid not in self.frozen and not self.by_id[nid].get("bypassed")}
         self.held = [nid for nid in self.twins if nid not in self.searchable and nid not in self.frozen]
         self.raw0 = self.init_from_app()
     # ---- parameters
