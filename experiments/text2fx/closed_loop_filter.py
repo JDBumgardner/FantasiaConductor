@@ -41,9 +41,14 @@ def load_vital():
         if want: assert got == want, f"{k} is {got!r}"
     return vital
 
-def vital_render(params):
+def vital_render(params, settle=True):
+    """Render `params` in Vital. The first pass is rendered and THROWN AWAY: the plugin instance is shared and Vital
+    smooths parameter changes, so a render that follows a different patch starts with the old values still gliding --
+    measured 2026-09-22 as up to 3.8 dB in a band, i.e. a render's result depended on what was rendered before it.
+    One discarded pass costs 0.4 s and makes it order-independent (a full unload+reload costs 3.6 s and agrees)."""
     vital = load_vital()
     for k, v in params.items(): P.set_param(vital, k, v)
+    if settle: P.render_notes(vital, midi, 10.0, sr=SR, tail=0.0)
     y = P.render_notes(vital, midi, 10.0, sr=SR, tail=0.0).mean(axis=1)[:L]
     return np.pad(y, (0, max(0, L - len(y)))).astype(np.float32)
 

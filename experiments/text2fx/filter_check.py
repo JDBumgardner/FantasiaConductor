@@ -61,6 +61,7 @@ def render_vital(phys):
     s = WavetableSynth(CL.TABLE, SR, voices=1, bounds=CL.B, interpolation=CL.TBL.get("interpolation", 1))
     vp = s.vital_params(raw_from_physical(s, **phys))
     vp["oscillator_1_level"] = phys["level"] ** 0.5
+    vp["oscillator_1_phase_randomization"] = 0.0      # the twin renders at a fixed phase; let the plugin do the same
     old_midi = CL.midi
     CL.midi = [types.SimpleNamespace(pitch=p, start=st, duration=d, velocity=v) for p, st, d, v in NOTE]
     try:

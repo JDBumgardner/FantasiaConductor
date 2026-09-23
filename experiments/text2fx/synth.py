@@ -320,6 +320,7 @@ class WavetableSynth(nn.Module):
                 semis = semis + (extra["keytrack"] * (note - 60))[:, None]
             fc = 261.6256 * 2 ** ((semis - 52.0) / 12)
             G, Q = self.res_law(filt["resonance"])
+            Q = Q / getattr(self, "q_mult", 1.0)          # damping correction under measurement (filter_sat_law.py)
             fcx = fc.expand(sig.shape[0], -1)
             if self.recursive_filter:                     # per sample (svf.py) instead of per STFT frame
                 import svf as _svf
