@@ -259,20 +259,47 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       `T2_FRAME_FILTER=1` reverts). A TPT state-variable filter — the bilinear
       transform of the same prototype the frame filter convolved — run through
       `torchlpc.sample_wise_lpc` (numba; CPU here, ~3 ms forward / 4 ms
-      backward at 480k samples). Measured against Vital (`filter_check.py`):
-      parked cutoffs, the two models are within 0.4 dB of each other (the
-      1–2 dB error vs Vital is shared, so it is not the topology); on a pluck
-      whose envelope crosses the band in ~10 ms, mean band error **4.10 → 2.01
-      dB** (res 0.3) and **6.21 → 2.84** (res 0.7), worst band −6 dB, first
-      30 ms 3.58 → 1.68. Closed loop (secret patch → twin → Vital): twin vs
-      Vital [0.0, 0.4, 0.6, −0.6] dB against the frame filter's
-      [0.1, 0.3, 0.3, **−3.6**]; round trip [0.0, −0.1, 0.1, 0.8] against
-      [0.1, −0.1, 0.6, 1.7]. CPU/MPS gradient cosine 0.99999, every filter
-      parameter gets gradient, bit-identical across runs, and the whole synth
-      pass is **20 % faster** (249 → 199 ms). [ ] Now put the saturation
-      INSIDE the loop, where Vital's analog model has it (the ±1.5 dB residual
-      and most of the remaining 2–3 dB); [ ] then the other filter models,
-      which are all recursive topologies this unblocks.
+      backward at 480k samples). Measured against Vital (`filter_check.py`),
+      **after** the measurement integrity fix below — the first numbers were
+      contaminated:
+      · fast sweeps, mean band error **4.10 → 2.01 dB** (res 0.3) and
+        **6.21 → 2.84** (res 0.7), first 30 ms 3.58 → 1.68 — the case it was
+        built for, and a clear win;
+      · the slower sweep goes the other way, **2.02 → 2.88**;
+      · parked cutoffs slightly favour the frame filter on the whole note
+        (0.83–1.39 vs 1.37–1.53) and the SVF on the first 30 ms.
+      Better where the cutoff moves fast, marginally worse where it does not,
+      20 % faster overall (249 → 199 ms synth pass), CPU/MPS gradient cosine
+      0.99999, bit-identical across runs. Kept as the default because of the
+      sweeps and because in-loop saturation is only expressible in a recursive
+      form. `T2_FRAME_FILTER=1` reverts.
+- **The real filter error is neither topology: the twin's resonance does not
+  collapse with level.** `filter_level.py`, resonance 0.85, cutoff 523 Hz,
+  rising oscillator level: Vital's resonance peak goes −14.8 → −14.7 → −10.3
+  → **+3.7 dB**, the twin's −14.5 → −11.7 → +9.2 → **+30.2 dB**. They agree to
+  0.2 dB when quiet — which is why it was never caught, the resonance law was
+  measured at a low level — and diverge by **26 dB** at full level. Per band
+  at level 1.0 the twin is +20.4 dB around the cutoff (resonance not
+  compressed) and, at low resonance, +3.7 dB broadband (our pre-filter tanh
+  makes harmonics that an in-loop saturation would have filtered). One
+  mechanism explains both: Vital saturates INSIDE the loop. [ ] Model it —
+  a quasi-linear damping that rises with the resonance path's amplitude keeps
+  the recursion linear-time-varying, so torchlpc still runs it and it stays
+  differentiable; measure the law, then re-check `filter_check` and the
+  closed loop. [ ] Then the other filter models.
+- **Vital renders depended on what was rendered before them** (found
+  2026-09-22 when the filter numbers refused to reproduce; fixed in
+  `closed_loop_filter.vital_render`). The plugin instance is shared and Vital
+  smooths parameter changes, so a render following a different patch began
+  with the old values still gliding: the same patch measured −13.12 or −16.95
+  dB in a band depending on history. One discarded warm-up render (0.4 s)
+  makes it order-independent and agrees with a full unload+reload (3.6 s).
+  Second source: the plugin randomised oscillator phase per note while the
+  twin rendered at a fixed phase — measurement scripts now set
+  `oscillator_1_phase_randomization = 0`. With both, `filter_check.py`
+  reproduces to the last digit. [ ] **Every Vital-measured law predates
+  this** (envelope, unison, resonance, noise, wavetable extraction):
+  re-measure, or at least spot-check, before relying on those numbers.
 - [ ] **Other filter models** — Ladder, Dirty, Digital, Diode, Formant, Comb,
       Phase, 24 dB variants. Only Analog 12 dB (with LP→BP→HP morph) is measured.
 - [ ] Unison phase: blend ±20% is inherent (per-note random phases). Accept.
