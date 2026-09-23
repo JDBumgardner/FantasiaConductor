@@ -4686,7 +4686,9 @@ class MainWindow(QMainWindow):
             for n in getattr(c, "notes", None) or []:
                 notes.append((int(n.pitch), float(c.start + n.start), float(n.duration), int(n.velocity)))
         notes.sort(key=lambda n: n[1])
-        t0 = notes[0][1] if notes else 0.0
+        # the search hears 10 s; take them from where this track's content starts, not from the timeline's zero
+        starts = [float(c.start) for c in t.clips] + [n[1] for n in notes]
+        t0 = min(starts) if starts else 0.0
         notes = [(p_, s - t0, d, v) for p_, s, d, v in notes if s - t0 < 9.5]
         out_dir = os.path.join(tempfile.gettempdir(), "fantasia_tune", f"{t.id}_{int(time.time())}")
         os.makedirs(out_dir, exist_ok=True)
@@ -4697,6 +4699,11 @@ class MainWindow(QMainWindow):
             dry = os.path.join(out_dir, "dry.wav")
             bounce_track_to_file(self.project, self.pool, self.project.sample_rate, dry, t.id,
                                  midi_renderer=self.midi, synth_renderer=self.synth_engine, plugin_renderer=self.plugin_renderer)
+            import soundfile as _sf                          # keep only the 10 s the search uses, from this track's first content
+            _y, _sr = _sf.read(dry, dtype="float32"); _a = int(t0 * _sr)
+            _sf.write(dry, _y[_a:_a + 10 * _sr], _sr)
+            if not len(_y[_a:_a + 10 * _sr]) or float(abs(_y[_a:_a + 10 * _sr]).max()) < 1e-4:
+                return {"error": "the track's first 10 seconds bounced silent — is it muted, or its clips empty?"}
         except Exception as exc:  # noqa: BLE001
             return {"error": f"could not bounce the track: {exc}"}
         finally:
