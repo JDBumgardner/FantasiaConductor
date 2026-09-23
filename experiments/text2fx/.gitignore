@@ -10,3 +10,9 @@ words/**/RESULTS.md
 words/site/
 words/logs/
 words/listen_frontier/
+words/listen_obj/
+words/ladder_flux/
+words/ladder_det/
+words/ladder_obj/
+words/vitalgraph/
+words/appgraph*/
