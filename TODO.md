@@ -89,8 +89,18 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       sets the exported Vital parameters (clips re-render). Nothing is
       applied by the search. Tested through the manager on both routes (a
       frozen VST in the chain left untouched): recording 330 s, Vital 480 s.
-      [ ] Try it from the app's agent (restart the app first — it holds
-      fantasia_core in memory); [ ] previews are wav paths for now — a
+      First live run from the app's agent (2026-09-22, Pads → "warmer") found
+      the twin had **never seen a real app EQ**: the round trips fabricated
+      legacy `eq_peak` bands, while the app writes `bell / low_shelf /
+      high_shelf / low_cut / high_cut / notch` with an `enabled` flag, and it
+      raised ValueError on `low_cut`. Fixed: `BAND_KINDS` maps the app's
+      vocabulary (a **notch is a bell at −24 dB**, the host's own
+      `_BAND_TO_LEGACY`, not an RBJ notch — that error alone cost 2.4 dB in a
+      band and 66 dB of round-trip SNR), a disabled band is pinned in the
+      module to exactly what `band_as_fx` bakes (gain 0, or a cut parked at
+      20 Hz / 20 kHz) so jitter and gradients cannot revive a band the user
+      switched off, and `to_app` writes it back untouched. Real Pads bands
+      round-trip at 93 dB. [ ] previews are wav paths for now — a
       "play stop N" affordance in the agent panel; [ ] the `anchor` guess is
       "a ⟨track name⟩" — use the instrument/plugin preset name; [ ] bounce
       length: the runner takes the first 10 s from the first note.

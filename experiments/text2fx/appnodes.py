@@ -25,8 +25,10 @@ class Biquads(torch.nn.Module):
     """A fixed list of RBJ biquad types (peak / lowshelf / highshelf / lowpass / highpass), one set of (freq, gain, q)
     per band, run through GRAFX's frequency-sampled IIR. pedalboard's filters are JUCE's RBJ designs, so this is exact
     up to the FSM truncation (4000 taps)."""
-    def __init__(self, kinds, N):
-        super().__init__(); self.kinds = list(kinds)
+    def __init__(self, kinds, N, pinned=None):
+        """pinned: {index: (log2_hz, gain_db, q_log)} for bands the search must not move (a disabled EQ band). Their
+        values are substituted in the forward, so jitter and gradients cannot revive them."""
+        super().__init__(); self.kinds = list(kinds); self.pinned = dict(pinned or {})
         self.iir = P.core.iir.IIRFilter(order=2, backend="fsm", flashfftconv=False, fsm_max_input_len=N)
     def coeffs(self, kind, hz, gain_db, q):
         w0 = 2 * math.pi * hz.clamp(20.0, SR * 0.45) / SR; cos_w0, sin_w0 = torch.cos(w0), torch.sin(w0)
@@ -46,7 +48,12 @@ class Biquads(torch.nn.Module):
     def forward(self, x, log2_hz, gain_db, q_log):
         Bs, As = [], []
         for i, kind in enumerate(self.kinds):
-            b, a = self.coeffs(kind, torch.pow(2.0, log2_hz[0, i]), gain_db[0, i], torch.exp(q_log[0, i])); Bs.append(b); As.append(a)
+            if i in self.pinned:
+                hz_, g_, q_ = (torch.as_tensor(v, dtype=log2_hz.dtype, device=log2_hz.device) for v in self.pinned[i])
+                b, a = self.coeffs(kind, torch.pow(2.0, hz_), g_, torch.exp(q_))
+            else:
+                b, a = self.coeffs(kind, torch.pow(2.0, log2_hz[0, i]), gain_db[0, i], torch.exp(q_log[0, i]))
+            Bs.append(b); As.append(a)
         Bs = torch.stack(Bs)[None, None]; As = torch.stack(As)[None, None]           # (B=1, C=1, K, 3)
         return self.iir(x, Bs, As)
 
@@ -94,16 +101,58 @@ class SaturationNode(AppNode):
     def to_app(self, raw): return {"drive": _f(raw["drive_db"][0, 0]), "output": _f(raw["out_db"][0, 0])}
     def prior(self, raw): return (torch.relu(-raw["drive_db"]).pow(2).sum() + torch.relu(raw["drive_db"] - 40).pow(2).sum() + torch.relu(raw["out_db"].abs() - 24).pow(2).sum()) / 100
 
+# The stock EQ's band vocabulary (fantasia_core.engine.eq) and the legacy single-filter names that alias onto it.
+BAND_KINDS = {"bell": "eq_peak", "low_shelf": "eq_low_shelf", "high_shelf": "eq_high_shelf", "low_cut": "highpass", "high_cut": "lowpass", "notch": "eq_peak",   # the host renders a notch as a BELL at -24 dB (engine.eq._BAND_TO_LEGACY), not an RBJ notch
+              "eq_peak": "eq_peak", "eq_low_shelf": "eq_low_shelf", "eq_high_shelf": "eq_high_shelf", "highpass": "highpass", "lowpass": "lowpass"}
+F_MIN, F_MAX = 20.0, 20000.0
+
 class EQNode(AppNode):
-    """The stock 8-band EQ: bands are dicts {type, freq, gain, q, on?}; disabled bands are kept at 0 dB and frozen."""
-    def __init__(self, bands): self.bands = [dict(b) for b in bands]; self.kinds = [b.get("type", "eq_peak") for b in self.bands]
-    def make(self, N): return Biquads(self.kinds, N)
+    """The stock 8-band EQ. Bands are {type, freq, gain, q, enabled} in the app's own vocabulary (bell / low_shelf /
+    high_shelf / low_cut / high_cut / notch; the legacy eq_peak names alias onto it). A DISABLED band is frozen exactly
+    as `engine.eq.band_as_fx` bakes it — gain 0 for bell/shelf/notch, a cut parked at 20 Hz / 20 kHz — so the twin
+    renders what the host renders and the search cannot revive a band the user switched off (found 2026-09-22 by the
+    first live run: the twin had only ever seen fabricated `eq_peak` bands and raised ValueError on a real one)."""
+    def __init__(self, bands):
+        self.bands = [dict(b) for b in (bands or [])]
+        self.kinds = [BAND_KINDS.get(str(b.get("type", "bell")), None) for b in self.bands]
+        unknown = {str(b.get("type")) for b, k in zip(self.bands, self.kinds) if k is None}
+        if unknown: raise ValueError(f"EQ band type(s) the twin has no filter for: {', '.join(sorted(unknown))}")
+        self.frozen_band = [not bool(b.get("enabled", b.get("on", True))) for b in self.bands]
+    def make(self, N):
+        pin = {}
+        for i, (b, frozen) in enumerate(zip(self.bands, self.frozen_band)):
+            if frozen:
+                f, g = self._baked(b, False); pin[i] = (math.log2(max(f, 1.0)), g, math.log(max(float(b.get("q", 1.0)), 0.05)))
+        return Biquads(self.kinds, N, pinned=pin)
+    def _baked(self, b, on):
+        """freq, gain as the host will actually render this band."""
+        kind = str(b.get("type", "bell")); freq = float(b.get("freq", b.get("cutoff", 1000.0))); gain = float(b.get("gain", 0.0))
+        if not on:
+            if kind in ("low_cut", "highpass"): freq = F_MIN
+            elif kind in ("high_cut", "lowpass"): freq = F_MAX
+            else: gain = 0.0
+        elif kind == "notch" and abs(gain) < 0.5: gain = -24.0          # the host's own rule for an enabled notch
+        return freq, gain
     def from_app(self, p):
         bands = p.get("bands") or self.bands
-        return {"log2_hz": torch.tensor([[math.log2(float(b.get("freq", 1000.0))) for b in bands]]), "gain_db": torch.tensor([[float(b.get("gain", 0.0)) if b.get("on", True) else 0.0 for b in bands]]),
-                "q_log": torch.tensor([[math.log(float(b.get("q", 1.0))) for b in bands]])}
+        hz, gains, qs = [], [], []
+        for b, frozen in zip(bands, self.frozen_band):
+            f, g = self._baked(b, not frozen); hz.append(math.log2(max(f, 1.0))); gains.append(g); qs.append(math.log(max(float(b.get("q", 1.0)), 0.05)))
+        return {"log2_hz": torch.tensor([hz]), "gain_db": torch.tensor([gains]), "q_log": torch.tensor([qs])}
     def to_app(self, raw):
-        return {"bands": [{**b, "freq": round(2.0 ** _f(raw["log2_hz"][0, i]), 1), "gain": round(_f(raw["gain_db"][0, i]), 2), "q": round(math.exp(_f(raw["q_log"][0, i])), 3)} for i, b in enumerate(self.bands)]}
+        out = []
+        for i, b in enumerate(self.bands):
+            if self.frozen_band[i]: out.append(dict(b)); continue         # a band the user switched off stays off and unchanged
+            band = {**b, "gain": round(_f(raw["gain_db"][0, i]), 2), "q": round(math.exp(_f(raw["q_log"][0, i])), 3)}
+            key = "cutoff" if (str(b.get("type")) in ("low_cut", "high_cut") and "cutoff" in b) else "freq"
+            band[key] = round(min(max(2.0 ** _f(raw["log2_hz"][0, i]), F_MIN), F_MAX), 1); out.append(band)
+        return {"bands": out}
+    def scale(self, raw, raw0, a):
+        out = {k: raw0[k] + a * (raw[k] - raw0[k]) for k in raw}
+        for i, frozen in enumerate(self.frozen_band):                     # never move a disabled band, at any amount
+            if frozen:
+                for k in out: out[k][0, i] = raw0[k][0, i]
+        return out
     def prior(self, raw):
         return torch.relu(raw["gain_db"].abs() - 6).pow(2).sum() / 36 + torch.relu(raw["q_log"] - math.log(4.0)).pow(2).sum() + torch.relu(math.log(0.3) - raw["q_log"]).pow(2).sum() \
                + torch.relu(raw["log2_hz"] - math.log2(16000)).pow(2).sum() + torch.relu(math.log2(30) - raw["log2_hz"]).pow(2).sum()
