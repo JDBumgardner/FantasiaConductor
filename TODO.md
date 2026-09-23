@@ -273,20 +273,32 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
       0.99999, bit-identical across runs. Kept as the default because of the
       sweeps and because in-loop saturation is only expressible in a recursive
       form. `T2_FRAME_FILTER=1` reverts.
-- **The real filter error is neither topology: the twin's resonance does not
-  collapse with level.** `filter_level.py`, resonance 0.85, cutoff 523 Hz,
-  rising oscillator level: Vital's resonance peak goes −14.8 → −14.7 → −10.3
-  → **+3.7 dB**, the twin's −14.5 → −11.7 → +9.2 → **+30.2 dB**. They agree to
-  0.2 dB when quiet — which is why it was never caught, the resonance law was
-  measured at a low level — and diverge by **26 dB** at full level. Per band
-  at level 1.0 the twin is +20.4 dB around the cutoff (resonance not
-  compressed) and, at low resonance, +3.7 dB broadband (our pre-filter tanh
-  makes harmonics that an in-loop saturation would have filtered). One
-  mechanism explains both: Vital saturates INSIDE the loop. [ ] Model it —
-  a quasi-linear damping that rises with the resonance path's amplitude keeps
-  the recursion linear-time-varying, so torchlpc still runs it and it stays
-  differentiable; measure the law, then re-check `filter_check` and the
-  closed loop. [ ] Then the other filter models.
+- [x] **The level-dependence was our own drive stage, not in-loop saturation**
+  (2026-09-22/23). Symptom: at resonance 0.85 the plugin's resonance peak went
+  −14.8 dB quiet to **+3.7 dB** at full level while the twin ran to **+30.2**,
+  agreeing to 0.2 dB only when quiet. With the filter switched OFF the twin
+  matched the plugin to 0.1 dB at every level, so the oscillator path was
+  exact — and the twin's drive stage only runs when the filter is on. Making
+  it linear collapsed the error (level 1.0: 5.11 → 0.90 dB mean band error),
+  which pointed at the drive law: ours was `tanh(2 g x)/(2 √g)`, far harder
+  than the plugin. Measured the best-fitting tanh gain against Vital,
+  level-matched: **0 dB → 1.2–1.6** (we used 2.0), **10 dB → 3.0–4.2** (6.3),
+  **20 dB → 8.5–12** (20). Now `k = 1.2·10^(0.9·fdrive)` with the small-signal
+  gain √g unchanged. The resonance peak at full level goes +30.2 → **+15.0**
+  against the plugin's +3.7, and per cell over a resonance × level grid every
+  cell except resonance 0.95 is now **0.02–1.98 dB**.
+- [x] **In-loop saturation — modelled, measured, rejected** (`svf.svf_sat`,
+  kept but off). A quasi-linear damping that rises with the resonance path's
+  amplitude, k[n] = k(1 + (A[n]/a0)^p), so the recursion stays
+  linear-time-varying and differentiable. Fitted over the grid on top of the
+  corrected drive law it moves the mean from 3.12 to **3.11 dB** — nothing.
+  The theory was wrong; the drive stage was the whole effect.
+- [ ] **What is left: the resonance law near self-oscillation.** With the drive
+  fixed, the remaining error is one cell — resonance 0.95 at 10–11 dB (every other cell
+  ≤ 2 dB). `RES_TAB` / `res_law_2d.json` were measured on the contaminated rig
+  AND at one level. Re-measure the resonance law with the settled renders and
+  pinned phase, across levels, and check whether it needs a level term at the
+  top of its range.
 - **Vital renders depended on what was rendered before them** (found
   2026-09-22 when the filter numbers refused to reproduce; fixed in
   `closed_loop_filter.vital_render`). The plugin instance is shared and Vital

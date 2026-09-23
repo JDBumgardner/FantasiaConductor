@@ -1,16 +1,15 @@
-"""Measure how Vital's filter resonance collapses with level. `python filter_sat_law.py [quick]`
+"""Fit the in-loop saturation law against Vital. `python filter_sat_law.py [quick]`
 
-`filter_level.py` showed the effect: at resonance 0.85 the plugin's resonance peak stays near 0 dB as the level rises
-while our fixed-Q twin runs 26 dB past it. Vital's analog model saturates inside the filter loop, which lowers the
-loop gain as the signal grows — a peak that flattens instead of screaming.
+`filter_level.py` measured the gap: at resonance 0.85 the plugin's resonance peak goes -14.8 dB when quiet to +3.7 dB
+at full level, where our fixed-Q filter runs to +30.2. Vital saturates inside the filter loop; `svf.svf_sat` models
+that quasi-linearly as damping that rises with the resonance path's own level, k[n] = k (1 + (A[n]/a0)^p).
 
-This measures the law our twin needs. For a grid of (resonance, oscillator level) it renders the plugin, then asks
-which Q multiplier makes the twin's own render match: a per-cell search over a damping correction, scored on the
-log-spectrum around the cutoff. The output is a table of (resonance, pre-filter rms) -> Q multiplier, written to
-tables/filter_sat_law.json, plus the fit's residual so the next step knows what is left.
+This fits a0 and p. For a grid of (resonance, oscillator level) it renders the plugin once, then scores each candidate
+(a0, p) by the twin's band error against it — the same 7-band comparison used everywhere else, level-matched, so the
+fit is about spectral shape rather than gain. Writes tables/filter_sat_law.json.
 """
+import itertools
 import json
-import math
 import os
 import sys
 import types
@@ -28,33 +27,38 @@ from synth import WavetableSynth, raw_from_physical  # noqa: E402
 SR = 48000
 NOTE = [(45, 0.0, 1.5, 100)]
 L = int(2.0 * SR)
+EDGES = (60, 150, 350, 700, 1500, 3500, 8000, 16000)
 BASE = dict(frame=0.0, detune_semis=0.0, blend=0.5, level=0.5,
             attack=0.002, decay=2.0, sustain=1.0, release=0.2,
             cutoff_raw=0.5, resonance=0.85, fenv_amount=0.0,
             fattack=0.001, fdecay=0.3, fsustain=1.0, frelease=0.3)
-RES = [0.2, 0.4, 0.6, 0.75, 0.85, 0.95]
-LEVELS = [0.08, 0.15, 0.3, 0.5, 0.75, 1.0]
-QMULT = [0.8, 1.0, 1.3, 1.7, 2.2, 3.0, 4.0, 5.5, 8.0, 12.0, 18.0]
+RES = [0.2, 0.5, 0.75, 0.95]
+LEVELS = [0.1, 0.3, 0.6, 1.0]
+A0 = [0.05, 0.1, 0.2, 0.35, 0.6, 1.0]
+P = [1.0, 1.5, 2.0, 3.0]
 
 
-def _synth(qmult=1.0):
+def _synth(sat=None):
     s = WavetableSynth(CL.TABLE, SR, voices=1, bounds=CL.B, interpolation=CL.TBL.get("interpolation", 1))
     s.random_phase = False
     s.recursive_filter = True
-    s.q_mult = qmult                      # damping correction under test (svf sees Q / q_mult)
+    if sat is not None:
+        s.sat_filter = True
+        s.sat_a0, s.sat_p = sat
     return s
 
 
-def render_twin(phys, qmult):
-    s = _synth(qmult)
+def twin(phys, sat=None):
+    s = _synth(sat)
     with torch.no_grad():
         return s.render(raw_from_physical(s, **phys), NOTE, L)[0, 0].numpy()
 
 
-def render_vital(phys):
+def vital(phys):
     s = _synth()
     vp = s.vital_params(raw_from_physical(s, **phys))
     vp["oscillator_1_level"] = phys["level"] ** 0.5
+    vp["oscillator_1_phase_randomization"] = 0.0
     old = CL.midi
     CL.midi = [types.SimpleNamespace(pitch=p, start=st, duration=d, velocity=v) for p, st, d, v in NOTE]
     try:
@@ -64,46 +68,40 @@ def render_vital(phys):
     return np.pad(y[:L], (0, max(0, L - len(y[:L]))))
 
 
-def logspec(y, n_fft=8192):
+def bands(y):
     seg = torch.as_tensor(y[int(0.25 * SR):int(1.2 * SR)], dtype=torch.float32)
-    s = torch.stft(seg, n_fft, n_fft // 4, window=torch.hann_window(n_fft), return_complex=True).abs().mean(-1)
-    return 20 * torch.log10(s + 1e-7), torch.fft.rfftfreq(n_fft, 1 / SR)
+    s = torch.stft(seg, 8192, 2048, window=torch.hann_window(8192), return_complex=True).abs().pow(2).mean(-1)
+    f = torch.fft.rfftfreq(8192, 1 / SR)
+    return torch.tensor([10 * torch.log10(s[(f >= a) & (f < b)].sum() + 1e-12) for a, b in zip(EDGES, EDGES[1:])])
 
 
-def score(a, b, fc):
-    """Difference around the cutoff, level-matched — the resonance region is what the damping controls."""
-    da, f = logspec(a)
-    db, _ = logspec(b)
-    m = (f > fc * 0.2) & (f < fc * 6)
-    da, db = da[m], db[m]
-    return float((da - da.mean() - (db - db.mean())).abs().mean())
-
-
-def prefilter_rms(phys):
-    """The signal level the filter actually sees in the twin (before its drive stage)."""
-    s = _synth()
-    raw = raw_from_physical(s, **phys)
-    ph = s.physical(raw)
-    return float(s.PRE_GAIN * (ph["level"] / 0.694))
+def err(a, b):
+    sc = float(np.sqrt((b ** 2).sum() / ((a ** 2).sum() + 1e-12)))
+    return float((bands(a * sc) - bands(b)).abs().mean())
 
 
 if __name__ == "__main__":
     quick = "quick" in ARGS
-    res_list = RES[::2] if quick else RES
-    lv_list = LEVELS[::2] if quick else LEVELS
-    fc = 261.6256 * 2 ** ((128.0 * BASE["cutoff_raw"] - 52.0) / 12)
-    print(f"cutoff {fc:.0f} Hz, note A1. Per cell: the Q multiplier that best matches Vital, and the residual.\n")
-    table = {}
-    for r in res_list:
-        row = {}
-        for lv in lv_list:
-            phys = {**BASE, "resonance": r, "level": lv}
-            vit = render_vital(phys)
-            best = min(((score(render_twin(phys, q), vit, fc), q) for q in QMULT), key=lambda t: t[0])
-            amp = prefilter_rms(phys)
-            row[f"{lv}"] = [best[1], round(best[0], 2), round(amp, 4)]
-            print(f"  res {r:<5} level {lv:<5} (pre-filter rms {amp:.3f}): Q x{best[1]:<5} residual {best[0]:.2f} dB")
-        table[f"{r}"] = row
-    out = os.path.join(HERE, "tables", "filter_sat_law.json")
-    json.dump(table, open(out, "w"), indent=1)
-    print(f"\nwrote {out}")
+    res_list, lv_list = (RES[::2], LEVELS[::2]) if quick else (RES, LEVELS)
+    cells = [{**BASE, "resonance": r, "level": lv} for r in res_list for lv in lv_list]
+    print(f"{len(cells)} cells (resonance x level); rendering the plugin…", flush=True)
+    ref = [vital(c) for c in cells]
+    base = np.mean([err(twin(c), v) for c, v in zip(cells, ref)])
+    print(f"  no saturation model: mean band error {base:.2f} dB", flush=True)
+    rows = []
+    for a0, p in itertools.product(A0, P):
+        e = np.mean([err(twin(c, (a0, p)), v) for c, v in zip(cells, ref)])
+        rows.append((e, a0, p))
+        print(f"  a0 {a0:<5} p {p:<4}: {e:.2f} dB", flush=True)
+    rows.sort()
+    best = rows[0]
+    print(f"\nbest: a0 {best[1]}, p {best[2]} -> {best[0]:.2f} dB (from {base:.2f})")
+    per_cell = [(c["resonance"], c["level"], round(err(twin(c, (best[1], best[2])), v), 2), round(err(twin(c), v), 2))
+                for c, v in zip(cells, ref)]
+    print("  per cell (resonance, level, with model, without):")
+    for row in per_cell:
+        print(f"    res {row[0]:<5} level {row[1]:<4}: {row[2]:5.2f} dB   (was {row[3]:5.2f})")
+    json.dump({"a0": best[1], "p": best[2], "mean_db": round(best[0], 3), "baseline_db": round(float(base), 3),
+               "per_cell": per_cell, "grid": [[round(e, 3), a, pp] for e, a, pp in rows]},
+              open(os.path.join(HERE, "tables", "filter_sat_law.json"), "w"), indent=1)
+    print("wrote tables/filter_sat_law.json")

@@ -74,6 +74,44 @@ def svf(x, fc, Q, sr=SR, blend=None, G=1.0, zi=None):
     return G * y
 
 
+def _smooth_abs(x, sr=SR, ms=3.0):
+    """|x| through a one-pole, as a stand-in for the amplitude in the resonance path."""
+    a = math.exp(-1.0 / (ms / 1000 * sr))
+    n = int(6 * (ms / 1000) * sr)
+    h = torch.exp(torch.arange(n, device=x.device, dtype=x.dtype) * math.log(a))
+    h = (h / h.sum())[None, None]
+    xa = torch.nn.functional.pad(x.abs()[:, None], (n - 1, 0))
+    return torch.nn.functional.conv1d(xa, h)[:, 0]
+
+
+def svf_sat(x, fc, Q, sr=SR, blend=None, G=1.0, a0=0.5, p=2.0, iters=1):
+    """MEASURED AND REJECTED (2026-09-23) — kept because the next filter model may want it, but it is off by default.
+
+    Built on the theory that Vital's remaining level-dependence was saturation inside the filter loop. It was not:
+    almost all of it was our own pre-filter drive stage saturating about twice as hard as the plugin (see synth.py's
+    drive law). With that corrected, fitting a0 and p over a resonance x level grid moves the mean band error from
+    3.12 to 3.11 dB — nothing. What is left sits at resonance 0.95 (10-11 dB) and is the resonance LAW at near
+    self-oscillation, not the loop.
+
+    SVF whose damping rises with the level in its own resonance path — what saturation inside the loop does.
+
+    Vital's analog filter saturates in the loop, so the resonance peak flattens as the signal grows: measured at
+    resonance 0.85 its peak goes -14.8 dB when quiet to +3.7 dB at full level, where a fixed-Q filter runs to +30.2.
+    A nonlinear per-sample recursion cannot be run by torchlpc (it solves a LINEAR time-varying recursion) and a
+    Python loop over 480k samples is hopeless, so this is the quasi-linear form: take the resonance path from a first
+    pass, and re-run with k[n] = k (1 + (A[n]/a0)^p). The filter stays linear-time-varying, torchlpc still runs it,
+    and every parameter keeps its gradient. a0 and p are measured (filter_sat_law.py).
+    """
+    k0 = 1.0 / torch.as_tensor(Q, dtype=x.dtype, device=x.device)
+    Qc = Q
+    for _ in range(max(1, iters)):
+        bp = svf(x, fc, Qc, sr=sr, blend=1.0)             # the resonance path of the current estimate
+        amp = _smooth_abs(bp, sr)
+        k = k0 * (1.0 + (amp / a0).clamp(min=0) ** p)
+        Qc = 1.0 / k.clamp(min=1e-3)
+    return svf(x, fc, Qc, sr=sr, blend=blend, G=G)
+
+
 def response(fc, Q, sr=SR, n=2048, blend=None):
     """The digital filter's magnitude response at one fixed cutoff, on the rfft grid — for checking against the
     analog prototype the frame-domain filter uses."""

@@ -311,7 +311,16 @@ class WavetableSynth(nn.Module):
             sig = sig + self.NOISE_GAIN * extra["noise"] * white
         if filt is not None:                                               # osc -> drive -> filter -> amp, as in Vital
             g = 10 ** extra.get("fdrive", torch.tensor(0.0, device=sig.device))
-            sig = torch.tanh(2 * g * sig) / (2 * torch.sqrt(g))
+            if self.drive_k is not None:              # measurement hook: y = tanh(k x)/k, small-signal gain 1
+                kk = float(self.drive_k)
+                sig = torch.tanh(kk * sig) / kk if kk > 1e-6 else sig
+            elif self.drive_stage:
+                # Vital's filter drive, measured 2026-09-23: the saturation is far gentler than the old
+                # tanh(2 g x)/(2 sqrt g). Best-fitting tanh gain k, level-matched band error against the plugin:
+                #   drive  0 dB -> 1.2-1.6 (we had 2.0) | 10 dB -> 3.0-4.2 (6.3) | 20 dB -> 8.5-12 (20)
+                # k = 1.2 * 10^(0.9 fdrive) fits both levels tested; the small-signal gain stays sqrt(g) as before.
+                k = 1.2 * torch.pow(g, 0.9)
+                sig = torch.sqrt(g) * torch.tanh(k * sig) / k
             e2 = self.envelope_shape(t, dur, dict(attack=filt["fattack"], decay=filt["fdecay"], sustain=filt["fsustain"], release=filt["frelease"],
                                                   attack_power=filt["fattack_power"], decay_power=filt["fdecay_power"], release_power=filt["frelease_power"]))
             semis = 128.0 * (filt["cutoff_raw"] + filt["fenv_amount"] * e2)[None, :]           # (1, T)
@@ -324,7 +333,11 @@ class WavetableSynth(nn.Module):
             fcx = fc.expand(sig.shape[0], -1)
             if self.recursive_filter:                     # per sample (svf.py) instead of per STFT frame
                 import svf as _svf
-                sig = _svf.svf(sig, fcx, Q, sr=self.sr, blend=extra.get("fblend", None), G=G)
+                if self.sat_filter:                       # damping that rises with the resonance path's level
+                    sig = _svf.svf_sat(sig, fcx, Q, sr=self.sr, blend=extra.get("fblend", None), G=G,
+                                       a0=self.sat_a0, p=self.sat_p, iters=self.sat_iters)
+                else:
+                    sig = _svf.svf(sig, fcx, Q, sr=self.sr, blend=extra.get("fblend", None), G=G)
             else:
                 sig = self.tv_lowpass(sig, fcx, G, Q, extra.get("fblend", None))
         return self.OUT_GAIN * env * sig
@@ -342,6 +355,10 @@ class WavetableSynth(nn.Module):
     # whose envelope crosses the band in ~10 ms: mean band error 4.1 -> 2.0 dB (res 0.3) and 6.2 -> 2.8 (res 0.7),
     # worst band -6 dB, and the whole synth pass is 20 % faster. T2_FRAME_FILTER=1 goes back to the old one.
     recursive_filter = os.environ.get("T2_FRAME_FILTER", "0") != "1"
+    drive_k = None            # measurement hook (filter drive law)
+    drive_stage = True        # the pre-filter tanh; off = linear, for isolating what the saturation is doing
+    sat_filter = False        # in-loop saturation (svf.svf_sat); a0/p measured by filter_sat_law.py
+    sat_a0, sat_p, sat_iters = 0.5, 2.0, 1
     checkpoint = False        # recompute each note group's forward in backward: ~400 MB -> ~30 MB saved activations at 20 notes
 
     def render(self, p, notes, L, chunk=80):
