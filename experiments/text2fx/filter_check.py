@@ -21,6 +21,7 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 ARGS = [a for a in sys.argv[1:]]
+sys.argv = [sys.argv[0]]                      # closed_loop_filter reads argv[1] as a voice count
 import common as C  # noqa: E402
 import closed_loop_filter as CL  # noqa: E402
 import svf as SVF  # noqa: E402

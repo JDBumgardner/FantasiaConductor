@@ -255,9 +255,24 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
   (`python fxgraph.py`).
 
 ### Why the clone isn't a perfect Vital (measured residuals)
-- [ ] **Recursive time-varying filter** via torchlpc (installed): fixes the
-      ~4 dB pluck-onset error (frame-domain smearing) AND lets the saturation
-      sit inside the filter loop like Vital's analog model (±1.5 dB residual).
+- [x] **Recursive time-varying filter** (2026-09-22, `svf.py`, default;
+      `T2_FRAME_FILTER=1` reverts). A TPT state-variable filter — the bilinear
+      transform of the same prototype the frame filter convolved — run through
+      `torchlpc.sample_wise_lpc` (numba; CPU here, ~3 ms forward / 4 ms
+      backward at 480k samples). Measured against Vital (`filter_check.py`):
+      parked cutoffs, the two models are within 0.4 dB of each other (the
+      1–2 dB error vs Vital is shared, so it is not the topology); on a pluck
+      whose envelope crosses the band in ~10 ms, mean band error **4.10 → 2.01
+      dB** (res 0.3) and **6.21 → 2.84** (res 0.7), worst band −6 dB, first
+      30 ms 3.58 → 1.68. Closed loop (secret patch → twin → Vital): twin vs
+      Vital [0.0, 0.4, 0.6, −0.6] dB against the frame filter's
+      [0.1, 0.3, 0.3, **−3.6**]; round trip [0.0, −0.1, 0.1, 0.8] against
+      [0.1, −0.1, 0.6, 1.7]. CPU/MPS gradient cosine 0.99999, every filter
+      parameter gets gradient, bit-identical across runs, and the whole synth
+      pass is **20 % faster** (249 → 199 ms). [ ] Now put the saturation
+      INSIDE the loop, where Vital's analog model has it (the ±1.5 dB residual
+      and most of the remaining 2–3 dB); [ ] then the other filter models,
+      which are all recursive topologies this unblocks.
 - [ ] **Other filter models** — Ladder, Dirty, Digital, Diode, Formant, Comb,
       Phase, 24 dB variants. Only Analog 12 dB (with LP→BP→HP morph) is measured.
 - [ ] Unison phase: blend ±20% is inherent (per-note random phases). Accept.
