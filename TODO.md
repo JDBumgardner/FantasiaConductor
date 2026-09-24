@@ -397,6 +397,38 @@ measured law and the source agree, the law is now *known* rather than fitted.
   hard-panned, halved by the mono sum" is a mono-only fit; use the real law
   when the twin goes stereo.
 
+### LFO research round 1 (workflow, 2026-09-23) — what is settled, what blocks
+Four parallel readers plus a completeness critic. The critic earned its place:
+it overturned four claims, including two where a reader asserted a defect in
+our own code that is not there (`svf.py` does clamp the cutoff).
+**Settled:** the splice bug (see memory `vital-modulation-splice`): routings
+need Vital's INTERNAL names (`lfo_1`, `osc_1_level`, a different namespace from
+the pedalboard keys for 256 of 903 parameters) AND a non-zero
+`modulation_N_amount` — amount 0 is the default and renders byte-identical to
+unmodulated, which is exactly the symptom we parked. Also: slot↔amount pairing
+is positional so the 64-slot list must not be compacted, and a `synth_version`
+newer than the plugin silently voids the whole patch while `restore_preset`
+still returns True. The curve format is fully known (points+powers, our own
+`power_curve` formula, Catmull-Rom over a 2048 table, `value = 1 − y`), and
+`smooth=true` on a 3-point triangle IS Vital's sine (2e-6).
+**Blocking gaps before writing the twin's LFO:**
+- [ ] **Nobody read `processAudioRateLfo`.** Every report modelled the
+  control-rate path, but `filter_1_cutoff` — the destination we care about —
+  forces the audio-rate one, and the two differ (the audio-rate paths apply no
+  clamp to the source, so Catmull-Rom overshoot to [−0.074, 1.074] reaches the
+  destination).
+- [ ] **The default LFO has a one-pole smoother ON** (`smooth_mode` default
+  1.0) and nobody modelled it.
+- [ ] **`sync_seconds_` under pedalboard makes renders order-dependent** —
+  `correctToTime(last_seconds_time_)` advances per 128-sample block, so an
+  LFO's phase depends on how much was rendered before. Our settle-render fix
+  may not cover this; check before measuring anything with an LFO in it.
+- [ ] Where the parameter skew is applied for audio-rate destinations; and
+  `ModulationSum` semantics for several routings to one destination.
+- [ ] **The coverage contract is undefined** — `synth.py` hardcodes slot 1
+  (`modulation_1_amount`) as env→cutoff. `raw_from_vital`/`vital_coverage`
+  need a real model of the matrix before a preset with LFOs can be accepted.
+
 ### The LFO, from the source (ready to build)
 `src/synthesis/modulators/synth_lfo.{h,cpp}`, `common/line_generator`:
 - phase advances by `frequency/sr` per sample, wrapped to [0,1);
