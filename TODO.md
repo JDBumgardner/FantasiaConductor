@@ -367,6 +367,55 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
 - [ ] Wavetables: magnitudes only, 128 harmonics; add phase-distortion /
       spectral-morph modes only when presets need them.
 
+### The twin against Vital's source (audit, 2026-09-23)
+Read for structure only (it is GPL; our implementation stays ours). Where a
+measured law and the source agree, the law is now *known* rather than fitted.
+- [x] **Envelope segment curve — exact.** Source `futils::powerScale(v, p) =
+  (e^{pv} − 1)/(e^p − 1)`; ours is `(1 − e^{px})/(1 − e^p)`, the same thing.
+  Attack negates the power (`power = -kAttackPower`), which our sign
+  convention already matches. Times are taken raw by the envelope; the
+  `32·x⁴` mapping lives in the parameter layer, as we have it.
+- [x] **Why the envelope is applied SQUARED** — it is not the envelope. The
+  oscillator ends with `audio_out = pan · raw · amp · amp`, where amp carries
+  the envelope and the level. Our `env²` and `level = raw²` reproduce exactly
+  that, and the measurement that puzzled us is now explained.
+- [x] **Unison power normalisation — exact.** Source divides by
+  `√(center² + detuned²·(half−1))`; ours divides by `√Σw²`. Same.
+- [ ] **Unison detune distribution — ours is an approximation.** Source:
+  `t = (2i + bump)/divisor`, then **`powerScale(t, kDetunePower)`**, then
+  cents, alternating sharp/flat. Ours is `sign(i)·(|i|/half)^1.5`, which was
+  fitted at 5 voices with the default detune power (0.5^1.5 = 0.354 against
+  the measured ±0.35) — so it is right there and drifts elsewhere. Replace
+  with powerScale and model `oscillator_1_unison_detune_power`.
+- [ ] **Unison blend** — source: `center = lerp(1, kCenterLowAmplitude,
+  blend)`, `detuned = lerp(kDetunedHighAmplitude, 0, (1−blend)²)`. Ours fits
+  the ratio as `0.503b + 0.202b²` with the centre pinned at 1. Equivalent
+  after normalisation to within the 0.01 we measured, but the exact constants
+  are there if we want them.
+- [ ] **Stereo spread is not per-voice panning** — source blends the signal
+  against its channel-swapped copy with an equal-power fade. Our "outer voices
+  hard-panned, halved by the mono sum" is a mono-only fit; use the real law
+  when the twin goes stereo.
+
+### The LFO, from the source (ready to build)
+`src/synthesis/modulators/synth_lfo.{h,cpp}`, `common/line_generator`:
+- phase advances by `frequency/sr` per sample, wrapped to [0,1);
+- the value is a **cubic interpolation of a drawn curve** (LineGenerator
+  buffer at its own resolution) — a preset carries the points, so the shape is
+  data, not a formula;
+- six sync types: `kTrigger` (phase resets on note), `kSync` (locked to song
+  time), `kEnvelope` and `kSustainEnvelope` (one-shot, offset clamped at 1),
+  `kLoopPoint`, `kLoopHold`;
+- optional smoothing: one-pole with `half_life = smooth_time · 0.2`
+  (`kHalfLifeRatio`), floor `kMinHalfLife` 2e-4;
+- `delay` gates the output, then `fade` ramps amplitude 0→1 over `fade_time`;
+- output clamped to [−1, 1] and multiplied by that fade amplitude.
+Every piece is differentiable as it stands: a cumulative-sum phase (gradient
+to frequency), an interpolated table read (the constant-frames trick we use
+for the wavetable), a one-pole smoother, and a ramp. The destinations are the
+mod matrix (`modulation_N_source/destination/amount`), which is what makes
+routings searchable rather than hand-wired.
+
 ### Vital features to add (ranked by palette bought)
 1. [~] **Noise / sample source** — built 2026-09-17 as Vital's sample oscillator:
        measured on the plugin (default sample is white noise within 0.4 dB;
