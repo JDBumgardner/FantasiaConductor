@@ -320,7 +320,29 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
   topology (nonlinear per-sample recursion: torchlpc cannot run it, so it
   needs a custom kernel with a hand-derived adjoint, or a quasi-linear
   iteration) or keep the SVF and re-fit its resonance law.
-- [ ] **What is left: the resonance law near self-oscillation.** With the drive
+- [x] **Resonance law re-measured** (2026-09-23, `res_law_measure.py`,
+  `tables/res_law.json`). On the clean rig, per resonance, the Q that best
+  matches the plugin and the passband gain left over. The old table was fitted
+  on the contaminated rig and was badly wrong above 0.6 — it claimed Q 5.4 at
+  0.8 and 15–60 above; the truth is **0.50 → 2.60 across 0 → 0.85**, fitting
+  each point to 0.03–0.16 dB. Over the modelled range the mean band error
+  against Vital is now **0.25 dB** (from 2.75), worst cell 0.69, and the
+  absolute level lands within 0.09 dB.
+- [x] **Above resonance ≈ 0.88 Vital SELF-OSCILLATES** — silence the
+  oscillator and it still puts out rms 0.08, spectrum peaking at the cutoff;
+  at resonance 0.96 that tone is the loudest thing in the render while the
+  twin's content there is 67 dB down. No Q reproduces it (the fit pins at the
+  grid's top with 8–15 dB error): a 2-pole rings, it does not oscillate.
+  `RES_TAB` therefore stops at 0.85 and `res_law` clamps to `RES_MAX`, so the
+  twin models what it can and does not pretend above it. [ ] Reaching that
+  region needs the real Sallen-Key recursion (nonlinear per sample: a custom
+  kernel with a hand-derived adjoint, or a quasi-linear iteration); [ ] and
+  the search should keep resonance under RES_MAX rather than wander into a
+  region the twin renders differently from the plugin.
+- [ ] **Watch: one intermittent `selftest` determinism failure** (twin route,
+  max diff 4.7e-07) immediately after a heavy run in the same session; two
+  clean passes since, and torchlpc alone is bit-exact on fixed inputs. If it
+  returns, suspect the CPU/MPS round trips in the recursive filter. With the drive
   fixed, the remaining error is one cell — resonance 0.95 at 10–11 dB (every other cell
   ≤ 2 dB). `RES_TAB` / `res_law_2d.json` were measured on the contaminated rig
   AND at one level. Re-measure the resonance law with the settled renders and

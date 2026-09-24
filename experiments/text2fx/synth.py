@@ -71,8 +71,19 @@ class WavetableSynth(nn.Module):
     # 1.0 adds the full 128 semitones; env 2 applies LINEARLY (amp env is squared). Resonance raw ->
     # (passband dB, Q) tabulated from the resonant-peak sweep at cutoff raw 0.55.
     # Re-measured 2026-09-13 at fc 250-2000 Hz: cutoff-independent above ~250 Hz (rows agree to 0.1 dB).
-    RES_TAB = torch.tensor([[0.0, -0.9, 0.6], [0.2, -3.1, 0.75], [0.4, -5.1, 1.4], [0.5, -6.0, 1.65], [0.6, -6.8, 2.1],
-                            [0.7, -7.6, 2.95], [0.8, -8.4, 5.4], [0.9, -9.2, 25.0], [1.0, -10.0, 60.0]])
+    # resonance -> (passband gain dB, Q), re-measured against Vital 2026-09-23 with settled renders and a fixed
+    # oscillator phase (res_law_measure.py; the old table was fitted on the rig whose renders depended on what
+    # preceded them, and it claimed Q 5.4 at 0.8 and 15-60 above, which nothing supports). Fit error per point is
+    # 0.03-0.16 dB up to 0.85.
+    #
+    # Above ~0.88 the plugin SELF-OSCILLATES: with the oscillator silenced it still puts out rms 0.08, spectrum
+    # peaking at the cutoff, and at resonance 0.96 that tone is the loudest thing in the render while the twin's
+    # content there is 67 dB down. A 2-pole cannot do that at any Q, so the table stops at 0.85 and RES_MAX bounds
+    # the search below the threshold rather than pretending. Modelling it needs the real Sallen-Key recursion.
+    RES_TAB = torch.tensor([[0.0, -2.42, 0.50], [0.1, -4.07, 0.75], [0.2, -5.40, 0.90], [0.3, -6.58, 1.10],
+                            [0.4, -7.62, 1.40], [0.5, -8.54, 1.70], [0.6, -9.37, 2.10], [0.7, -10.12, 2.10],
+                            [0.8, -10.81, 2.10], [0.85, -11.16, 2.60]])
+    RES_MAX = 0.85            # the twin models the filter up to here; past it Vital self-oscillates
 
     def __init__(self, table, sr=48000, voices=1, detune_range_semitones=2.0, seed=0, bounds=None,
                  velocity_track=0.0, interpolation=1, bipolar_fenv=False):
@@ -206,7 +217,9 @@ class WavetableSynth(nn.Module):
 
     def envelope(self, t, off, ph): return self.envelope_shape(t, off, ph) ** 2      # amplitude path is squared
     def res_law(self, r):
-        """resonance raw -> (passband gain linear, Q), piecewise-linear in the measured table."""
+        """resonance raw -> (passband gain linear, Q), piecewise-linear in the measured table.
+        Clamped at RES_MAX: above it the plugin self-oscillates and this model has nothing to say."""
+        r = torch.as_tensor(r).clamp(max=self.RES_MAX)
         tab = self.RES_TAB.to(r.device); x = tab[:, 0]
         i = torch.clamp(torch.searchsorted(x, r.reshape(1)) - 1, 0, len(x) - 2)[0]
         w = (r - x[i]) / (x[i + 1] - x[i])
@@ -335,7 +348,9 @@ class WavetableSynth(nn.Module):
                 semis = semis + (extra["keytrack"] * (note - 60))[:, None]
             fc = 261.6256 * 2 ** ((semis - 52.0) / 12)
             G, Q = self.res_law(filt["resonance"])
-            Q = Q / getattr(self, "q_mult", 1.0)          # damping correction under measurement (filter_sat_law.py)
+            if self.force_q is not None:                  # measurement hook (res_law_measure.py)
+                Q = torch.as_tensor(float(self.force_q), device=sig.device); G = torch.ones((), device=sig.device)
+            Q = Q / getattr(self, "q_mult", 1.0)
             fcx = fc.expand(sig.shape[0], -1)
             if self.recursive_filter:                     # per sample (svf.py) instead of per STFT frame
                 import svf as _svf
@@ -361,6 +376,7 @@ class WavetableSynth(nn.Module):
     # whose envelope crosses the band in ~10 ms: mean band error 4.1 -> 2.0 dB (res 0.3) and 6.2 -> 2.8 (res 0.7),
     # worst band -6 dB, and the whole synth pass is 20 % faster. T2_FRAME_FILTER=1 goes back to the old one.
     recursive_filter = os.environ.get("T2_FRAME_FILTER", "0") != "1"
+    force_q = None            # measurement hook (resonance law)
     drive_k = None            # measurement hook (filter drive law)
     drive_stage = True        # the pre-filter tanh; off = linear, for isolating what the saturation is doing
     sat_filter = False        # in-loop saturation (svf.svf_sat); a0/p measured by filter_sat_law.py
