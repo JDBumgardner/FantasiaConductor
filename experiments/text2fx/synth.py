@@ -315,11 +315,17 @@ class WavetableSynth(nn.Module):
                 kk = float(self.drive_k)
                 sig = torch.tanh(kk * sig) / kk if kk > 1e-6 else sig
             elif self.drive_stage:
-                # Vital's filter drive, measured 2026-09-23: the saturation is far gentler than the old
-                # tanh(2 g x)/(2 sqrt g). Best-fitting tanh gain k, level-matched band error against the plugin:
-                #   drive  0 dB -> 1.2-1.6 (we had 2.0) | 10 dB -> 3.0-4.2 (6.3) | 20 dB -> 8.5-12 (20)
-                # k = 1.2 * 10^(0.9 fdrive) fits both levels tested; the small-signal gain stays sqrt(g) as before.
-                k = 1.2 * torch.pow(g, 0.9)
+                # Vital's filter drive. Two measured facts and one read from the plugin's source (SallenKeyFilter):
+                #   - the saturation is far gentler than our old tanh(2 g x)/(2 sqrt g): the best-fitting tanh gain is
+                #     1.2-1.6 at 0 dB (we used 2.0), 3.0-4.2 at 10 dB (6.3), 8.5-12 at 20 dB (20);
+                #   - Vital DIVIDES the drive by a resonance scale before saturating,
+                #     `resonance_scale = res_pct^2 * 2 + 1` with res_pct = sqrt(resonance), i.e. 1 + 2*resonance,
+                #     so a patch at full resonance is driven three times softer. Nothing in our measurements at one
+                #     resonance could have shown that, and it is where the twin's remaining error sat (res 0.95: 10-11 dB).
+                # Fitting k = c * drive_eff^p to the drive sweep with drive_eff = 10^fdrive / (1 + 2 res) gives
+                # c 2.08, p 0.854. Small-signal gain stays sqrt(g), the level law already calibrated.
+                res_scale = 1.0 + 2.0 * filt["resonance"]
+                k = 2.08 * torch.pow(g / res_scale, 0.854)
                 sig = torch.sqrt(g) * torch.tanh(k * sig) / k
             e2 = self.envelope_shape(t, dur, dict(attack=filt["fattack"], decay=filt["fdecay"], sustain=filt["fsustain"], release=filt["frelease"],
                                                   attack_power=filt["fattack_power"], decay_power=filt["fdecay_power"], release_power=filt["frelease_power"]))

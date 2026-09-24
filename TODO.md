@@ -293,6 +293,33 @@ both chains: CPU-vs-MPS gradient cosine 1.0000 at full 10 s length.
   linear-time-varying and differentiable. Fitted over the grid on top of the
   corrected drive law it moves the mean from 3.12 to **3.11 dB** — nothing.
   The theory was wrong; the drive stage was the whole effect.
+- [x] **Vital's source read for the filter** (github.com/mtytel/vital,
+  `src/synthesis/filters/sallen_key_filter.{h,cpp}`, `one_pole_filter.h`,
+  2026-09-23; read for structure, our implementation stays ours — it is GPL).
+  What it settles, that no amount of black-box probing would have:
+  · the analog model is a **Sallen-Key**, not the SVF we implement: two TPT
+    one-poles inside a feedback loop, `stage1_input = tanh((drive·in −
+    resonance·feedback)·normalizer)` — so the saturation **is** in the loop
+    after all, wrapping input and feedback together;
+  · `resonance = lerp(0, 2.15, √resonance_percent)`, plus a drive-dependent
+    boost `drive_percent · resonance_percent · 1.1`;
+  · **`drive` is divided by `resonance_scale = 1 + 2·resonance_percent`**
+    before saturating, so a patch at full resonance is driven three times
+    softer — a coupling nothing measured at one resonance could reveal, and
+    exactly where our error sat. Implemented: `k = 2.08·(10^fdrive/(1+2·res))^0.854`,
+    mean band error over the grid **3.12 → 2.75 dB**, every cell except
+    resonance 0.95 at low/mid level now **≤ 0.67 dB** (res 0.85 at full level
+    1.98 → 0.67);
+  · `post_multiply = 1/√(resonance_scale·drive)`, `normalizer =
+    1/(resonance·(c²−c)+1)`, one-pole coefficient `tan(dp/(dp+1))` with
+    `dp = π·fc/sr` — Vital's own warping, not the textbook `tan(π fc/sr)`;
+  · the pass blend is `bp = √(1−blend²)` with lp/hp taking the signed part —
+    which is the law we had already measured, now confirmed.
+  [ ] The remaining gap is structural: our SVF is not a Sallen-Key, and its
+  feedback is a mix of both stages' next states. Either implement the real
+  topology (nonlinear per-sample recursion: torchlpc cannot run it, so it
+  needs a custom kernel with a hand-derived adjoint, or a quasi-linear
+  iteration) or keep the SVF and re-fit its resonance law.
 - [ ] **What is left: the resonance law near self-oscillation.** With the drive
   fixed, the remaining error is one cell — resonance 0.95 at 10–11 dB (every other cell
   ≤ 2 dB). `RES_TAB` / `res_law_2d.json` were measured on the contaminated rig
