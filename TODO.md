@@ -693,6 +693,22 @@ amount, airy 0.188 → −0.004.
 
 ---
 
+### Gaps noticed while actually making a track (2026-09-23)
+- [ ] **No export/bounce tool.** An agent can build a whole arrangement, record
+      over it and tune every track, and then cannot render it to a file —
+      `engine/bounce.py` has `bounce_to_file` and `bounce_track_to_file`, but
+      neither is exposed. Add `export_audio(path, track_id?, start?, end?)`;
+      it also gives the agent a way to HEAR its own work (bounce, then measure
+      or embed), which nothing else currently provides.
+- [ ] **No record control.** Recording is UI-only (Ctrl+R on the selected
+      track). An agent cannot arm, start or stop a take, so "record yourself
+      and I will place it" always needs the human at the keyboard. Fine for
+      now, but it is the one part of the loop the agent cannot close.
+- [ ] `tune_toward` listens to 10 s from where a track's material starts and
+      applies that setting to the whole track. For a 31 s vocal whose
+      character changes partway, that is a real limitation — consider
+      sampling two or three windows and scoring their mean.
+
 ### Better instrument sources (parked, 2026-09-23 — come back to this)
 The GM soundfont is the floor on quality for everything MIDI, and it is also
 what every text2fx experiment has been measured on. Worth trying:
