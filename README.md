@@ -108,6 +108,19 @@ curl -L -o assets/soundfonts/GeneralUser-GS.sf2 <url-to-a-gm-sf2>
 4. an OS-provided font (`/usr/share/sounds/sf2/` on Debian/Ubuntu,
    `/usr/share/soundfonts/` on Arch/Fedora)
 
+**Which bank.** No free GM bank is good everywhere — each has holes, so this is
+a per-part choice rather than one swap. GeneralUser GS is a fine default;
+FluidR3 GM (~148 MB) is better on orchestral and strings but weaker on guitar
+and percussion; SGM-V2.01 (~250 MB) is strong on orchestral and acoustic;
+Musyng Kite (~990 MB) is the broadest and the heaviest.
+
+A sampler or a recorded library is a larger jump than any GM bank: **Decent
+Sampler** (free) plays the Pianobook libraries, and **BBC Symphony Orchestra
+Discover** (free) is real strings and woodwinds. Both are VST3/AU, so they load
+through the plugin path below with nothing extra to install. Note that
+`tune_toward` can only search a plugin's *patch* for instruments it has a twin
+for (currently Vital) — with a sampler it tunes the track's effects instead.
+
 ### 4. Build the sound library (required for search)
 
 The generated sample library and its vector index live in `.fantasia_cache/`,
@@ -238,6 +251,42 @@ The node editor edits the graph by hand; `get_fx_routing` / `set_fx_routing`
 do it from an agent. A stock 8-band EQ (`get_eq` / `set_eq_band`) is available
 on every channel including Master, with a live analyzer.
 
+## Tuning a sound toward a description
+
+Right-click a track header ▸ **Tune toward…**, type what you want ("warmer",
+"more distant", "punchier"), and the app searches that track's own effects for
+a setting that moves the sound that way. It returns **one proposal**, plays you
+Original against Tuned, and applies nothing until you accept — at which point
+it lands as a single undoable edit.
+
+```
+Sound      warmer
+Listen to  Selected clip — Pad A (16.0s)
+Amount     Subtle · Noticeable · Strong
+Search     Thorough — 8 starts, ~2 min   (Quick — 4 starts, ~1 min)
+May change ☑ EQ  ☑ Reverb                 untick to protect a device
+May add    ☐ Delay ☐ Chorus ☐ Compressor  each starts inaudible
+```
+
+The same thing is available to an agent as `tune_toward` / `tune_status` /
+`apply_tune`.
+
+**How it works.** Each stock effect has a differentiable twin, checked against
+the app's own engine sample-for-sample, so the search optimises the real chain
+rather than an approximation. On a Vital track whose patch the twin can model,
+the *patch* is searched alongside the inserts; otherwise the track is bounced
+dry and only the effects move. CLAP supplies the ear, and the objective is
+directional — it aligns the *change* in sound with "X" minus "not X", so the
+result is "darker", not "maximally dark". The search runs in its own process
+(torch and CLAP never enter the app) and streams progress back.
+
+**What it will not do.** It starts from your current settings and only moves
+what you tick. It cannot invent an effect you did not offer it, it holds a
+device it has no twin for (a VST) fixed while still hearing it, and it refuses
+a stretch of silence rather than tuning nothing. The research behind it —
+measurements against the plugin, the objective comparison, the twin's known
+limits — lives in `experiments/text2fx/` with `TODO.md` as its lab notebook.
+
 ## Project files
 
 Projects save as `.fcp` (JSON — see `fantasia_core/document/serialize.py`).
@@ -328,7 +377,8 @@ pytest
 
 M0–M6 are in: document model, undoable commands, audio engine, classical editing
 tools, sound search, and agent hooks. Since then, MIDI tracks, stem separation,
-audio generation, singing synthesis and plugin hosting have all landed too.
+audio generation, singing synthesis, plugin hosting and `tune_toward` (above)
+have all landed too.
 
 Still ahead:
 

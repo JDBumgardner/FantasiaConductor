@@ -661,6 +661,26 @@ amount, airy 0.188 → −0.004.
 
 ---
 
+### Better instrument sources (parked, 2026-09-23 — come back to this)
+The GM soundfont is the floor on quality for everything MIDI, and it is also
+what every text2fx experiment has been measured on. Worth trying:
+- [ ] **SGM-V2.01** (~250 MB) — strong on orchestral and acoustic. FluidR3 GM
+      (~148 MB) is the usual step up and is better on orchestral/strings but
+      weaker on guitar and percussion; Musyng Kite (~990 MB) is broadest but
+      heavy for 8 GB. No free GM bank is good everywhere — each has holes, so
+      this is a per-part choice rather than one swap.
+- [ ] **Decent Sampler** (free plugin) — plays the free Pianobook libraries:
+      found sounds, felt pianos, the organic layered material this project
+      keeps reaching for. Hosting is already there (`plugins.py`), so this is
+      mostly a matter of installing it and checking `vital_coverage`'s
+      equivalent for a non-Vital instrument: the twin cannot model a sampler,
+      so `tune_toward` would take the recording route and tune the inserts.
+- [ ] **BBC Symphony Orchestra Discover** (free) — real strings and woodwinds,
+      34 instruments; the biggest single jump for orchestral parts.
+- [ ] **Surge XT** (free) — a much broader synth than Vital if the want is more
+      synthesis rather than samples. Note it would need its own twin to be
+      tunable at the patch level; inserts-only until then.
+
 ### The feature itself
 - [ ] Compile graph → twins (frozen pass-through for untwinned nodes; synth twin
       at the head for Vital tracks).
