@@ -78,7 +78,9 @@ class Job:
         if self.result:
             out["stops"] = [{k: v for k, v in s.items() if k not in ("export", "describe")} for s in self.result["stops"]]
             out["frozen"] = self.result.get("frozen", []); out["objective"] = self.result.get("objective")
-            usable = [s["stop"] for s in self.result["stops"] if s["stop"] > 0 and not s.get("past_range") and not s.get("flags")]
+            usable = [s["stop"] for s in self.result["stops"]
+                      if s["stop"] > 0 and not s.get("past_range") and not s.get("flags")
+                      and not s.get("worse_than_start")]          # never suggest a stop that lost to doing nothing
             out["suggested_stops"] = usable[1:3] if len(usable) > 2 else usable       # the middle of the usable range: enough to hear, not the far end
         return out
 

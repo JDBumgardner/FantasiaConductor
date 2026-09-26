@@ -694,7 +694,7 @@ amount, airy 0.188 → −0.004.
 ---
 
 ### Gaps noticed while actually making a track (2026-09-23)
-- [ ] **No export/bounce tool.** An agent can build a whole arrangement, record
+- [x] **No export/bounce tool.** An agent can build a whole arrangement, record
       over it and tune every track, and then cannot render it to a file —
       `engine/bounce.py` has `bounce_to_file` and `bounce_track_to_file`, but
       neither is exposed. Add `export_audio(path, track_id?, start?, end?)`;
@@ -895,7 +895,7 @@ Found while building an actual song, which is the only way these surface.
       asked for had never done anything. Fixed; **needs an app restart**, and
       the pads and counter-melody were all tuned without their intended
       chorus / delay / saturator.
-- [ ] **The band-energy distance has an absolute floor, so silence dominates
+- [x] **The band-energy distance has an absolute floor, so silence dominates
       it.** This is the real mechanism behind the negative direction scores,
       verified independently by re-rendering the stored jobs (matches the
       recorded runs to ±0.0005). `common.py:310-329` floors at 1e-9, so on the
@@ -910,7 +910,7 @@ Found while building an actual song, which is the only way these surface.
       jobs: started inside the shell -> positive direction, outside -> <= +0.09.
       Fix the floor (relative to the source peak, or weight frames by energy);
       this is the same hole already noted above for `level_match`.
-- [ ] **Nothing rejects a proposal that scores worse than where it started.**
+- [x] **Nothing rejects a proposal that scores worse than where it started.**
       `frontier[0]` is taken unconditionally (`ladder.py:107`) and the
       `past_range` guard needs `i > 1` (`tune.py:122`), so a single-`amount`
       job can never trip it. It should refuse, or at least flag, a stop whose
@@ -940,7 +940,7 @@ Found while building an actual song, which is the only way these surface.
       chains 25 dB hotter than the lead (EQ boosts + reverb wet 0.63), so every
       apply needs a gain-staging pass after it. `apply_tune` should report the
       level change it causes, or offer to compensate the track gain.
-- [ ] **No export tool and no level meter for the agent.** Diagnosing the
+- [x] **No export tool and no level meter for the agent.** Diagnosing the
       clipping needed an offline bounce script written by hand: save the
       project, `bounce_to_array` per soloed track, sum in numpy. `export_audio`
       and a `track_levels` tool would have made it one call.
@@ -950,17 +950,17 @@ Found while building an actual song, which is the only way these surface.
 
 ## Transport / recording faults (diagnosed 2026-09-24, not yet applied)
 
-- [ ] **Go to End and Zoom Fit are dead.** `ui/main_window.py:2641` and `:2647`
+- [x] **Go to End and Zoom Fit are dead.** `ui/main_window.py:2641` and `:2647`
       call `self.project.duration()`, but `duration` is a `@property`
       (`fantasia_core/document/model.py:376`) — `TypeError: 'float' object is
       not callable`, swallowed by Qt, so the menu item does nothing at all.
       Verified empirically.
-- [ ] **Recording while playing places the take late.** `_stop_record` reads
+- [x] **Recording while playing places the take late.** `_stop_record` reads
       `start = self.timeline.playhead` (`ui/main_window.py:3096`) at *stop*
       time, and `_on_tick` keeps that value live during playback, so the clip
       lands one take-length late and runs another take-length past the end.
       `_start_record` captures nothing. Also `_on_stop` never ends the take.
-- [ ] **Transport ▸ Audio Input tears down PortAudio under a live stream.**
+- [x] **Transport ▸ Audio Input tears down PortAudio under a live stream.**
       `_populate_input_devices` gates the re-scan on the recorder only
       (`:3039`) and never checks `engine.has_stream` or calls
       `release_device()`, so opening that menu during playback renumbers the
@@ -972,7 +972,7 @@ Found while building an actual song, which is the only way these surface.
 
 ## The anchor, the shell, and where the search starts (2026-09-26)
 
-- [ ] **`ladder.run`'s docstring is wrong and it cost a day.** It says "the
+- [x] **`ladder.run`'s docstring is wrong and it cost a day.** It says "the
       amount knob is relative to those settings" (the user's current settings).
       It is not: `dist = C.band_energy_loss(w, src_n)` with `src_n =
       loudness_norm(source)`, and `source` is the track with every insert
@@ -989,12 +989,12 @@ Found while building an actual song, which is the only way these surface.
       `scratchpad/anchor_axis.py`: does naming rotate the axis, does it
       strengthen or dilute the word, and does the axis differ by instrument.
       Only worth an audio A/B if the axis moves.
-- [ ] **Do not add an identity term to the loss.** The shell is already an
+- [x] **Do not add an identity term to the loss.** The shell is already an
       identity constraint, and a better one: it is measured in band energy from
       the user's own dry sound rather than against an uncalibrated CLAP text
       cosine. Measured today: identity ROSE at every stop on all four counter
       tracks (cello 0.27 -> 0.36). `T_self` stays a readout.
-- [ ] Record for the next reader: the search starts at candidate 0 = the current
+- [x] Record for the next reader: the search starts at candidate 0 = the current
       settings exactly, candidates 1..n-1 = those settings + Gaussian jitter
       0.15 in raw space (n = 8 thorough / 4 quick), pruned 8x20 -> 4x40 -> 2x100;
       across a ladder each stop warm-starts from the previous stop's winner plus
@@ -1017,3 +1017,27 @@ Naming the instrument inside the negation pair is NOT a no-op, and it is not fre
 So the text screen cannot settle it — the named axis points somewhere different AND is weaker, and which wins is
 an audio question. Worth exactly one A/B, not a default change. Best contrast for that test: "rich saxophone"
 (rotation 0.582, axis .249 against plain .477) — the largest rotation and the largest dilution together.
+
+### The distance floor, fixed (2026-09-26)
+
+The metric now floors both spectra 40 dB below the reference's own level IN THAT BAND, where it used to floor at
+an absolute 1e-9. Measured on one window with only the silence varied, the same -30 dB reverb scored:
+
+      silence   0%     20%     40%     60%
+      old     0.008   0.532   1.073   1.620      <- 195x for an identical change
+      new     0.007   0.010   0.011   0.013      <- 1.9x
+
+The 1.073 at 40% silence is what a real half-silent part measured (1.05), so the synthetic reproduces the actual
+failure. Per band matters: a single global floor cannot tell a quiet band from a silent frame, and set deep
+enough to stop silence (60 dB) it discarded 60% of a +4 dB shelf; per band the shelf keeps 100% at every depth.
+Replayed over the 12 archived runs, the new worse_than_start guard would have excluded exactly the three
+negative-direction stops that were applied, and flagged — without hiding — the pad whose word regressed while
+its direction improved.
+
+- [ ] **`amount` means something different on sparse material now.** On dense windows the metric is unchanged
+      (a +4 dB shelf still scores 0.164), so DISTS_DIR keeps its calibration there — 0.3 is still ~3 dB of
+      average band deviation. On sparse material distances are far smaller than they were, which is the point,
+      but it means any distance recorded before 2026-09-26 is not comparable. Re-measure d(start) before
+      reading an old number.
+- [ ] The floor is one number chosen from one synthetic probe family (tail / tilt / drive / lowcut) over 36 real
+      windows. Worth re-deriving from the listening test if it ever produces enough labelled pairs.

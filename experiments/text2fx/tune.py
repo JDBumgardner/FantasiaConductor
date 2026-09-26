@@ -116,9 +116,20 @@ def main(job_path):
     result = {"text": text, "anchor": anchor, "route": route, "objective": ladder.OBJ, "coverage": coverage, "frozen": graph.frozen,
               "held": graph.held, "added": added, "searched": sorted(graph.searchable), "seconds": round(time.time() - t0), "stops": []}
     best_dir = 0.0
+    base_word = stops[0]["clap"] if stops else 0.0
     for i, st in enumerate(stops):
         best_dir = max(best_dir, st.get("dir", 0.0))
+        # Nothing in the search rejects a point that scores worse than where it started: successive_halving sorts
+        # on its own loss and `frontier[0]` is taken unconditionally, and the two-sided shell can put every point
+        # at that radius below the starting sound. Measured: a pad whose four stops all scored under baseline on
+        # the word while direction was strongly positive. Say which measure went backwards, and let the caller
+        # drop the stop rather than discovering it by ear.
+        regressed = [n for n, v, base in (("direction", st.get("dir", 0.0), 0.0), ("word", st["clap"], base_word))
+                     if i > 0 and v < base]
         row = {"stop": i, "target": st.get("target"), "word": round(st["clap"], 4), "direction": round(st.get("dir", 0.0), 3), "distance": round(st["dist"], 3), "identity": round(st["self"], 3), "flags": st.get("flags", []),
+               "regressed": regressed,
+               # worse on the measure the search was actually maximising — the one that makes a stop unusable
+               "worse_than_start": bool(("direction" if ladder.OBJ == "dir" else "word") in regressed),
                "past_range": bool(i > 1 and st.get("dir", 0.0) < 0.5 * best_dir)}      # the change stopped pointing the word's way: the amount exceeds what this word can do here
         if i > 0:
             f = os.path.join(out_dir, f"tune__{text}__stop{i}_d{st['target'] if st['target'] is not None else 'inf'}")

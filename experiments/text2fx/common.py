@@ -307,12 +307,25 @@ def harmonic_loss(a, b, notes, K=64):
 
 
 _BANDS = {}
-def band_energy_loss(a, b, n_fft=2048, hop=480, n_bands=32, f_lo=60.0, smooth=8, sr=48000):
+def band_energy_loss(a, b, n_fft=2048, hop=480, n_bands=32, f_lo=60.0, smooth=8, sr=48000, floor_db=40.0):
     """Log band energies over time (32 log-spaced bands of at least 4 bins, 43 Hz frames, power averaged over 8
-    frames = 80 ms), L1. Noise-realisation-invariant: two independent white noises of the same level agree here
-    to ~0.03 (log10) where the fine STFT terms see a Rayleigh-fluctuation floor of 0.73 that barely moves with
-    level -- which made the twin prefer *less* noise than the target and compensate with cutoff/level.
-    Complements mrstft_lin; does not replace it (it has no phase/onset resolution)."""
+    frames = 80 ms), L1, against the reference `b`. Noise-realisation-invariant: two independent white noises of
+    the same level agree here to ~0.03 (log10) where the fine STFT terms see a Rayleigh-fluctuation floor of 0.73
+    that barely moves with level -- which made the twin prefer *less* noise than the target and compensate with
+    cutoff/level. Complements mrstft_lin; does not replace it (it has no phase/onset resolution).
+
+    Both spectra are floored `floor_db` below the reference's own level IN THAT BAND, not at an absolute epsilon.
+    With an absolute floor a silent frame is not cheap, it is the most expensive thing in the window: a reverb
+    tail at 1e-5 against a digitally silent source scored |log10(1e-5) - log10(1e-9)| = 4.0 per term, where a
+    10 dB band change scores 1.0. Measured on one window with only the silence varied, the same -30 dB reverb
+    read 0.008 / 0.53 / 1.07 / 1.62 at 0 / 20 / 40 / 60 % silence -- a 195x swing for an identical change, and
+    the 1.07 matches what a real half-silent part measured. The two-sided constraint in ladder.py then dragged
+    the search INWARD: it removed processing while the word asked for more (2026-09-26).
+
+    At 40 dB per band that swing is 1.9x while a real spectral change keeps ~90% of its score. Per band matters:
+    one global floor cannot tell a quiet band from a silent frame, and set deep enough to stop silence it also
+    discarded 60% of a +4 dB shelf. `harmonic_loss` above floors relative to its own peak for the same reason.
+    """
     key = (n_fft, n_bands, str(a.device))
     if key not in _BANDS:
         f = torch.fft.rfftfreq(n_fft, 1 / sr); edges = torch.logspace(math.log10(f_lo), math.log10(sr / 2), n_bands + 1)
@@ -326,4 +339,12 @@ def band_energy_loss(a, b, n_fft=2048, hop=480, n_bands=32, f_lo=60.0, smooth=8,
     def P(x):
         S = M @ stft_det(reflect_pad(x, n_fft // 2), n_fft, hop, win).abs() ** 2
         return torch.nn.functional.avg_pool1d(S[None], smooth, stride=smooth // 2)[0]
-    return (torch.log10(P(a) + 1e-9) - torch.log10(P(b) + 1e-9)).abs().mean()
+    Pa, Pb = P(a), P(b)
+    # PER BAND, relative to that band's own loudest moment in the reference. A single global floor cannot tell a
+    # quiet band from a silent frame: set deep enough to stop silence dominating, it also throws away real change
+    # in bands that sit far below the loudest one (measured: a global 60 dB floor discarded 60% of a +4 dB HF
+    # shelf). Per band, a silent frame has every band at its own floor so both clamp and it contributes nothing,
+    # while a quiet high band in a loud frame keeps its full dynamic range. Clamping also zeroes the gradient
+    # where it bites, which is what we want -- there is nothing to learn in a gap.
+    floor = torch.clamp(Pb.max(dim=-1, keepdim=True).values.detach() * (10.0 ** (-floor_db / 10.0)), min=1e-12)
+    return (torch.log10(torch.clamp(Pa, min=floor)) - torch.log10(torch.clamp(Pb, min=floor))).abs().mean()
