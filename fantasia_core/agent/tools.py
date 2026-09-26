@@ -226,6 +226,26 @@ class AgentTools:
                 "transport start, which is the usual shape of a stutter when a track begins."),
              "input_schema": {"type": "object", "properties": {
                  "limit": {"type": "integer", "description": "how many recent blocks (default 20)"}}}},
+            {"name": "export_audio", "description": (
+                "Render the project to an audio file and say what came out: where it landed, how long it is, "
+                "its peak and RMS in dBFS, and how many samples sit at full scale. The whole mix by default, "
+                "or one track alone with track_id — a track export skips the master chain, like File > Export "
+                "Stems. Roughly half a second per track of arrangement, and the app is busy while it runs, so "
+                "call it once rather than polling. Stops the transport first."),
+             "input_schema": {"type": "object", "properties": {
+                 "path": {"type": "string", "description": "where to write it. A bare filename lands in .fantasia_cache/exports/. Default: the project (or track) name"},
+                 "track_id": {"type": "string", "description": "export this track on its own, without the master chain"},
+                 "format": {"type": "string", "description": "wav (default), flac, aiff, mp3, ogg — taken from the path's extension when it has one"},
+                 "quality": {"type": "string", "description": "'16-bit', '24-bit' (default where allowed) or '32-bit float'; flac takes 16/24, mp3 and ogg have one setting"},
+                 "loudness": {"type": "string", "description": "'none' (default), 'normalize' (peak to -1 dBFS) or 'limiter' (louder, then normalised)"}}}},
+            {"name": "track_levels", "description": (
+                "Which track is making the mix clip. Renders every track on its own and sums them, then "
+                "reports each one's peak, RMS and its contribution at the single loudest moment, ordered by "
+                "who is most responsible for it — plus the summed level BEFORE the master chain. That sum is "
+                "the number that matters: above 0 dBFS the master limiter is being asked to fix a mix problem "
+                "and cannot, and nothing else in the app reports it. Muted and non-soloed tracks are measured "
+                "but left out of the sum, and flagged. Roughly half a second per track."),
+             "input_schema": {"type": "object", "properties": {}}},
             {"name": "get_fx_routing", "description": (
                 "Read a track's FX routing as a list of {src, dst} wires. Node ids are insert ids "
                 "plus the sentinels 'in' (the track's audio/instrument) and 'out' (the fader). "

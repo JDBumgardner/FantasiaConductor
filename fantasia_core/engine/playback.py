@@ -345,6 +345,16 @@ class PlaybackEngine:
         device can be opened at all."""
         if sd is None:
             return False
+        if self._stream is not None:
+            # A device-list refresh (PortAudio terminate/initialize) invalidates
+            # open streams without clearing this handle, and the only liveness
+            # test below is `is None` — so play() reports success while the
+            # callback is dead and nothing is heard.
+            try:
+                if not self._stream.active:
+                    self._close_stream()
+            except Exception:  # noqa: BLE001 — dangling stream pointer
+                self._stream = None
         if self._stream is None:
             # 1) the chosen device, 2) the system default, 3) default after a
             #    device-list refresh (handles a stale/hot-unplugged device).

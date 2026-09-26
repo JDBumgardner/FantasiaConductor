@@ -52,7 +52,11 @@ def run(word, source, notes, out_dir, tag, anchor_text, synth=None, p_inst=None,
     """source: (L,) audio of the untouched sound (the recording, or the twin's dry render). Either synth/p_inst (the twin
     through text2fx's default chain) or `graph`: a compile.SearchGraph of an APP track -- its inserts at the user's
     current settings, exported back as app parameters per insert id. With a graph, FX candidates start at the current
-    settings plus a small jitter, and the amount knob is relative to those settings."""
+    settings plus a small jitter.
+
+    The amount knob is NOT relative to those settings: `dist` is measured from `source` — the track with every insert
+    BYPASSED — so a chain that already sits further from dry than the target is dragged back INWARD, and the search
+    removes processing however the word reads. Start and origin are different points (2026-09-26)."""
     torch.manual_seed(0)                                   # the synth's per-note phase and noise draws come from the global RNG: seeded, a run repeats bit for bit (2026-09-21)
     os.makedirs(out_dir, exist_ok=True)
     T = C.text_emb("this sound is " + word); T_self = C.text_emb("this sound is " + anchor_text)

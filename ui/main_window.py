@@ -2630,21 +2630,36 @@ class MainWindow(QMainWindow):
 
     def _on_go_to_start(self) -> None:
         if self._focus_is_text():
+            # Silently returning is indistinguishable from a broken menu item.
+            self.statusBar().showMessage(
+                "Go to Start ignored — a text field has focus; click the arrangement first")
             return
         self.timeline.start_position = 0.0
         self.timeline.set_playhead(0.0)
         self.engine.set_playhead_seconds(0.0)
+        self.timeline.reveal_locator()
 
     def _on_go_to_end(self) -> None:
         if self._focus_is_text():
+            self.statusBar().showMessage(
+                "Go to End ignored — a text field has focus; click the arrangement first")
             return
-        t = max(0.0, float(self.project.duration()))
-        self.timeline.locate(t)
+        # ``duration`` is a property: calling it raised TypeError on every
+        # invocation, and Qt swallows a slot's traceback, so the menu item and
+        # the End key did nothing at all.
+        t = max(0.0, float(self.project.duration))
+        # snap=False: the end of the arrangement is a real time, not a grid
+        # line, and snapping can round it past the last clip.
+        self.timeline.locate(t, snap=False)
+        # Moving the locator only repaints two narrow strips; on a project
+        # longer than the viewport it would scroll off-screen and still look
+        # like nothing happened. _on_play reveals it for the same reason.
+        self.timeline.reveal_locator()
         if not self.engine.is_playing:
             self.engine.set_playhead_seconds(self.timeline.playhead)
 
     def _on_zoom_fit(self) -> None:
-        dur = max(float(self.project.duration()), 4.0)
+        dur = max(float(self.project.duration), 4.0)
         vw = max(self.timeline.viewport().width() - 24, 80)
         self.timeline.set_pps(vw / dur)
 
@@ -2661,7 +2676,9 @@ class MainWindow(QMainWindow):
     def _on_hotkeys(self) -> None:
         HotkeysDialog(self).exec()
 
-    def _on_stop(self) -> None:
+    def _halt_transport(self) -> None:
+        """Stop the engine and the UI timer. Leaves a running take alone — only
+        the transport's own Stop ends a take (see :meth:`_on_stop`)."""
         self.engine.stop()
         self._play_timer.stop()
         self._return_to_start()
@@ -2671,6 +2688,19 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Stopped — {dropped} audio dropout(s); mute a track or raise the "
             f"buffer if that was audible" if dropped else "Stopped")
+
+    def _on_stop(self) -> None:
+        """Transport Stop. Ends a take that is running: recording used to be a
+        separate gesture, so Stop left the mic open with nothing on screen
+        saying so."""
+        was_recording = self.recorder.is_recording
+        self._halt_transport()
+        if was_recording:
+            # Last, once the transport is down: _stop_record writes a WAV,
+            # decodes it, rebuilds the timeline and may raise a modal — none of
+            # which may run while the audio callback is still pulling blocks.
+            # It also leaves "Recorded 12.3s" on screen instead of "Stopped".
+            self._stop_record()
 
     EQ_ANALYZER_EVERY = 3        # playhead ticks per analyzer frame (~11fps)
 
@@ -2881,6 +2911,8 @@ class MainWindow(QMainWindow):
 
     def _on_metronome_toggled(self, on: bool) -> None:
         self.engine.metronome_enabled = on
+        self.statusBar().showMessage(
+            "Metronome on — clicks are heard during playback only" if on else "Metronome off")
         if self.act_metronome.isChecked() != on:
             blocked = self.act_metronome.blockSignals(True)
             self.act_metronome.setChecked(on)
@@ -3019,6 +3051,11 @@ class MainWindow(QMainWindow):
             self.menu_audio_out.addAction(act)
         self.menu_audio_out.addSeparator()
         refresh = self.menu_audio_out.addAction("Refresh Devices")
+        if self.engine.is_playing:
+            # PortAudio cannot be re-initialised under a live stream, so this
+            # list is the last snapshot and Refresh would only close the menu.
+            refresh.setText("Refresh Devices — stop playback first")
+            refresh.setEnabled(False)
         refresh.triggered.connect(self._populate_output_devices)
 
     def _on_select_output(self, index: int, name: str) -> None:
@@ -3036,7 +3073,16 @@ class MainWindow(QMainWindow):
         self.menu_audio_in.clear()
         self._input_group = QActionGroup(self)
         self._input_group.setExclusive(True)
-        devices = list_input_devices(refresh=not self.recorder.is_recording)
+        # Re-initialising PortAudio while ANY stream is open corrupts its state
+        # and renumbers devices — the output menu's own comment above names this
+        # as what made a freshly-picked device silently fail. Mirror it exactly:
+        # release the idle device FIRST, then guard. stop() deliberately leaves
+        # the stream open, so the guard alone would freeze this list for the
+        # rest of the session after the first Play.
+        if not self.engine.is_playing:
+            self.engine.release_device()
+        devices = list_input_devices(
+            refresh=not self.recorder.is_recording and not self.engine.has_stream)
         valid = {i for i, _ in devices}
         if self.record_input_device is not None and self.record_input_device not in valid:
             self.record_input_device = None
@@ -3055,7 +3101,13 @@ class MainWindow(QMainWindow):
 
     def _on_select_input(self, index: int, name: str) -> None:
         self.record_input_device = index
-        self.statusBar().showMessage(f"Mic input → {name}")
+        if self.recorder.is_recording:
+            # The stream is already open on the old device; without this the
+            # pick looks accepted and changes nothing anyone can hear.
+            self.statusBar().showMessage(
+                f"Mic input → {name} — applies to the next take, not the one recording now")
+        else:
+            self.statusBar().showMessage(f"Mic input → {name}")
 
     def _toggle_record(self) -> None:
         if self.recorder.is_recording:
@@ -3071,10 +3123,20 @@ class MainWindow(QMainWindow):
                 self.selected_track_id = self.project.tracks[0].id
         self.recorder.input_device = self.record_input_device
         self.recorder.sr = self.project.sample_rate
+        playing = bool(self.engine.is_playing)
         if not self.recorder.start():
             self.statusBar().showMessage(
                 "Couldn't open the microphone — check the mic and macOS privacy permission.")
             return
+        # Where the take begins, captured NOW. _on_tick keeps timeline.playhead
+        # live while the transport runs, so reading it at stop landed the clip a
+        # whole take-length late. engine.playhead is already output-latency
+        # compensated ("where the audio being heard now is"), which is why it is
+        # the right anchor when punching in.
+        self._rec_anchor_time = time.perf_counter()
+        self._rec_anchor_live = playing
+        self._rec_anchor_pos = (self.engine.playhead if playing
+                                else float(self.timeline.playhead))
         self.act_record.setText("■ Stop")
         self._rec_timer.start()
         self.statusBar().showMessage("● Recording…  (Ctrl+R to stop)")
@@ -3093,10 +3155,25 @@ class MainWindow(QMainWindow):
         path = str(cache / f"rec_{uuid.uuid4().hex[:8]}.wav")
         sf.write(path, audio, self.project.sample_rate, subtype="PCM_16")
         dur = len(audio) / self.project.sample_rate
-        start = self.timeline.playhead
+        start = getattr(self, "_rec_anchor_pos", None)
+        if start is None:
+            start = float(self.timeline.playhead)
+        elif getattr(self, "_rec_anchor_live", False):
+            # How long the device took to deliver its first block, less how far
+            # behind that block's samples already were. Both are device latency
+            # and largely cancel; the remainder lines a punched-in take up with
+            # what the performer was hearing.
+            first = self.recorder.first_block_time
+            if first:
+                start += (first - self._rec_anchor_time) - self.recorder.input_latency
+            start = max(0.0, start)
+        self._rec_anchor_pos = None
         self.bus.dispatch(AddClipCommand(self.selected_track_id, start, dur,
                                          name="Recording", source_path=path))
-        self.pool.preload(self.project)
+        # Only the new take needs decoding. Preloading the whole project re-runs
+        # Rubber Band over every stretched clip on the UI thread, which starves
+        # the audio callback when the transport is still running.
+        self.pool.load(path)
         self.timeline.rebuild()
         self._ingest_to_library([{"path": path, "name": "Recording",
                                   "tags": ["recording", "mic", "take", "vocal", "audio"]}])
@@ -4368,6 +4445,10 @@ class MainWindow(QMainWindow):
                 holder["result"] = self._agent_add_vocal(args)
             elif name == "playback_health":
                 holder["result"] = self._agent_playback_health(args)
+            elif name == "export_audio":
+                holder["result"] = self._agent_export_audio(args)
+            elif name == "track_levels":
+                holder["result"] = self._agent_track_levels(args)
             elif name == "_proj_save_project":
                 holder["result"] = self._agent_save_project(args)
             elif name == "_proj_open_project":
@@ -4655,6 +4736,194 @@ class MainWindow(QMainWindow):
         out["render_service"] = svc.stats() if svc is not None else "not started"
         return out
 
+    def _agent_export_audio(self, args: dict):
+        """UI thread: File > Export, reachable from the agent — and it reports what it wrote.
+
+        Reads the file back to measure it rather than trusting the array it sent: bounce_to_array hard-clips at
+        +/-1 before any loudness stage (bounce.py:38), so `at_full_scale` is the only way to learn that the mix
+        was already too hot for the file it went into.
+        """
+        import math
+        import os
+        import re
+
+        import numpy as np
+        import soundfile as sf
+
+        if float(getattr(self.project, "duration", 0.0) or 0.0) <= 0:
+            return {"error": "nothing to export — the arrangement is empty"}
+        if getattr(self.recorder, "is_recording", False):
+            # _halt_transport deliberately leaves a take running, so exporting mid-take would orphan the mic.
+            return {"error": "a take is recording — stop it first; exporting stops the transport"}
+        track = None
+        tid = str(args.get("track_id") or "").strip()
+        if tid:
+            track = self.project.track_by_id(tid)
+            if track is None:
+                return {"error": f"no track {tid!r}"}
+        # Extension and sample format are paired on purpose in the export dialog (mp3 only with MPEG_LAYER_III,
+        # ogg with VORBIS); a free-text pair would hand soundfile something it cannot write.
+        by_ext = {ext: subs for ext, subs in _EXPORT_FORMATS.values()}
+        path = str(args.get("path") or "").strip()
+        ext = (os.path.splitext(path)[1].lstrip(".") or str(args.get("format") or "wav")).lower()
+        if ext not in by_ext:
+            return {"error": f"format {ext!r} is not one of {sorted(by_ext)}"}
+        subs = by_ext[ext]
+        quality = str(args.get("quality") or "").strip()
+        if quality and quality not in subs:
+            return {"error": f"{ext} takes quality {sorted(subs)}, not {quality!r}"}
+        subtype = subs[quality] if quality else (subs.get("24-bit") or next(iter(subs.values())))
+        loud = args.get("loudness") or None
+        if loud in ("none", ""):
+            loud = None
+        if loud not in (None, "normalize", "limiter"):
+            return {"error": "loudness must be 'none', 'normalize' or 'limiter'"}
+        if not path:
+            stem = re.sub(r"[^\w.-]+", "_", (track.name if track else (self.project.name or "mix"))).strip("_")
+            path = f"{stem or 'mix'}.{ext}"
+        if not os.path.splitext(path)[1]:
+            path = f"{path}.{ext}"
+        if not os.path.dirname(path):
+            # Everything the agent generates lives under .fantasia_cache; give exports their own corner of it.
+            d = _REPO_ROOT / ".fantasia_cache" / "exports"
+            d.mkdir(parents=True, exist_ok=True)
+            path = str(d / path)
+        path = os.path.abspath(path)
+
+        solo_on = [t.name for t in self.project.tracks if t.solo]
+        self._halt_transport()
+        self.statusBar().showMessage(f"Exporting {os.path.basename(path)}…")
+        self.statusBar().repaint()          # the bounce blocks the event loop; without this nothing is shown
+        sr = self.project.sample_rate
+        common = dict(midi_renderer=self.midi, synth_renderer=self.synth_engine,
+                      plugin_renderer=self.plugin_renderer, subtype=subtype, loudness=loud)
+        try:
+            if track is not None:
+                seconds = bounce_track_to_file(self.project, self.pool, sr, path, track.id, **common)
+            else:
+                seconds = bounce_to_file(self.project, self.pool, sr, path, **common)
+            y, file_sr = sf.read(path, dtype="float32", always_2d=True)
+        except Exception as exc:  # noqa: BLE001 — unwritable path, unsupported pair, no disk
+            self.statusBar().showMessage(f"Export failed: {exc}")
+            return {"error": f"export failed: {exc}"}
+
+        def db(v):
+            return None if v <= 1e-9 else round(20.0 * math.log10(float(v)), 2)
+
+        peak = float(np.abs(y).max()) if y.size else 0.0
+        out = {"path": path, "seconds": round(float(seconds), 2), "sample_rate": int(file_sr),
+               "format": ext, "quality": subtype, "loudness": loud or "none",
+               "peak_dbfs": db(peak),
+               "rms_dbfs": db(float(np.sqrt((y.astype(np.float64) ** 2).mean()))) if y.size else None,
+               "at_full_scale": int((np.abs(y) >= 0.999).sum())}
+        if track is not None:
+            out["track"] = track.name
+            out["note"] = "one track on its own — the master chain is not in this file"
+        else:
+            m = getattr(self.project, "master", None)
+            if m is not None:
+                if getattr(m, "mute", False):
+                    out["master_muted"] = True
+                    out["note"] = "the master is muted, so this file is silence"
+                if float(getattr(m, "gain_db", 0.0) or 0.0):
+                    out["master_gain_db"] = round(float(m.gain_db), 2)
+            if solo_on:
+                out["note"] = f"solo is on ({', '.join(solo_on)}) — only those tracks are in this file"
+        if out["at_full_scale"]:
+            out["clipped"] = ("the mix is hard-clipped before it reaches the file; "
+                              "run track_levels to see which track is responsible")
+        self.statusBar().showMessage(f"Exported {os.path.basename(path)} — {seconds:.1f}s")
+        return out
+
+    def _agent_track_levels(self, args: dict):  # noqa: ARG002
+        """UI thread: render every track alone and say who is responsible for the loudest moment.
+
+        Each track is bounced soloed, which costs about the same in total as one full mix — a soloed bounce
+        skips the other tracks' FX chains, so the work is the same either way — and summing the stems gives the
+        pre-master level for free, with no second render.
+        """
+        import math
+
+        import numpy as np
+
+        from fantasia_core.engine.bounce import bounce_to_array
+
+        tracks = list(self.project.tracks)
+        if not tracks:
+            return {"error": "no tracks to measure"}
+        if getattr(self.recorder, "is_recording", False):
+            return {"error": "a take is recording — measuring would fight it for the CPU"}
+        sr = self.project.sample_rate
+        saved = [(t.mute, t.solo) for t in tracks]
+        self.statusBar().showMessage(f"Measuring {len(tracks)} tracks…")
+        self.statusBar().repaint()
+        stems = []
+        try:
+            for t in tracks:
+                for x in tracks:
+                    x.solo = False
+                    x.mute = x.id != t.id
+                # bounce_to_array warms the pool and the MIDI/synth caches itself; the renderers only ever
+                # read from those caches during a block, so skipping the warm would render silence.
+                stems.append(bounce_to_array(self.project, self.pool, sr, midi_renderer=self.midi,
+                                             synth_renderer=self.synth_engine,
+                                             plugin_renderer=self.plugin_renderer, apply_master=False))
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Could not measure: {exc}")
+            return {"error": f"could not render: {exc}"}
+        finally:
+            for t, (m, s) in zip(tracks, saved):
+                t.mute, t.solo = m, s
+
+        n = max(s.shape[0] for s in stems)
+        stems = [s if s.shape[0] == n else np.pad(s, ((0, n - s.shape[0]), (0, 0))) for s in stems]
+        any_solo = any(s for _, s in saved)
+        audible = [i for i, t in enumerate(tracks) if not t.mute and (not any_solo or t.solo)]
+        bus = (np.sum([stems[i] for i in audible], axis=0) if audible
+               else np.zeros((n, 2), dtype=np.float32))
+        env = np.abs(bus).max(axis=1)                      # per FRAME: argmax on the 2-D array is a flat index
+        k = int(env.argmax()) if env.size else 0
+        ch = int(np.abs(bus[k]).argmax()) if env.size else 0
+
+        def db(v):
+            v = float(v)
+            return None if v <= 1e-9 else round(20.0 * math.log10(v), 2)
+
+        rows = []
+        for t, s in zip(tracks, stems):
+            on = np.abs(s).max(axis=1) > 1e-4
+            rows.append({"track": t.name, "id": t.id, "gain_db": round(float(t.gain_db), 2),
+                         "peak_dbfs": db(np.abs(s).max()),
+                         # RMS over the part where it actually plays: averaging in the silence of a part that
+                         # only appears in one section makes a loud part look quiet.
+                         "rms_playing_dbfs": db(np.sqrt((s[on].astype(np.float64) ** 2).mean())) if on.any() else None,
+                         "playing_fraction": round(float(on.mean()), 3),
+                         "at_worst_moment": round(float(s[k, ch]), 4),
+                         **({"muted": True} if t.mute else {}),
+                         **({"soloed": True} if t.solo else {}),
+                         **({"in_the_sum": False} if t.id not in {tracks[i].id for i in audible} else {})})
+        rows.sort(key=lambda r: -abs(r["at_worst_moment"]))
+        peak = float(np.abs(bus).max()) if bus.size else 0.0
+        out = {"tracks": rows,
+               "sum_before_master": {"peak_dbfs": db(peak),
+                                     "rms_dbfs": db(np.sqrt((bus.astype(np.float64) ** 2).mean())) if bus.size else None,
+                                     "over_full_scale": int((np.abs(bus) > 1.0).sum()),
+                                     "worst_moment_s": round(k / sr, 2)},
+               "seconds": round(n / sr, 2)}
+        m = getattr(self.project, "master", None)
+        if m is not None:
+            out["master"] = {"gain_db": round(float(getattr(m, "gain_db", 0.0) or 0.0), 2),
+                             "muted": bool(getattr(m, "mute", False)),
+                             "fx": [f.type if hasattr(f, "type") else f.get("type") for f in (m.fx or [])]}
+        if peak > 1.0:
+            out["verdict"] = (f"the tracks sum to {db(peak)} dBFS at {k / sr:.1f}s, so {db(peak)} dB has to come "
+                              f"off before the master — the limiter cannot hold an overshoot that size. The "
+                              f"tracks above are ordered by how much of that moment each one is.")
+        elif any_solo:
+            out["verdict"] = "solo is on, so the sum covers only the soloed tracks"
+        self.statusBar().showMessage(f"Measured {len(tracks)} tracks — sum peaks at {db(peak)} dBFS")
+        return out
+
     def _agent_save_project(self, args: dict):
         """UI thread: write the document to disk, like File > Save."""
         path = str(args.get("path") or self._current_path or "")
@@ -4900,7 +5169,12 @@ class MainWindow(QMainWindow):
         anchor = str(args.get("anchor") or "").strip() or ("a " + (t.name or "sound").lower())
         spec = {"track_id": t.id, "text": text, "anchor": anchor, "inserts": inserts, "wires": wires, "source": source,
                 "notes": notes or None, "out_dir": out_dir}
-        for k, cast in (("stops", lambda v: [float(x) for x in v]), ("amount", float), ("ladder", bool), ("objective", str), ("quality", str), ("n_start", int)):
+        # `add` and `use` belong here too: the runner reads both (experiments/text2fx/tune.py:64, :75) and the
+        # dialog sends both, so leaving them out of this list silently searched the existing inserts every time —
+        # the "which devices may change / may be added" choice did nothing at all.
+        for k, cast in (("stops", lambda v: [float(x) for x in v]), ("amount", float), ("ladder", bool),
+                        ("objective", str), ("quality", str), ("n_start", int),
+                        ("add", lambda v: [str(x) for x in v]), ("use", lambda v: [str(x) for x in v])):
             if args.get(k) is not None: spec[k] = cast(args[k])
         job = tune.start(spec)
         out = job.summary()
@@ -5455,7 +5729,7 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.Accepted:
             return
         scope, ext, subtype, loudness = dlg.result_values()
-        self._on_stop()
+        self._halt_transport()
         sr = self.project.sample_rate
         try:
             if scope == "stems":
@@ -6040,7 +6314,7 @@ class MainWindow(QMainWindow):
         return fixed
 
     def _load_project(self, project: Project, path: Optional[str]) -> None:
-        self._on_stop()
+        self._halt_transport()
         # Instances belong to a track *in this song*; ids restart at t1 in every
         # project, so nothing from the old song may be carried into the new one.
         if getattr(self, "plugin_renderer", None) is not None:

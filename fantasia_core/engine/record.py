@@ -11,6 +11,7 @@ First use triggers the macOS microphone-permission prompt; if denied,
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Optional
 
 import numpy as np
@@ -49,6 +50,11 @@ class Recorder:
         self._recording = False
         self.overflows = 0        # PortAudio dropped input blocks (choppy audio!)
         self.dropped_frames = 0
+        # When the first block actually arrived, and how far behind the live
+        # moment its samples already were. start() alone cannot say where a take
+        # belongs on the timeline: the device takes time to open, then buffers.
+        self.first_block_time = 0.0
+        self.input_latency = 0.0
 
     @property
     def is_recording(self) -> bool:
@@ -71,6 +77,8 @@ class Recorder:
             self.overflows += 1
             self.dropped_frames += frames
         if self._recording:
+            if not self._chunks:
+                self.first_block_time = perf_counter()
             self._chunks.append(indata.copy())
 
     def start(self) -> bool:
@@ -80,6 +88,8 @@ class Recorder:
         self._chunks = []
         self.overflows = 0
         self.dropped_frames = 0
+        self.first_block_time = 0.0
+        self.input_latency = 0.0
         try:
             self._stream = sd.InputStream(
                 samplerate=self.sr, channels=self.channels, dtype="float32",
@@ -89,6 +99,10 @@ class Recorder:
                 blocksize=4096, latency="high",
             )
             self._stream.start()
+            try:
+                self.input_latency = float(self._stream.latency)
+            except Exception:  # noqa: BLE001 — not every backend reports it
+                self.input_latency = 0.0
         except Exception:  # noqa: BLE001 — no device / denied permission
             self._stream = None
             return False

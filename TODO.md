@@ -881,3 +881,139 @@ memory notes.
       exists, no UI).
 - [ ] Playback still skips occasionally — revisit the render pool / gate
       (user noted "might go back to efficiency at some point").
+
+## Making the seasons track — what the DAW got wrong (2026-09-24)
+
+Found while building an actual song, which is the only way these surface.
+
+- [x] **`tune_toward` silently ignored `add` and `use`.** The runner reads both
+      (`experiments/text2fx/tune.py:64, :75`), the dialog sends both
+      (`ui/main_window.py:4947-4948`), the tool schema documents both — and
+      `_agent_tune_toward` copied only stops/amount/ladder/objective/quality/
+      n_start into the spec, so every run searched the inserts already on the
+      track. The "which devices may change / may be added" control the user
+      asked for had never done anything. Fixed; **needs an app restart**, and
+      the pads and counter-melody were all tuned without their intended
+      chorus / delay / saturator.
+- [ ] **The band-energy distance has an absolute floor, so silence dominates
+      it.** This is the real mechanism behind the negative direction scores,
+      verified independently by re-rendering the stored jobs (matches the
+      recorded runs to ±0.0005). `common.py:310-329` floors at 1e-9, so on the
+      counter-melody windows — 48.4% exact-zero samples — frames more than
+      40 dB below the source peak carried **96.1% of the measured distance**.
+      The track's own flat-EQ + reverb-0.16 chain therefore measured d = 0.99
+      to 1.05 from the dry bounce against a 0.6 target, and the two-sided shell
+      (`MU = 5.0`, `ladder.py:17,76`) forced the search INWARD: the proposal
+      was reverb wet 0.16 -> 0.034. The word said "distant"; the constraint
+      demanded *less* processing. On sounding frames alone that same reverb
+      measures 0.076, against a pad's 0.061. Perfect separation over 12 stored
+      jobs: started inside the shell -> positive direction, outside -> <= +0.09.
+      Fix the floor (relative to the source peak, or weight frames by energy);
+      this is the same hole already noted above for `level_match`.
+- [ ] **Nothing rejects a proposal that scores worse than where it started.**
+      `frontier[0]` is taken unconditionally (`ladder.py:107`) and the
+      `past_range` guard needs `i > 1` (`tune.py:122`), so a single-`amount`
+      job can never trip it. It should refuse, or at least flag, a stop whose
+      direction is below stop 0's.
+- [ ] **`amount` needs to be read against the chain already on the track.**
+      It is an equality shell measured from the BYPASSED bounce, so a small
+      amount on an already-processed track means "undo the chain". The dialog
+      should show the track's current distance from dry and refuse an amount
+      below it. (This is why "tune strongly" is usually the right instinct.)
+- [ ] **A half-silent listening window is the caller's only real lever today.**
+      `_agent_tune_toward` refuses a window that bounces *fully* silent
+      (`< 1e-4`); it should also warn when the window is mostly silence, and
+      `_tune_sources` should prefer the dense part of a clip over its start.
+      Note `use` does NOT help here: unselected inserts are still rendered
+      (`compile.py:22-28`), so the distance stays unpayable.
+- [ ] **Short evocative phrases have a weak directional axis.** Measured:
+      cos(T, T_dir) = 0.123 for "icy and distant" (0.097 for "distant" alone)
+      against 0.333 for dark / punchy / warm, and cos of "this sound is icy and
+      distant" with its own negation = 0.970. Different phrases also share an
+      axis (0.79 between "sunlit and warm" and "dusky and wistful"). Prefer
+      single strong words; warn on phrases whose negation cosine is near 1.
+- [ ] **Report identity as a delta against stop 0, not an absolute.** It is a
+      raw CLAP cosine, uncalibrated per anchor phrase ("a synth pad" spans 0.03
+      to 0.55 across sources). `experiments/text2fx/tune.py:121` could carry
+      `identity_delta`; the dialog should show `0.27 -> 0.36`.
+- [ ] **Strong stops cost 20+ dB of level.** Stop 4 on the counter-melody left
+      chains 25 dB hotter than the lead (EQ boosts + reverb wet 0.63), so every
+      apply needs a gain-staging pass after it. `apply_tune` should report the
+      level change it causes, or offer to compensate the track gain.
+- [ ] **No export tool and no level meter for the agent.** Diagnosing the
+      clipping needed an offline bounce script written by hand: save the
+      project, `bounce_to_array` per soloed track, sum in numpy. `export_audio`
+      and a `track_levels` tool would have made it one call.
+- [ ] Twelve tracks at unity summed to +3.8 dBFS and the master limiter could
+      not hold it. Nothing in the UI said so. A bus meter, or a warning when
+      the pre-master peak exceeds 0 dBFS, belongs in the transport bar.
+
+## Transport / recording faults (diagnosed 2026-09-24, not yet applied)
+
+- [ ] **Go to End and Zoom Fit are dead.** `ui/main_window.py:2641` and `:2647`
+      call `self.project.duration()`, but `duration` is a `@property`
+      (`fantasia_core/document/model.py:376`) — `TypeError: 'float' object is
+      not callable`, swallowed by Qt, so the menu item does nothing at all.
+      Verified empirically.
+- [ ] **Recording while playing places the take late.** `_stop_record` reads
+      `start = self.timeline.playhead` (`ui/main_window.py:3096`) at *stop*
+      time, and `_on_tick` keeps that value live during playback, so the clip
+      lands one take-length late and runs another take-length past the end.
+      `_start_record` captures nothing. Also `_on_stop` never ends the take.
+- [ ] **Transport ▸ Audio Input tears down PortAudio under a live stream.**
+      `_populate_input_devices` gates the re-scan on the recorder only
+      (`:3039`) and never checks `engine.has_stream` or calls
+      `release_device()`, so opening that menu during playback renumbers the
+      devices — the output handler's own comment at `:2997` documents exactly
+      this as the cause of "a freshly-picked device silently fails".
+- [ ] The stale-device-list diagnosis (that "Refresh Devices" cannot work
+      because Qt hides the menu before the slot runs) was **refuted** on its Qt
+      reasoning and its patch carried a regression. Re-do that one.
+
+## The anchor, the shell, and where the search starts (2026-09-26)
+
+- [ ] **`ladder.run`'s docstring is wrong and it cost a day.** It says "the
+      amount knob is relative to those settings" (the user's current settings).
+      It is not: `dist = C.band_energy_loss(w, src_n)` with `src_n =
+      loudness_norm(source)`, and `source` is the track with every insert
+      BYPASSED (`ui/main_window.py` bounces it dry). The search STARTS at the
+      current settings; the distance is measured from the dry sound. Those are
+      different origins and the difference is the whole story behind the
+      counter-melody runs that removed reverb.
+- [ ] **Third form of the anchor, untried:** put the instrument on both sides of
+      the negation — `emb("this sound is a crystalline cello") − emb("this sound
+      is not a crystalline cello")` — so the shared instrument content cancels
+      and what survives is the adjective as it applies to that instrument. This
+      does NOT share the failure of `cos(named) − cos(instrument)` (:495), where
+      subtracting the instrument rewarded leaving it. Text-only screen queued as
+      `scratchpad/anchor_axis.py`: does naming rotate the axis, does it
+      strengthen or dilute the word, and does the axis differ by instrument.
+      Only worth an audio A/B if the axis moves.
+- [ ] **Do not add an identity term to the loss.** The shell is already an
+      identity constraint, and a better one: it is measured in band energy from
+      the user's own dry sound rather than against an uncalibrated CLAP text
+      cosine. Measured today: identity ROSE at every stop on all four counter
+      tracks (cello 0.27 -> 0.36). `T_self` stays a readout.
+- [ ] Record for the next reader: the search starts at candidate 0 = the current
+      settings exactly, candidates 1..n-1 = those settings + Gaussian jitter
+      0.15 in raw space (n = 8 thorough / 4 quick), pruned 8x20 -> 4x40 -> 2x100;
+      across a ladder each stop warm-starts from the previous stop's winner plus
+      two fresh jittered candidates. Held inserts render but never move; frozen
+      and bypassed inserts are excluded.
+
+### Anchor screen result (2026-09-26, text embeddings only)
+
+Naming the instrument inside the negation pair is NOT a no-op, and it is not free either.
+
+- It **rotates the axis a lot**: cos(T_dir(word), T_dir(word + instrument)) is 0.54-0.87 for "crystalline cello"
+  and 0.15-0.66 for "a cello that is crystalline". The "+" form wanders less; prefer it.
+- The axis is **genuinely instrument-specific**: for one word, the axis for two instruments can be far apart —
+  crystalline cello vs kick drum 0.494, fresh english horn vs synth pad 0.272, rich cello vs kick drum 0.319.
+  So the context carries real information rather than decorating the prompt.
+- But it **dilutes the word**: axis strength mostly falls (rich .477 -> .249-.329, warm .330 -> .182-.248).
+  That looks like the same phrase-length effect that makes "icy and distant" (.123) weaker than "icy" (.217):
+  the longer the shared text, the smaller the fraction of the word that survives the difference.
+
+So the text screen cannot settle it — the named axis points somewhere different AND is weaker, and which wins is
+an audio question. Worth exactly one A/B, not a default change. Best contrast for that test: "rich saxophone"
+(rotation 0.582, axis .249 against plain .477) — the largest rotation and the largest dilution together.
